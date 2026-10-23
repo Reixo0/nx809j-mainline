@@ -1,0 +1,44 @@
+From fc698b2aa583dfc6599f89f84994957024aa1520 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 00:04:21 +0200
+Subject: [PATCH 8/8] power: supply: qcom_battmgr: Ignore unsolicited messages
+ on SM8350-style firmware
+
+Kaanapali firmware sends messages with opcode 0x101 every few seconds.
+The SM8350-style callback logged a warning for each, flooding the kernel
+log, and then completed battmgr->ack as if a reply had arrived. That
+wakes up whichever request is pending before its real reply, which then
+returns stale data: on a Nubia RedMagic 11 Pro charge_counter read 0.
+
+Warn once about unknown messages and don't complete the pending request
+for them. The SC8280XP-style callback has the same pattern but wasn't
+changed here, for lack of a device to test it on.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/power/supply/qcom_battmgr.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+index 676b9a98d..594063b62 100644
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -1588,8 +1588,13 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
+ 		battmgr->error = 0;
+ 		break;
+ 	default:
+-		dev_warn(battmgr->dev, "unknown message %#x\n", opcode);
+-		break;
++		/*
++		 * Newer firmware (e.g. Kaanapali) sends unsolicited messages,
++		 * such as 0x101, every few seconds. They aren't a reply to a
++		 * request, so they must not complete a pending one.
++		 */
++		dev_warn_once(battmgr->dev, "unknown message %#x\n", opcode);
++		return;
+ 	}
+ 
+ out_complete:
+-- 
+2.56.0
+

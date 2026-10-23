@@ -5,3 +5,5 @@
 /tools/
 # Partition dumps contain device-unique data (IMEI/EFS in modemst*, persist, keys)
 /dump/
+# Built by scripts/pmos-kernel-pkg.sh
+/pmos/linux-nubia-nx809j/kernel.tar.gz

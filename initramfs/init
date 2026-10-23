@@ -59,7 +59,53 @@ setup_usb() {
 	echo ">> USB network up on $UDC: shell on 172.16.42.1:23 (nc)"
 }
 
-setup_usb &
+# nx809j.root=nbd: use the rootfs the PC serves over NBD (scripts/nbd-root.sh)
+nbd_root() {
+	NBD_SERVER=172.16.42.2
+	NBD_PORT=10809
+	echo ">> waiting for NBD server $NBD_SERVER:$NBD_PORT"
+	for i in $(seq 1 60); do
+		nc -z -w 1 $NBD_SERVER $NBD_PORT 2>/dev/null && break
+		sleep 1
+	done
+	nbd-client $NBD_SERVER $NBD_PORT /dev/nbd0 || { echo "!! nbd-client failed"; return 1; }
+	# nbd-client returns before the kernel has set the device size; mounting
+	# right away reads an empty device
+	for i in $(seq 1 50); do
+		[ "$(cat /sys/block/nbd0/size 2>/dev/null)" -gt 0 ] 2>/dev/null && break
+		sleep 0.1
+	done
+	mkdir -p /newroot
+	for i in 1 2 3 4 5; do
+		mount -t ext4 /dev/nbd0 /newroot && break
+		sleep 1
+	done
+	mountpoint -q /newroot || { echo "!! mounting /dev/nbd0 failed"; return 1; }
+	if [ ! -x /newroot/sbin/init ]; then
+		echo "!! no /sbin/init on the NBD rootfs"
+		umount /newroot
+		return 1
+	fi
+	echo ">> switching to the NBD rootfs"
+	# The rootfs takes over from here; our nc shell lives in the initramfs
+	# that switch_root deletes, so stop it. usb0 and nbd-client stay up.
+	kill $(pidof nc) 2>/dev/null
+	for m in /dev /proc /sys; do
+		mkdir -p /newroot$m
+		mount --move $m /newroot$m
+	done
+	exec switch_root -c /dev/console /newroot /sbin/init
+}
+
+if grep -q 'nx809j.root=nbd' /proc/cmdline; then
+	setup_usb
+	nbd_root
+	echo "!! NBD root failed, staying in the initramfs"
+	# nbd_root may have killed the nc shell before failing
+	pidof nc >/dev/null || nc -lk -s 172.16.42.1 -p 23 -e /nx809j/bin/sh &
+else
+	setup_usb &
+fi
 
 # Show the important bits on screen, then keep a shell on the console.
 sleep 3

@@ -1,0 +1,44 @@
+# Kernel for the Nubia RedMagic 11 Pro, built outside pmbootstrap from
+# linux-next + the patches in https://github.com/Reixo0/nx809j-mainline
+# (scripts/build.sh). scripts/pmos-kernel-pkg.sh refreshes the tarball.
+#
+# The phone boots its kernel from boot_a via the shim, not from this package;
+# it provides /boot and the dtb so the rootfs matches what's running.
+pkgname=linux-nubia-nx809j
+pkgver=7.3.0_git20261022
+pkgrel=2
+pkgdesc="Nubia RedMagic 11 Pro kernel (linux-next, prebuilt)"
+arch="aarch64"
+_carch="arm64"
+_flavor="nubia-nx809j"
+url="https://github.com/Reixo0/nx809j-mainline"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+source="kernel.tar.gz"
+
+package() {
+	install -Dm644 "$srcdir/Image" "$pkgdir/boot/vmlinuz"
+	install -Dm644 "$srcdir/kaanapali-nubia-nx809j.dtb" \
+		"$pkgdir/boot/dtbs/qcom/kaanapali-nubia-nx809j.dtb"
+	install -Dm644 "$srcdir/config" "$pkgdir/boot/config"
+
+	# mkinitfs looks up the kernel version here (Alpine convention)
+	install -Dm644 "$srcdir/kernel.release" \
+		"$pkgdir/usr/share/kernel/$_flavor/kernel.release"
+
+	# /lib is a symlink to usr/lib in the rootfs
+	local release="$(cat "$srcdir/kernel.release")"
+	local moddir="$pkgdir/usr/lib/modules/$release"
+	mkdir -p "$moddir"
+	if [ -d "$srcdir/lib/modules/$release" ]; then
+		cp -a "$srcdir/lib/modules/$release/." "$moddir/"
+	fi
+	# Most drivers are built in; mkinitfs and modprobe need these lists
+	install -Dm644 "$srcdir/modules.builtin" "$srcdir/modules.builtin.modinfo" \
+		-t "$moddir"
+	[ -e "$moddir/modules.order" ] || touch "$moddir/modules.order"
+}
+
+sha512sums="
+bb1ac749c416467632166e5471da690c555862a5419f45cd5bfb9d3233f51d8a3d04e3c8c8707f94ea6c42ab45e45231abe22ea382de253558c9f991eb03107a  kernel.tar.gz
+"

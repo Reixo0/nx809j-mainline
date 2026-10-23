@@ -1,0 +1,24 @@
+# Internet through the PC on the other end of the USB link (172.16.42.2).
+# The PC has to forward/NAT for it: scripts/host-usb-nat.sh in nx809j-mainline.
+# usb0 is set up by the bring-up initramfs and left alone by NetworkManager,
+# so nothing else gives it a default route or DNS.
+[Unit]
+Description=Internet over the USB link to the PC
+After=systemd-resolved.service
+Wants=systemd-resolved.service
+ConditionPathExists=/sys/class/net/usb0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Public resolvers by default; set DNS= in the file below to use e.g. your router
+Environment=DNS="1.1.1.1 9.9.9.9"
+EnvironmentFile=-/etc/nx809j-usb-uplink.conf
+# High metric: a real uplink (Wi-Fi, modem) wins once there is one
+ExecStart=/usr/sbin/ip route replace default via 172.16.42.2 dev usb0 metric 1000
+ExecStart=/usr/bin/resolvectl dns usb0 $DNS
+ExecStart=/usr/bin/resolvectl domain usb0 ~.
+ExecStop=-/usr/sbin/ip route del default via 172.16.42.2 dev usb0 metric 1000
+
+[Install]
+WantedBy=multi-user.target
