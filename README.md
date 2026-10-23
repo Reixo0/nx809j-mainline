@@ -155,6 +155,10 @@ Notes:
 - **UART:** `uart7` is kept as in QRD; no known accessible test points yet.
 - **Disabled for now:** GPU (a failing GPU takes MSM DRM down with it), CDSP,
   SD controller, flash LED, RGB PWM LED.
+- **GPU:** sending the reference board's CLX current-limiting table makes the
+  GMU hang on its first GX power vote, and the limits table can't go without
+  CLX. `msm.hfi_skip=3` (a local debug patch) skips both; ACD and IFPC stay
+  on. Proper fix: this board's CLX values from the downstream `msm_kgsl.ko`.
 - **Reserved GPIOs:** 40-43, 74, 119-120, 144-147 (from downstream
   `qcom,gpios-reserved`). Touching them crashes the device.
 
@@ -172,7 +176,7 @@ Notes:
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [ ] Display: 90/120 Hz modes
-- [ ] GPU (Adreno 840, `gen80200_*`)
+- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
 - [ ] Audio, Wi-Fi/BT ("peach" firmware, over PCIe), modem, cameras
