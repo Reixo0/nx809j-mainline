@@ -107,12 +107,13 @@ adb shell su -c 'cat /sys/fs/pstore/*'
 - **Failed loads disable slot a.** Recovery, by hand from superfastboot:
   `fastboot set_active a`, then `fastboot reboot`. Never activate slot b:
   it has never booted and runs its own, possibly older, `abl_b`.
-- **Display:** `simple-framebuffer` at the cont-splash region `0xfc800000`.
-  `clk_ignore_unused pd_ignore_unused` keep the display pipeline running.
-  It's a command-mode panel, so the image may freeze if MDP autorefresh is off.
+- **Display:** `simple-framebuffer` (cont-splash at `0xfc800000`) until MSM DRM
+  takes over with the RM692H5 driver. The panel decodes DSC with its own
+  config (page `0xd2`); RC range 0 is patched to the VESA value the kernel
+  encoder uses, otherwise the picture is corrupted.
 - **UART:** `uart7` is kept as in QRD; no known accessible test points yet.
-- **Disabled for now:** GPU, ADSP/CDSP (firmware paths set to
-  `qcom/kaanapali/nubia/nx809j/`), SD controller, flash LED, RGB PWM LED.
+- **Disabled for now:** GPU (a failing GPU takes MSM DRM down with it), CDSP,
+  SD controller, flash LED, RGB PWM LED.
 - **Reserved GPIOs:** 40-43, 74, 119-120, 144-147 (from downstream
   `qcom,gpios-reserved`). Touching them crashes the device.
 
@@ -127,7 +128,8 @@ adb shell su -c 'cat /sys/fs/pstore/*'
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
 - [x] Battery/charger via battmgr, USB-C via UCSI (role switching still forced to device mode)
 - [ ] CDSP
-- [ ] Display (MSM DRM + RM692H5 panel driver from `out/panel/`)
+- [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
+- [ ] Display: 90/120 Hz modes
 - [ ] GPU (Adreno 840, `gen80200_*`)
 - [ ] Touchscreen, haptics (AW86320), fan, shoulder triggers
 - [ ] Audio, Wi-Fi/BT ("peach" firmware, over PCIe), modem, cameras
