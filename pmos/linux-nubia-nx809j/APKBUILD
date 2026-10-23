@@ -6,7 +6,7 @@
 # it provides /boot and the dtb so the rootfs matches what's running.
 pkgname=linux-nubia-nx809j
 pkgver=7.3.0_git20261022
-pkgrel=3
+pkgrel=4
 pkgdesc="Nubia RedMagic 11 Pro kernel (linux-next, prebuilt)"
 arch="aarch64"
 _carch="arm64"
@@ -40,5 +40,5 @@ package() {
 }
 
 sha512sums="
-d938ca88f9814b684cce8d0a63085e69f7ef0096746930d97759362378896bb7332e69d5a97be9d6902b553e7df45215226c3219f9d5a49fcd1c53dbd3177a46  kernel.tar.gz
+925020845da6b629be28667c2be29919e69a7d2ac1a0a8f67e14450374e8993fcecbca7ed342d288c67f3c76bd23d3f789e58544c7c7d6286354ff9b614c7697  kernel.tar.gz
 "

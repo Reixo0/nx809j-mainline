@@ -165,7 +165,7 @@ Notes:
 - [x] USB gadget networking, shell via `scripts/phone-sh.py`
 - [x] cpufreq via SCMI (cpucp mailbox built in): 384 MHz-3.63 GHz / 768 MHz-4.40 GHz
 - [ ] pm8010 (SPMI1 SID 0xc/0xd) and pmd802x (SID 4) don't answer on SPMI
-- [ ] Buttons (vol up GPIO 101, vol down = PON resin, power)
+- [x] Buttons: power + volume down (PMIC PON, `POWER_RESET_QCOM_PON=y`), volume up (GPIO 101), game slider (GPIO 97, `SW_PEN_INSERTED`, 1 = down)
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
 - [x] Battery/charger via battmgr, USB-C via UCSI (role switching still forced to device mode)
 - [x] postmarketOS (console, systemd) booting from an NBD rootfs on the PC, internet via the PC

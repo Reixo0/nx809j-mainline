@@ -1,0 +1,66 @@
+From e9174e1eaa4df73a570dff644e0e892a58b2907d Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 00:59:53 +0200
+Subject: [PATCH 12/12] arm64: dts: qcom: kaanapali-nubia-nx809j: Add game mode
+ switch
+
+The RedMagic's game mode slider is wired to GPIO 97 (its complement on
+GPIO 174 isn't needed). Report it through gpio-keys as a switch, with
+the same code the downstream kernel uses (SW_PEN_INSERTED, there being
+no better fit): 1 with the slider down, 0 up.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 22 ++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 25525c57d..cb66254b6 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -111,7 +111,7 @@ bi_tcxo_ao_div2: bi-tcxo-ao-div2-clk {
+ 	gpio-keys {
+ 		compatible = "gpio-keys";
+ 
+-		pinctrl-0 = <&key_vol_up_default>;
++		pinctrl-0 = <&key_vol_up_default>, <&game_switch_default>;
+ 		pinctrl-names = "default";
+ 
+ 		key-volume-up {
+@@ -122,6 +122,19 @@ key-volume-up {
+ 			linux,can-disable;
+ 			wakeup-source;
+ 		};
++
++		/*
++		 * Game mode slider. Downstream reads GPIO 97 (and its complement
++		 * on GPIO 174) and reports it as SW_PEN_INSERTED for lack of a
++		 * better code; kept the same for now.
++		 */
++		switch-game-mode {
++			label = "Game Mode Switch";
++			linux,input-type = <EV_SW>;
++			linux,code = <SW_PEN_INSERTED>;
++			gpios = <&tlmm 97 GPIO_ACTIVE_HIGH>;
++			debounce-interval = <30>;
++		};
+ 	};
+ 
+ 	pmic-glink {
+@@ -906,6 +919,13 @@ disp_reset_suspend: disp-reset-suspend-state {
+ 		bias-pull-down;
+ 	};
+ 
++	game_switch_default: game-switch-default-state {
++		pins = "gpio97";
++		function = "gpio";
++		output-disable;
++		bias-disable;
++	};
++
+ 	key_vol_up_default: key-vol-up-default-state {
+ 		pins = "gpio101";
+ 		function = "gpio";
+-- 
+2.56.0
+
