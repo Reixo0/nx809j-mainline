@@ -1,0 +1,46 @@
+From 7bfb2c5ef430b1edb72633716e9514987e492c0b Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 22:48:07 +0200
+Subject: [PATCH 4/4] power: supply: qcom_battmgr: Report charge capacity on
+ SM8350-style firmware
+
+Only the SC8280XP-style battery info message carries the capacity unit,
+so on the SM8350-style protocol (also used by SM8550 and Kaanapali)
+battmgr->unit stays at its zero value, QCOM_BATTMGR_UNIT_mWh. As a
+result charge_full and charge_full_design always return -ENODATA, even
+though the values are requested and received.
+
+That protocol reports capacities in uAh, like charge_counter, so set the
+unit to mAh for those variants.
+
+Tested on a Nubia RedMagic 11 Pro (Kaanapali): charge_full and
+charge_full_design now match what the downstream kernel reports.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/power/supply/qcom_battmgr.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+index 636d6f6ac..676b9a98d 100644
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -1685,6 +1685,15 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
+ 	else
+ 		battmgr->variant = QCOM_BATTMGR_SM8350;
+ 
++	/*
++	 * Only the SC8280XP-style battery info message carries the unit. The
++	 * SM8350-style protocol reports capacities in uAh (like charge_counter),
++	 * so without this charge_full and charge_full_design return -ENODATA.
++	 */
++	if (battmgr->variant != QCOM_BATTMGR_SC8280XP &&
++	    battmgr->variant != QCOM_BATTMGR_X1E80100)
++		battmgr->unit = QCOM_BATTMGR_UNIT_mAh;
++
+ 	ret = qcom_battmgr_charge_control_thresholds_init(battmgr);
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret,
+-- 
+2.56.0
+

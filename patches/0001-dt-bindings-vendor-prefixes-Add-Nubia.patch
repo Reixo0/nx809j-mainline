@@ -1,0 +1,31 @@
+From 6b3595539ca7c9d5068890c400282bd7046cc596 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 22:48:07 +0200
+Subject: [PATCH 1/4] dt-bindings: vendor-prefixes: Add Nubia
+
+Add a vendor prefix for Nubia Technology Co., Ltd., a ZTE subsidiary
+making the RedMagic phones.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Documentation/devicetree/bindings/vendor-prefixes.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/vendor-prefixes.yaml b/Documentation/devicetree/bindings/vendor-prefixes.yaml
+index c981a1337..e00dfcda1 100644
+--- a/Documentation/devicetree/bindings/vendor-prefixes.yaml
++++ b/Documentation/devicetree/bindings/vendor-prefixes.yaml
+@@ -1230,6 +1230,8 @@ patternProperties:
+     description: Novatek
+   "^novtech,.*":
+     description: NovTech, Inc.
++  "^nubia,.*":
++    description: Nubia Technology Co., Ltd.
+   "^nuclei,.*":
+     description: Nuclei System Technology
+   "^numonyx,.*":
+
+base-commit: bd1ecbb61afefc6a8b876ccbc31e9228b44e9eab
+-- 
+2.56.0
+

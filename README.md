@@ -8,7 +8,8 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 
 | Path | What |
 |---|---|
-| `linux/` | linux-next checkout (its own git repo). Board work lives here. |
+| `linux/` | linux-next checkout (its own git repo, not in this repo). Board work lives on its `nx809j` branch. |
+| `patches/` | That branch exported with `git format-patch` (regenerate after kernel commits) |
 | `linux/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts` | Board DTS (derived from `kaanapali-qrd.dts`) |
 | `configs/nx809j.config` | Kconfig fragment merged over arm64 `defconfig` |
 | `initramfs/init` | Bring-up init: fb console + USB NCM telnet at 172.16.42.1 |
@@ -36,6 +37,12 @@ git clone --depth=1 https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-n
 git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
 git clone --depth=1 https://android.googlesource.com/platform/external/avb tools/avb
 git clone --depth=1 https://github.com/msm8916-mainline/linux-mdss-dsi-panel-driver-generator tools/panel-gen
+```
+
+Then apply the kernel patches (made against `next-20261022`):
+
+```bash
+git -C linux switch -c nx809j && git -C linux am ../patches/*.patch
 ```
 
 Static arm64 busybox: `bin/busybox.static` from Alpine's `busybox-static`
@@ -124,3 +131,8 @@ adb shell su -c 'cat /sys/fs/pstore/*'
 - [ ] GPU (Adreno 840, `gen80200_*`)
 - [ ] Touchscreen, haptics (AW86320), fan, shoulder triggers
 - [ ] Audio, Wi-Fi/BT ("peach" firmware, over PCIe), modem, cameras
+
+## License
+
+GPL-2.0 (see `LICENSE`), matching the kernel the patches target. The shim
+links the kernel's dual-licensed libfdt.
