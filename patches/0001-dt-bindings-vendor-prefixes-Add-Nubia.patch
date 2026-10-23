@@ -1,7 +1,7 @@
 From 6b3595539ca7c9d5068890c400282bd7046cc596 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 1/8] dt-bindings: vendor-prefixes: Add Nubia
+Subject: [PATCH 01/11] dt-bindings: vendor-prefixes: Add Nubia
 
 Add a vendor prefix for Nubia Technology Co., Ltd., a ZTE subsidiary
 making the RedMagic phones.

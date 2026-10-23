@@ -173,7 +173,8 @@ Notes:
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [ ] Display: 90/120 Hz modes
 - [ ] GPU (Adreno 840, `gen80200_*`)
-- [ ] Touchscreen, haptics (AW86320), fan, shoulder triggers
+- [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
+- [ ] Haptics (AW86320), fan, shoulder triggers
 - [ ] Audio, Wi-Fi/BT ("peach" firmware, over PCIe), modem, cameras
 
 ## License

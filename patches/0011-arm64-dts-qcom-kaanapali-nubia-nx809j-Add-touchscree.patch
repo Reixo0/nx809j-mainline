@@ -1,0 +1,46 @@
+From 248acf093c23fff38b4a4d96e42895e00d25393f Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 00:48:16 +0200
+Subject: [PATCH 11/11] arm64: dts: qcom: kaanapali-nubia-nx809j: Add
+ touchscreen
+
+The Synaptics S3910 TouchComm controller sits on SPI19, CS 0, at 10 MHz,
+with its interrupt on GPIO 158 (level low), reset on GPIO 66 and supplies
+L4B (1.8 V) and L14B (3.2 V), as in the downstream device tree.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts    | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 1de1b4bda..25525c57d 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -868,6 +868,23 @@ &remoteproc_soccp {
+ 			"qcom/kaanapali/nubia/nx809j/soccp_dtb.mbn";
+ };
+ 
++&spi19 {
++	status = "okay";
++
++	/* Synaptics TouchComm controller; wiring from the downstream DT */
++	touchscreen@0 {
++		compatible = "syna,tcm-spi";
++		reg = <0>;
++		spi-max-frequency = <10000000>;
++
++		interrupts-extended = <&tlmm 158 IRQ_TYPE_LEVEL_LOW>;
++		reset-gpios = <&tlmm 66 GPIO_ACTIVE_LOW>;
++
++		vdd-supply = <&vreg_l4b_1p8>;
++		avdd-supply = <&vreg_l14b_3p2>;
++	};
++};
++
+ &tlmm {
+ 	/* From qcom,gpios-reserved in the downstream DT */
+ 	gpio-reserved-ranges = <40 4>, /* NFC eSE SPI */
+-- 
+2.56.0
+

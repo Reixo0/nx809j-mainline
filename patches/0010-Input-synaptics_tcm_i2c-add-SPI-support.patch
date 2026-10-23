@@ -1,0 +1,481 @@
+From f58f0dc6bb6fb58260f7ce1f46bb602973b5bb35 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 00:48:16 +0200
+Subject: [PATCH 10/11] Input: synaptics_tcm_i2c - add SPI support
+
+The TouchComm v1 message format is the same on SPI as on I2C: a read
+returns the next chunk of the current message, starting with the 0xa5
+marker, so the protocol code can be shared. Put the bus transfers behind
+read/write callbacks, split probe into a bus independent part, and add an
+SPI driver next to the I2C one. SPI reads clock out 0xff, like the vendor
+driver, and the transfer buffers are cache line aligned for DMA.
+
+Each bus driver gets its own OF match table: the SPI core warns about
+compatibles without a matching spi_device_id otherwise.
+
+Tested with the S3910 (firmware 15.20, TouchComm v1) on SPI in the Nubia
+RedMagic 11 Pro: identify, report config and multitouch events with
+tracking IDs and contact size at ~180 Hz.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/input/touchscreen/Kconfig             |   9 +-
+ drivers/input/touchscreen/synaptics_tcm_i2c.c | 234 ++++++++++++++----
+ 2 files changed, 192 insertions(+), 51 deletions(-)
+
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+index c58e3e4cc..9dc419d6b 100644
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -1311,11 +1311,14 @@ config TOUCHSCREEN_SX8654
+ 	  module will be called sx8654.
+ 
+ config TOUCHSCREEN_SYNAPTICS_TCM_I2C
+-	tristate "Synaptics TouchComm I2C touchscreen"
+-	depends on I2C
++	tristate "Synaptics TouchComm I2C/SPI touchscreen"
++	depends on I2C || SPI_MASTER
++	depends on I2C || I2C=n
++	depends on SPI_MASTER || SPI_MASTER=n
+ 	help
+ 	  Say Y here if you have a Synaptics TouchComm (TCM) touch controller
+-	  attached over I2C, such as the S3908 found in the OnePlus 9RT.
++	  attached over I2C, such as the S3908 found in the OnePlus 9RT, or over
++	  SPI, such as the one in the Nubia RedMagic 11 Pro.
+ 
+ 	  Only controllers that boot into application mode out of their own
+ 	  flash are supported; there is no host firmware download.
+diff --git a/drivers/input/touchscreen/synaptics_tcm_i2c.c b/drivers/input/touchscreen/synaptics_tcm_i2c.c
+index 406db582f..5cc88dc8a 100644
+--- a/drivers/input/touchscreen/synaptics_tcm_i2c.c
++++ b/drivers/input/touchscreen/synaptics_tcm_i2c.c
+@@ -36,6 +36,7 @@
+ #include <linux/mutex.h>
+ #include <linux/pm.h>
+ #include <linux/regulator/consumer.h>
++#include <linux/spi/spi.h>
+ #include <linux/unaligned.h>
+ 
+ #define SYNA_MESSAGE_MARKER		0xa5
+@@ -150,7 +151,14 @@ struct syna_object {
+ };
+ 
+ struct syna_tcm {
++	struct device *dev;
++	int irq;
++
++	/* Bus transfers; both return the bytes transferred or a negative errno */
++	int (*read)(struct syna_tcm *ts, u8 *buf, unsigned int len);
++	int (*write)(struct syna_tcm *ts, const u8 *buf, unsigned int len);
+ 	struct i2c_client *client;
++	struct spi_device *spi;
+ 	struct input_dev *input;
+ 	struct touchscreen_properties prop;
+ 	struct gpio_desc *reset_gpio;
+@@ -164,12 +172,14 @@ struct syna_tcm {
+ 	u32 gesture_type;
+ 
+ 	/* Scratch for one I2C read, and the message assembled out of them. */
+-	u8 rxbuf[SYNA_RD_CHUNK_SIZE];
+-	u8 payload[SYNA_MAX_MESSAGE_SIZE];
++	u8 rxbuf[SYNA_RD_CHUNK_SIZE] ____cacheline_aligned;
++	/* SPI reads clock out 0xff while the controller sends */
++	u8 spi_txbuf[SYNA_RD_CHUNK_SIZE] ____cacheline_aligned;
++	u8 payload[SYNA_MAX_MESSAGE_SIZE] ____cacheline_aligned;
+ 	unsigned int payload_len;
+ 	u8 code;
+ 
+-	u8 cmdbuf[SYNA_MAX_CONFIG_SIZE + 3];
++	u8 cmdbuf[SYNA_MAX_CONFIG_SIZE + 3] ____cacheline_aligned;
+ 
+ 	u8 config[SYNA_MAX_CONFIG_SIZE];
+ 	unsigned int config_len;
+@@ -206,16 +216,16 @@ static const u8 syna_gesture_config[] = {
+  */
+ static int syna_recv_message(struct syna_tcm *ts)
+ {
+-	struct device *dev = &ts->client->dev;
++	struct device *dev = ts->dev;
+ 	unsigned int total, copied, stream_remaining;
+ 	int ret;
+ 
+-	ret = i2c_master_recv(ts->client, ts->rxbuf, SYNA_RD_CHUNK_SIZE);
++	ret = ts->read(ts, ts->rxbuf, SYNA_RD_CHUNK_SIZE);
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	if (ret < SYNA_HEADER_SIZE) {
+-		dev_warn_ratelimited(dev, "i2c recv short read: %d\n", ret);
++		dev_warn_ratelimited(dev, "short read: %d\n", ret);
+ 		return -EIO;
+ 	}
+ 
+@@ -270,7 +280,7 @@ static int syna_recv_message(struct syna_tcm *ts)
+ 		unsigned int read_len = chunk + 2;
+ 		unsigned int payload_chunk;
+ 
+-		ret = i2c_master_recv(ts->client, ts->rxbuf, read_len);
++		ret = ts->read(ts, ts->rxbuf, read_len);
+ 		if (ret < 0)
+ 			return ret;
+ 
+@@ -320,7 +330,7 @@ static int syna_recv_message(struct syna_tcm *ts)
+ static int syna_exec_command(struct syna_tcm *ts, u8 cmd,
+ 			     const u8 *payload, unsigned int len)
+ {
+-	struct device *dev = &ts->client->dev;
++	struct device *dev = ts->dev;
+ 	unsigned long deadline;
+ 	u8 *buf = ts->cmdbuf;
+ 	int ret;
+@@ -333,7 +343,7 @@ static int syna_exec_command(struct syna_tcm *ts, u8 cmd,
+ 	if (len)
+ 		memcpy(&buf[3], payload, len);
+ 
+-	ret = i2c_master_send(ts->client, buf, len + 3);
++	ret = ts->write(ts, buf, len + 3);
+ 	if (ret < 0) {
+ 		dev_err(dev, "failed to write command 0x%02x: %d\n", cmd, ret);
+ 		return ret;
+@@ -492,7 +502,7 @@ static int syna_parse_touch_report(struct syna_tcm *ts)
+ 		switch (code) {
+ 		case SYNA_TOUCH_OBJECT_N_INDEX:
+ 			if (data >= ts->max_objects || data >= SYNA_MAX_OBJECTS) {
+-				dev_dbg(&ts->client->dev,
++				dev_dbg(ts->dev,
+ 					"object index %u out of range\n", data);
+ 				return -ERANGE;
+ 			}
+@@ -548,7 +558,7 @@ static void syna_report_touch(struct syna_tcm *ts)
+ 		bool down = obj->status != SYNA_OBJECT_LIFT;
+ 
+ 		if (down)
+-			dev_dbg(&ts->client->dev,
++			dev_dbg(ts->dev,
+ 				"slot %u: %u,%u z=%u w=%ux%u class=%u\n",
+ 				i, obj->x, obj->y, obj->z, obj->wx, obj->wy,
+ 				obj->status);
+@@ -588,7 +598,7 @@ static irqreturn_t syna_irq(int irq, void *data)
+ 	if (syna_parse_touch_report(ts) == 0) {
+ 		if (ts->suspended) {
+ 			if (ts->gesture_type == SYNA_GESTURE_DTAP) {
+-				dev_dbg(&ts->client->dev,
++				dev_dbg(ts->dev,
+ 					"wakeup gesture detected (type=0x%02x)\n",
+ 					ts->gesture_type);
+ 
+@@ -597,7 +607,7 @@ static irqreturn_t syna_irq(int irq, void *data)
+ 				input_report_key(ts->input, KEY_WAKEUP, 0);
+ 				input_sync(ts->input);
+ 
+-				pm_wakeup_event(&ts->client->dev, 0);
++				pm_wakeup_event(ts->dev, 0);
+ 			}
+ 		} else {
+ 			syna_report_touch(ts);
+@@ -694,7 +704,7 @@ static bool syna_config_has_coords(const u8 *cfg, unsigned int len)
+ 
+ static int syna_read_touch_report_config(struct syna_tcm *ts)
+ {
+-	struct device *dev = &ts->client->dev;
++	struct device *dev = ts->dev;
+ 	int ret;
+ 
+ 	ret = syna_exec_command(ts, SYNA_CMD_GET_TOUCH_REPORT_CONFIG, NULL, 0);
+@@ -717,7 +727,7 @@ static int syna_read_touch_report_config(struct syna_tcm *ts)
+ 
+ static int syna_setup(struct syna_tcm *ts)
+ {
+-	struct device *dev = &ts->client->dev;
++	struct device *dev = ts->dev;
+ 	struct syna_tcm_app_info *app_info;
+ 	unsigned int max_x = 0, max_y = 0;
+ 	u8 report = SYNA_REPORT_TOUCH;
+@@ -825,7 +835,7 @@ static int syna_setup(struct syna_tcm *ts)
+ 
+ static int syna_reinit_hw(struct syna_tcm *ts)
+ {
+-	struct device *dev = &ts->client->dev;
++	struct device *dev = ts->dev;
+ 	u8 report = SYNA_REPORT_TOUCH;
+ 	int ret;
+ 
+@@ -864,22 +874,17 @@ static int syna_reinit_hw(struct syna_tcm *ts)
+ 	return ret;
+ }
+ 
+-static int syna_probe(struct i2c_client *client)
++/* Bus independent part of probe; ts comes with dev, irq, read and write set */
++static int syna_probe_common(struct syna_tcm *ts)
+ {
+-	struct device *dev = &client->dev;
+-	struct syna_tcm *ts;
++	struct device *dev = ts->dev;
+ 	int ret;
+ 
+-	ts = devm_kzalloc(dev, sizeof(*ts), GFP_KERNEL);
+-	if (!ts)
+-		return -ENOMEM;
+-
+-	ts->client = client;
+ 	ret = devm_mutex_init(dev, &ts->lock);
+ 	if (ret)
+ 		return ret;
+ 
+-	i2c_set_clientdata(client, ts);
++	dev_set_drvdata(dev, ts);
+ 
+ 	ts->input = devm_input_allocate_device(dev);
+ 	if (!ts->input)
+@@ -919,22 +924,21 @@ static int syna_probe(struct i2c_client *client)
+ 			return ret;
+ 	}
+ 
+-	ret = devm_request_threaded_irq(dev, client->irq, NULL, syna_irq,
++	ret = devm_request_threaded_irq(dev, ts->irq, NULL, syna_irq,
+ 					IRQF_ONESHOT, "synaptics-tcm", ts);
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "failed to request IRQ %d\n",
+-				     client->irq);
++				     ts->irq);
+ 
+ 	return 0;
+ }
+ 
+ static int syna_suspend(struct device *dev)
+ {
+-	struct i2c_client *client = to_i2c_client(dev);
+-	struct syna_tcm *ts = i2c_get_clientdata(client);
++	struct syna_tcm *ts = dev_get_drvdata(dev);
+ 	int ret;
+ 
+-	disable_irq(client->irq);
++	disable_irq(ts->irq);
+ 	mutex_lock(&ts->lock);
+ 
+ 	if (device_may_wakeup(dev)) {
+@@ -964,8 +968,8 @@ static int syna_suspend(struct device *dev)
+ 		if (ret)
+ 			dev_warn(dev, "failed to set gesture mask: %d\n", ret);
+ 
+-		enable_irq_wake(client->irq);
+-		enable_irq(client->irq);
++		enable_irq_wake(ts->irq);
++		enable_irq(ts->irq);
+ 		ts->gesture_enabled = true;
+ 	} else {
+ 		/* Deep sleep mode when wakeup is disabled */
+@@ -984,14 +988,13 @@ static int syna_suspend(struct device *dev)
+ 
+ static int syna_resume(struct device *dev)
+ {
+-	struct i2c_client *client = to_i2c_client(dev);
+-	struct syna_tcm *ts = i2c_get_clientdata(client);
++	struct syna_tcm *ts = dev_get_drvdata(dev);
+ 	int ret;
+ 
+ 	if (ts->gesture_enabled) {
+-		disable_irq(client->irq);
++		disable_irq(ts->irq);
+ 		mutex_lock(&ts->lock);
+-		disable_irq_wake(client->irq);
++		disable_irq_wake(ts->irq);
+ 
+ 		/* Exit Wakeup Gesture Mode */
+ 		ret = syna_set_dynamic_config(ts, SYNA_DC_IN_WAKEUP_GESTURE_MODE, 0);
+@@ -1011,7 +1014,7 @@ static int syna_resume(struct device *dev)
+ 
+ 		ts->gesture_enabled = false;
+ 		ts->suspended = false;
+-		enable_irq(client->irq);
++		enable_irq(ts->irq);
+ 	} else {
+ 		mutex_lock(&ts->lock);
+ 
+@@ -1028,7 +1031,7 @@ static int syna_resume(struct device *dev)
+ 		}
+ 
+ 		ts->suspended = false;
+-		enable_irq(client->irq);
++		enable_irq(ts->irq);
+ 	}
+ 
+ 	mutex_unlock(&ts->lock);
+@@ -1038,29 +1041,164 @@ static int syna_resume(struct device *dev)
+ 
+ static DEFINE_SIMPLE_DEV_PM_OPS(syna_tcm_pm_ops, syna_suspend, syna_resume);
+ 
+-static const struct i2c_device_id syna_tcm_i2c_id[] = {
+-	{ "synaptics-tcm" },
++#if IS_ENABLED(CONFIG_I2C)
++static int syna_i2c_read(struct syna_tcm *ts, u8 *buf, unsigned int len)
++{
++	return i2c_master_recv(ts->client, buf, len);
++}
++
++static int syna_i2c_write(struct syna_tcm *ts, const u8 *buf, unsigned int len)
++{
++	return i2c_master_send(ts->client, buf, len);
++}
++
++static int syna_i2c_probe(struct i2c_client *client)
++{
++	struct syna_tcm *ts;
++
++	ts = devm_kzalloc(&client->dev, sizeof(*ts), GFP_KERNEL);
++	if (!ts)
++		return -ENOMEM;
++
++	ts->dev = &client->dev;
++	ts->irq = client->irq;
++	ts->client = client;
++	ts->read = syna_i2c_read;
++	ts->write = syna_i2c_write;
++
++	return syna_probe_common(ts);
++}
++
++static const struct of_device_id syna_tcm_i2c_of_match[] = {
++	{ .compatible = "syna,s3908" },
+ 	{ }
+ };
+-MODULE_DEVICE_TABLE(i2c, syna_tcm_i2c_id);
++MODULE_DEVICE_TABLE(of, syna_tcm_i2c_of_match);
+ 
+-static const struct of_device_id syna_tcm_of_match[] = {
+-	{ .compatible = "syna,s3908" },
++static const struct i2c_device_id syna_tcm_i2c_id[] = {
++	{ "synaptics-tcm" },
+ 	{ }
+ };
+-MODULE_DEVICE_TABLE(of, syna_tcm_of_match);
++MODULE_DEVICE_TABLE(i2c, syna_tcm_i2c_id);
+ 
+ static struct i2c_driver syna_tcm_i2c_driver = {
+ 	.driver = {
+ 		.name = "synaptics-tcm-i2c",
+-		.of_match_table = syna_tcm_of_match,
++		.of_match_table = syna_tcm_i2c_of_match,
+ 		.pm = pm_sleep_ptr(&syna_tcm_pm_ops),
+ 	},
+-	.probe = syna_probe,
++	.probe = syna_i2c_probe,
+ 	.id_table = syna_tcm_i2c_id,
+ };
+-module_i2c_driver(syna_tcm_i2c_driver);
++#endif
++
++#if IS_ENABLED(CONFIG_SPI_MASTER)
++/*
++ * Same message format as over I2C: a read returns the next chunk of the
++ * current message (marker, code, ...), so the protocol code above is shared.
++ */
++static int syna_spi_read(struct syna_tcm *ts, u8 *buf, unsigned int len)
++{
++	struct spi_transfer xfer = {
++		.tx_buf = ts->spi_txbuf,
++		.rx_buf = buf,
++		.len = len,
++	};
++	int ret;
++
++	if (len > sizeof(ts->spi_txbuf))
++		return -EINVAL;
++
++	ret = spi_sync_transfer(ts->spi, &xfer, 1);
++	return ret ?: len;
++}
++
++static int syna_spi_write(struct syna_tcm *ts, const u8 *buf, unsigned int len)
++{
++	int ret = spi_write(ts->spi, buf, len);
++
++	return ret ?: len;
++}
++
++static int syna_spi_probe(struct spi_device *spi)
++{
++	struct syna_tcm *ts;
++	int ret;
++
++	spi->bits_per_word = 8;
++	ret = spi_setup(spi);
++	if (ret)
++		return dev_err_probe(&spi->dev, ret, "SPI setup failed\n");
++
++	ts = devm_kzalloc(&spi->dev, sizeof(*ts), GFP_KERNEL);
++	if (!ts)
++		return -ENOMEM;
++
++	ts->dev = &spi->dev;
++	ts->irq = spi->irq;
++	ts->spi = spi;
++	ts->read = syna_spi_read;
++	ts->write = syna_spi_write;
++	memset(ts->spi_txbuf, 0xff, sizeof(ts->spi_txbuf));
++
++	return syna_probe_common(ts);
++}
++
++/* TouchComm controller on SPI, e.g. the S3910 in the Nubia RedMagic 11 Pro */
++static const struct of_device_id syna_tcm_spi_of_match[] = {
++	{ .compatible = "syna,tcm-spi" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, syna_tcm_spi_of_match);
++
++static const struct spi_device_id syna_tcm_spi_id[] = {
++	{ "tcm-spi" },
++	{ }
++};
++MODULE_DEVICE_TABLE(spi, syna_tcm_spi_id);
++
++static struct spi_driver syna_tcm_spi_driver = {
++	.driver = {
++		.name = "synaptics-tcm-spi",
++		.of_match_table = syna_tcm_spi_of_match,
++		.pm = pm_sleep_ptr(&syna_tcm_pm_ops),
++	},
++	.probe = syna_spi_probe,
++	.id_table = syna_tcm_spi_id,
++};
++#endif
++
++static int __init syna_tcm_init(void)
++{
++	int ret = 0;
++
++#if IS_ENABLED(CONFIG_I2C)
++	ret = i2c_add_driver(&syna_tcm_i2c_driver);
++	if (ret)
++		return ret;
++#endif
++#if IS_ENABLED(CONFIG_SPI_MASTER)
++	ret = spi_register_driver(&syna_tcm_spi_driver);
++#if IS_ENABLED(CONFIG_I2C)
++	if (ret)
++		i2c_del_driver(&syna_tcm_i2c_driver);
++#endif
++#endif
++	return ret;
++}
++module_init(syna_tcm_init);
++
++static void __exit syna_tcm_exit(void)
++{
++#if IS_ENABLED(CONFIG_SPI_MASTER)
++	spi_unregister_driver(&syna_tcm_spi_driver);
++#endif
++#if IS_ENABLED(CONFIG_I2C)
++	i2c_del_driver(&syna_tcm_i2c_driver);
++#endif
++}
++module_exit(syna_tcm_exit);
+ 
+-MODULE_DESCRIPTION("Synaptics TouchComm I2C touchscreen driver");
++MODULE_DESCRIPTION("Synaptics TouchComm I2C/SPI touchscreen driver");
+ MODULE_AUTHOR("Vsevolod Nevorotov <sevanevorotov29@gmail.com>");
+ MODULE_LICENSE("GPL");
+-- 
+2.56.0
+
