@@ -153,8 +153,7 @@ Notes:
   config (page `0xd2`); RC range 0 is patched to the VESA value the kernel
   encoder uses, otherwise the picture is corrupted.
 - **UART:** `uart7` is kept as in QRD; no known accessible test points yet.
-- **Disabled for now:** GPU (a failing GPU takes MSM DRM down with it), CDSP,
-  SD controller, flash LED, RGB PWM LED.
+- **Disabled for now:** CDSP, SD controller, flash LED, RGB PWM LED.
 - **GPU:** sending the reference board's CLX current-limiting table makes the
   GMU hang on its first GX power vote, and the limits table can't go without
   CLX. `msm.hfi_skip=3` (a local debug patch) skips both; ACD and IFPC stay
