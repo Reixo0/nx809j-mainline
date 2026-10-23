@@ -1,0 +1,7 @@
+# Kernel tree is its own git repo (linux-next); commit board work there
+/linux/
+/out/
+# Third-party tools and downloads (see README "Setup")
+/tools/
+# Partition dumps contain device-unique data (IMEI/EFS in modemst*, persist, keys)
+/dump/

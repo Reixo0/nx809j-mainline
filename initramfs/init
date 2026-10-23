@@ -1,0 +1,75 @@
+#!/nx809j/busybox sh
+# Bring-up initramfs for the NX809J.
+# - Logs to the framebuffer console (tty0)
+# - Brings up a USB NCM gadget at 172.16.42.1 with a raw shell on port 23 (nc)
+# - Must never exit: init exiting panics the kernel
+
+# No applet links exist yet: call busybox directly until --install made them
+/nx809j/busybox mkdir -p /nx809j/bin
+/nx809j/busybox --install -s /nx809j/bin
+export PATH=/nx809j/bin
+
+mkdir -p /proc /sys /dev /tmp /run
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
+mount -t configfs configfs /sys/kernel/config
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+
+# Everything we print goes to the screen *and* the kernel log (so it ends up
+# in pstore for scripts/get-pstore.sh). A failed redirection on `exec` would
+# end the script and panic the kernel, so check the devices first.
+[ -c /dev/tty0 ] && exec </dev/tty0
+mkfifo /tmp/log.fifo
+( while IFS= read -r line; do
+	[ -c /dev/tty0 ] && echo "$line" >/dev/tty0
+	echo "nx809j-init: $line" >/dev/kmsg
+  done </tmp/log.fifo ) &
+exec >/tmp/log.fifo 2>&1
+echo "=== NX809J mainline initramfs: $(uname -r) ==="
+
+setup_usb() {
+	G=/sys/kernel/config/usb_gadget/g1
+	for i in $(seq 1 30); do
+		UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
+		[ -n "$UDC" ] && break
+		sleep 1
+	done
+	if [ -z "$UDC" ]; then
+		echo "!! no UDC appeared (dwc3/phy probe failed?)"
+		return 1
+	fi
+	mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409 $G/functions/ncm.usb0
+	echo 0x18d1 > $G/idVendor
+	echo 0xd001 > $G/idProduct
+	echo "Nubia" > $G/strings/0x409/manufacturer
+	echo "NX809J mainline" > $G/strings/0x409/product
+	echo "nx809j" > $G/strings/0x409/serialnumber
+	echo "NCM" > $G/configs/c.1/strings/0x409/configuration
+	ln -s $G/functions/ncm.usb0 $G/configs/c.1/
+	echo "$UDC" > $G/UDC
+
+	ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up
+	# Alpine's static busybox has no telnetd/udhcpd (they live in
+	# busybox-extras). nc gives a raw shell instead; the host uses a static
+	# 172.16.42.2/24 (scripts/phone-sh.py, or: nc 172.16.42.1 23).
+	nc -lk -s 172.16.42.1 -p 23 -e /nx809j/bin/sh &
+	echo ">> USB network up on $UDC: shell on 172.16.42.1:23 (nc)"
+}
+
+setup_usb &
+
+# Show the important bits on screen, then keep a shell on the console.
+sleep 3
+dmesg | grep -iE 'error|fail|unable|deferred|timeout' | tail -n 20
+( sleep 15
+  for r in /sys/class/remoteproc/remoteproc*; do
+	[ -e "$r" ] && echo "rproc $(cat $r/name): $(cat $r/state)"
+  done
+  ls /sys/class/power_supply 2>/dev/null | sed 's/^/power_supply: /' ) &
+while true; do
+	setsid sh -c 'exec sh </dev/tty0 >/dev/tty0 2>&1'
+	sleep 1
+done
