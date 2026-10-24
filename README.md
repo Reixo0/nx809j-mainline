@@ -200,7 +200,7 @@ Notes:
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [ ] Display: 90/120 Hz modes
-- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
+- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
 - [ ] Audio, Wi-Fi/BT ("peach" firmware, over PCIe), modem, cameras

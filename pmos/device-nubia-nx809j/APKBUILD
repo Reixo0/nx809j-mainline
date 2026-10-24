@@ -2,15 +2,18 @@
 pkgname=device-nubia-nx809j
 pkgdesc="Nubia RedMagic 11 Pro"
 pkgver=1
-pkgrel=2
+pkgrel=3
 url="https://github.com/Reixo0/nx809j-mainline"
 license="MIT"
 arch="aarch64"
 options="!check !archcheck"
 # Deliberately minimal: no qbootctl, dynpart mappings or firmware partition
 # mounts. Android lives on the same UFS and nothing here may write to it.
+# mesa-vulkan-freedreno: Turnip, Vulkan for the Adreno 840 (the UI only
+# pulls in the OpenGL side of Mesa)
 depends="
 	linux-nubia-nx809j
+	mesa-vulkan-freedreno
 	postmarketos-base
 "
 makedepends="devicepkg-dev"
