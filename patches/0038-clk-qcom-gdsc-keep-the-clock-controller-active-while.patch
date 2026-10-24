@@ -1,7 +1,7 @@
 From aea0adca8ce9eac19b2ef5201bb88b4eff130dd7 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 01:30:48 +0000
-Subject: [PATCH 38/39] clk: qcom: gdsc: keep the clock controller active while
+Subject: [PATCH 38/40] clk: qcom: gdsc: keep the clock controller active while
  a GDSC is on
 
 A GDSC whose parents are the controller's own power domains (pd_list,

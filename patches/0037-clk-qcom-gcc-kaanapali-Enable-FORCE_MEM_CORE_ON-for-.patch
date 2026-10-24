@@ -1,7 +1,7 @@
 From 2288f6f24b6900b97c7a502d959bc9c719d7a977 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 10 Oct 2026 04:19:18 +0300
-Subject: [PATCH 37/39] clk: qcom: gcc-kaanapali: Enable FORCE_MEM_CORE_ON for
+Subject: [PATCH 37/40] clk: qcom: gcc-kaanapali: Enable FORCE_MEM_CORE_ON for
  UFS AXI PHY clock
 
 As on SM8650, SM8750 and Eliza, the UFS AXI PHY clock needs

@@ -1,7 +1,7 @@
 From 519bcec46d92c80a8fd8fae1cec3784304514229 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:30:52 +0200
-Subject: [PATCH 20/39] wifi: ath12k: peach: Use its own REO/TCL register
+Subject: [PATCH 20/40] wifi: ath12k: peach: Use its own REO/TCL register
  offsets
 
 On peach the REO R0 ring configuration registers sit 0x1c above

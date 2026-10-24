@@ -1,7 +1,7 @@
 From 56516a96be32f01ecd6809e27839ed384a6eab07 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Fri, 9 Oct 2026 00:31:55 +0900
-Subject: [PATCH 24/39] Bluetooth: qca: check the device address on every setup
+Subject: [PATCH 24/40] Bluetooth: qca: check the device address on every setup
 
 qca_check_bdaddr() sets HCI_QUIRK_USE_BDADDR_PROPERTY when the controller
 reports the default address from its NVM file. The controller then starts

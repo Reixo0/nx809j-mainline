@@ -1,0 +1,56 @@
+From b457c69d31957407619b3d5ea7bf419f64c0c2c0 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 21:24:40 +0200
+Subject: [PATCH 40/40] arm64: dts: qcom: kaanapali-nubia-nx809j: Keep the RTC
+ offset in SDAM2
+
+The PMIC RTC counter belongs to the secure world and refuses writes, so
+the clock came up at 1970 (the bare counter) on every boot. rtc-pm8xxx
+can add a UTC offset kept in an nvmem cell. Use 4 bytes at SDAM2 0x7c:
+the downstream DT declares SDAM2 cells only at 0x48, 0x50, 0x59,
+0x76-0x7b, 0x9a, 0x9c, 0x9f and 0xa2, the bytes read zero, and mainline
+exposes the first 128 bytes of this SDAM (so the 8-byte cell of the
+OnePlus Pad 4 port does not fit here).
+
+Tested: the offset is stored once the time is synced, the next boot sets
+the system clock to the right time before any network, and an RTC alarm
+of 30 s wakes the phone from s2idle after 32 s.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 18565205c..02add4e1b 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -974,6 +974,25 @@ bt_default: bt-default-state {
+ 	};
+ };
+ 
++/*
++ * The PMIC RTC counter belongs to the secure world (writes are refused), so
++ * rtc-pm8xxx keeps a UTC offset in SDAM2 instead (hwclock -w and the
++ * kernel's 11-minute NTP sync store it). Android's DT declares SDAM2 cells
++ * at 0x48 (restart reason), 0x50, 0x59, 0x76-0x7b (alarm log), 0x9a, 0x9c,
++ * 0x9f and 0xa2; mainline exposes the first 128 bytes. 0x7c-0x7f is free
++ * and was zero: a 4-byte offset fits there.
++ */
++&pmk8850_rtc {
++	nvmem-cells = <&rtc_offset>;
++	nvmem-cell-names = "offset";
++};
++
++&pmk8850_sdam_2 {
++	rtc_offset: rtc-offset@7c {
++		reg = <0x7c 0x4>;
++	};
++};
++
+ &pmih0108_e1_eusb2_repeater {
+ 	vdd18-supply = <&vreg_l15b_1p8>;
+ 	vdd3-supply = <&vreg_l5b_3p1>;
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 From 0e91a9b91c8e2085be52dfd78b7a5c984c77da9b Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 07:20:57 +0000
-Subject: [PATCH 36/39] clk: qcom: gcc-kaanapali: keep the USB GDSCs in
+Subject: [PATCH 36/40] clk: qcom: gcc-kaanapali: keep the USB GDSCs in
  retention
 
 gcc_usb30_prim_gdsc and gcc_usb3_phy_gdsc are PWRSTS_OFF_ON, so genpd

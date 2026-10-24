@@ -192,6 +192,8 @@ Notes:
 ## Bring-up checklist
 
 - [x] Boots, framebuffer console visible (via shim, boot_a)
+- [x] RTC: the PMIC counter is read only from Linux; the UTC offset lives in 4 bytes of SDAM2 (0x7c, patch 0040), stored by the NTP sync / `hwclock -w`, so the clock is right from boot and RTC alarms wake from suspend
+- [x] Suspend: s2idle (`mem_sleep_default=s2idle`), woken by the power key or an RTC alarm; Wi-Fi, Bluetooth and the ADSP resume. PSCI "deep" returns at once on this firmware
 - [x] UFS: all LUNs and partitions enumerate (nothing mounted yet)
 - [x] USB gadget networking, shell via `scripts/phone-sh.py`
 - [x] cpufreq via SCMI (cpucp mailbox built in): 384 MHz-3.63 GHz / 768 MHz-4.40 GHz, plus 4.51 and 4.61 GHz boost steps on the prime cores (enabled at boot by a tmpfiles entry; under sustained load the CPU firmware soon lowers the limit to about 4.26 GHz, at 38 °C)

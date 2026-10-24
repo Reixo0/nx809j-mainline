@@ -1,7 +1,7 @@
 From e574b551c6faf9f118180bdda009e1f552560c6a Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:30:52 +0200
-Subject: [PATCH 19/39] wifi: ath12k: Describe the host DDR range element in
+Subject: [PATCH 19/40] wifi: ath12k: Describe the host DDR range element in
  host capability
 
 The ddr_range array in the host capability request is a QMI_STRUCT

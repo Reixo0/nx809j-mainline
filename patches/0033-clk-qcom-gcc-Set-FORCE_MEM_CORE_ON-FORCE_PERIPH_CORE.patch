@@ -1,7 +1,7 @@
 From 79be3d5f13a0ba53e8dd30744cbdab31bdef0c04 Mon Sep 17 00:00:00 2001
 From: Qiang Yu <qiang.yu@oss.qualcomm.com>
 Date: Tue, 14 Jul 2026 23:23:13 -0700
-Subject: [PATCH 33/39] clk: qcom: gcc: Set
+Subject: [PATCH 33/40] clk: qcom: gcc: Set
  FORCE_MEM_CORE_ON/FORCE_PERIPH_CORE_ON for PCIe pipe clocks
 
 Setting FORCE_MEM_CORE_ON and FORCE_PERIPH_CORE_ON for the PCIe PIPE
