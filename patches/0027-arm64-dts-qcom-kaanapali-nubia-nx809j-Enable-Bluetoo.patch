@@ -1,0 +1,56 @@
+From cab6a70b98330f8f9cf9234da005d881a1d0fa8c Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 20:39:56 +0200
+Subject: [PATCH 27/27] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable
+ Bluetooth
+
+The Bluetooth half of the peach combo is a Brahma controller (product
+0x21, firmware BTFW.BRAHMA.2.0.1) like the WCN7860 on the OnePlus 15
+and OnePlus Pad 4: describe it with qcom,wcn7860-bt on UART18, powered
+through the same PMU as Wi-Fi. hci_qca loads qca/brhbtfw20.mbn and
+qca/brhbtnv20.bin from the phone's vendor files.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 66d6fff44..18565205c 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1110,15 +1110,11 @@ &uart7 {
+ };
+ 
+ &uart18 {
+-	/* Brahma BT needs the multi-subsystem (PERI/TME-L) setup first */
+-	status = "disabled";
++	status = "okay";
+ 
+-	/*
+-	 * Bluetooth half of the peach combo (WCN7880, "Ganges"). It uses the
+-	 * WCN7850 setup, with the Ganges firmware from the vendor partition.
+-	 */
++	/* Bluetooth half of the peach combo: a WCN7860-style Brahma controller */
+ 	bluetooth {
+-		compatible = "qcom,wcn7850-bt";
++		compatible = "qcom,wcn7860-bt";
+ 
+ 		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
+ 		vddaon-supply = <&vreg_pmu_aon_0p59>;
+@@ -1128,11 +1124,11 @@ bluetooth {
+ 		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
+ 		vddrfa1p8-supply = <&vreg_pmu_rfa_1p8>;
+ 
+-		firmware-name = "gngbtnv20", "gngbtfw20.tlv";
+ 		max-speed = <3200000>;
+ 	};
+ };
+ 
++
+ &ufs_mem_hc {
+ 	reset-gpios = <&tlmm 217 GPIO_ACTIVE_LOW>;
+ 
+-- 
+2.56.0
+

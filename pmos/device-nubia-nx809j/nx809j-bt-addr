@@ -1,0 +1,27 @@
+#!/bin/sh
+# Give the Bluetooth controller the phone's own public address. Without one
+# the Qualcomm controller stays "unconfigured" (btmgmt: missing options:
+# public-address). Android keeps it in .bt_nv.bin on the persist partition:
+# NV item 01 00, length 06, then the address with its bytes reversed. Read it
+# with debugfs -c (read only, no mount) and set it through the management
+# interface once hci0 has registered (after its rampatch download).
+set -eu
+part=/dev/disk/by-partlabel/persist
+
+nv=$(debugfs -c -R "cat /.bt_nv.bin" "$part" 2>/dev/null | od -A n -t x1 -v | tr -s ' \n' ' ')
+set -- $nv
+if [ $# -lt 9 ] || [ "$1 $2 $3" != "01 00 06" ]; then
+	echo "unexpected .bt_nv.bin: '$nv'" >&2
+	exit 0
+fi
+addr=$(printf '%s:%s:%s:%s:%s:%s' "$9" "$8" "$7" "$6" "$5" "$4" | tr a-f A-F)
+
+# hci0 appears in sysfs before its setup (rampatch download) is done, and
+# management commands fail with "Invalid Index" until then: retry
+i=0
+until out=$(btmgmt --index 0 public-addr "$addr" 2>&1) && echo "$out" | grep -q complete; do
+	i=$((i + 1))
+	[ $i -le 60 ] || { echo "setting $addr failed: $out" >&2; exit 0; }
+	sleep 1
+done
+echo "hci0 address from persist: $addr"

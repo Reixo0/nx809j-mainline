@@ -1,7 +1,7 @@
 From 073667f1bbee86e44b61373740125b1b01d91ed4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 12:06:08 +0200
-Subject: [PATCH 15/22] dt-bindings: net: wireless: qcom,ath12k: Add the peach
+Subject: [PATCH 15/27] dt-bindings: net: wireless: qcom,ath12k: Add the peach
  PCI ID
 
 Kaanapali phones such as the Nubia RedMagic 11 Pro carry Qualcomm's

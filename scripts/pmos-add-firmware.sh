@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install our phone firmware (GPU, ADSP, CDSP, SoCCP, Wi-Fi; not the modem)
+# Install our phone firmware (GPU, ADSP, CDSP, SoCCP, Wi-Fi, BT; not the modem)
 # into the postmarketOS root image under /lib/firmware, offline, while nothing
 # serves it. The GPU and Wi-Fi drivers load their firmware after switch_root,
 # so it has to be in the rootfs and not only in the kernel's initramfs.
@@ -40,6 +40,11 @@ for f in $FILES; do
 done
 for p in $WIFI_FILES; do
   pairs+=("ath12k/PEACH/hw2.0/${p%%:*}:$WIFI/${p#*:}")
+done
+# Bluetooth (Brahma) rampatch and board NVM files, same names in qca/
+BT=$ROOT/dump/firmware/wifi-bt/bt
+for f in "$BT"/brhbtfw20.mbn "$BT"/brhbtnv20.*; do
+  pairs+=("qca/${f##*/}:$f")
 done
 
 cmds=$(mktemp)

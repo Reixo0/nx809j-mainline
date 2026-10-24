@@ -2,7 +2,7 @@
 pkgname=device-nubia-nx809j
 pkgdesc="Nubia RedMagic 11 Pro"
 pkgver=1
-pkgrel=6
+pkgrel=7
 url="https://github.com/Reixo0/nx809j-mainline"
 license="MIT"
 arch="aarch64"
@@ -10,12 +10,14 @@ options="!check !archcheck"
 # Deliberately minimal: no dynpart mappings or firmware partition mounts.
 # Android lives on the same UFS and nothing here may write to it, except
 # qbootctl marking slot a's boot successful (as Android does every boot).
-# nx809j-wifi-mac reads persist/wifimac.dat with debugfs -c (read only).
+# nx809j-wifi-mac and nx809j-bt-addr read persist/wifimac.dat and
+# persist/.bt_nv.bin with debugfs -c (read only).
 # mesa-vulkan-freedreno: Turnip, Vulkan for the Adreno 840 (the UI only
 # pulls in the OpenGL side of Mesa)
 depends="
 	linux-nubia-nx809j
 	mesa-vulkan-freedreno
+	bluez-btmgmt
 	e2fsprogs-extra
 	postmarketos-base
 	qbootctl
@@ -30,6 +32,8 @@ source="
 	nx809j-mark-boot-successful.service
 	nx809j-wifi-mac
 	nx809j-wifi-mac.service
+	nx809j-bt-addr
+	nx809j-bt-addr.service
 "
 
 build() {
@@ -44,8 +48,9 @@ package() {
 	install -Dm644 "$srcdir"/nx809j-usb-uplink.service \
 		"$srcdir"/nx809j-mark-boot-successful.service \
 		"$srcdir"/nx809j-wifi-mac.service \
+		"$srcdir"/nx809j-bt-addr.service \
 		-t "$pkgdir"/usr/lib/systemd/system/
-	install -Dm755 "$srcdir"/nx809j-wifi-mac \
+	install -Dm755 "$srcdir"/nx809j-wifi-mac "$srcdir"/nx809j-bt-addr \
 		-t "$pkgdir"/usr/libexec/
 	install -Dm644 "$srcdir"/80-nx809j.preset \
 		-t "$pkgdir"/usr/lib/systemd/system-preset/
@@ -56,10 +61,12 @@ package() {
 sha512sums="
 e19d5042d4e4013d4298804c9b0cfccc748c32068520030ea3962f781866a041d2a93d7cbe13772ac79399df392800ba327d7641a35819cea382d45de66c2594  deviceinfo
 8905211b070b16edad3a427d0f609d6df45b77ca72ff03ad944e7d2ebe02c6754603b7a385234e569bde3f00055e464c52c662a8f6e9de551c8aa79c0441b462  50-nx809j-usb0-unmanaged.conf
-49e2eb5ad978ca011c6202fd3df8dec6ec4247c653fe46c635a11077a15bc0261875911a988700a80131d9b7ea068fec646669441c0386d63a0b80a38bfe56d3  80-nx809j.preset
+fea6c3ada2bfbd89ffa17a3f8262cfeef36394a7e6e6d312d2e2062b407ff397367f1f4a9507ee19779f5a7213f60d05f2182684d050c34cf59357009cff7727  80-nx809j.preset
 0e5d31527e0127d0c06824fc2994720f73d55e3ddd16edea08414165879cbf2ffa2d082d2498fe2465c1c220f2a4007945247e30961f8cafdc96a9d58a178787  nx809j-usb-uplink.service
 7987d4e1aa4ad25bfd17685523e933ddbee149c19e0dc3cf7332a2a2dd867cd077c9601ca73ee593ef90b72de9d0b36824e2cf11f8eca44878ae064b4e22c4c5  nx809j-cpufreq-boost.conf
 a4fb45bad90ec334ad4138d1b4539e1b192dcf47771c36ed9d7ff44384635c53615467c69921b0f81b619a80d66cbbaae499bbcece74b3feb6691c3036e113a8  nx809j-mark-boot-successful.service
 a2f9085015491d3fb59492d037703ab0adc39e1779737e9a82cb997b96a2e51db70e8fbcefd5ea0592e27845c5ecdb1ef6faa4ff7aa2995e570e12648dd715d3  nx809j-wifi-mac
 1f210de22154094b414f8cae1cc1d0b9f6bae4edf87da1213c1e804503b2e2533dbe877a872df4176f9dece4b1a611f70d4cc8cf0f4fef532e3d654cf00b1362  nx809j-wifi-mac.service
+1cf23236330de06f6d477427f45a4a428d4e07a89a8f26db001f8f67df45b48a31812ea87e2067422cd55529ad487f30c88d8002178f214a58bc64f3be2f3f7d  nx809j-bt-addr
+8e762d4d62aff19a5af445238649b25d86f071b931bfc2f7e8028ba7acdac08e9a8cd5ee55fc048c4178046fb662fffd52643d3b522bab9b04bb3b996e5a4f04  nx809j-bt-addr.service
 "

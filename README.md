@@ -206,8 +206,15 @@ Notes:
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
 - [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0018-0022): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
-- [ ] Bluetooth: the Brahma half (product 0x21, UART18) answers the version query but needs the multi-subsystem PERI/TME-L setup Android's HAL does first (like QCC2072); DTS node present but disabled
+- [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0023-0027, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
 - [ ] Audio, modem, cameras
+
+## Credits
+
+- Bluetooth (patches 0023-0026): WCN7860 support by Victor Fuentes from the OnePlus 15
+  "infiniti" mainline series, and fixes by Joonhoe Kim and mzak, as carried in
+  [iceland-linux](https://github.com/mzakamin-hub/iceland-linux) (OnePlus Pad 4 mainline,
+  same SoC). Applied unchanged with their authorship.
 
 ## License
 

@@ -10,6 +10,9 @@
 #   regdb.bin      <- peach/regdb.bin
 #   qdss_trace_config.cfg <- peach/qdss_trace_config_v2.cfg (fw waits for it)
 #
+# and the Bluetooth (Brahma, WCN7860-style) rampatch and NVM files into qca/:
+#   brhbtfw20.mbn, brhbtnv20.*   (from Android's /vendor/bt_firmware)
+#
 # scripts/pmos-add-firmware.sh puts the same files into a rootfs image offline.
 #
 # Usage: scripts/install-wifi-firmware.sh [user@host]   (default reixo@172.16.42.1)
@@ -37,3 +40,11 @@ tar -C "$STAGE" --owner=0 --group=0 -czf - . | ssh "$HOST" "
   sudo sh -c 'chmod 644 $DIR/*'
   ls -l $DIR"
 
+BT=$ROOT/dump/firmware/wifi-bt/bt
+tar -C "$BT" --owner=0 --group=0 -czf - brhbtfw20.mbn $(cd "$BT" && ls brhbtnv20.*) | ssh "$HOST" "
+  set -e
+  sudo mkdir -p /usr/lib/firmware/qca
+  sudo rm -f /usr/lib/firmware/qca/gngbt*
+  sudo tar -xzf - -C /usr/lib/firmware/qca --no-same-permissions
+  sudo sh -c 'chmod 644 /usr/lib/firmware/qca/brhbt*'
+  ls /usr/lib/firmware/qca | grep brhbt | tr '\\n' ' '; echo"

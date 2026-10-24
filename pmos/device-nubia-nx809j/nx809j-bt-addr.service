@@ -1,0 +1,14 @@
+# Set the Bluetooth public address from Android's persist partition (read
+# only), so the controller is configured and bluetoothd can use it.
+[Unit]
+Description=Bluetooth address from the persist partition
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/nx809j-bt-addr
+
+[Install]
+WantedBy=multi-user.target
