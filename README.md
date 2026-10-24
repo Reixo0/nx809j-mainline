@@ -30,6 +30,7 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `scripts/super-dm-cmdline.py` | Read `super`'s LP metadata, print `dm-mod.create=` for `linux_root` |
 | `scripts/host-usb-nat.sh` | One-time (sudo): ufw NAT so the phone gets internet through the PC |
 | `scripts/install-modules.sh` | Install out/modules into the running phone's rootfs over SSH (needed for Wi-Fi/BT drivers) |
+| `scripts/install-wifi-firmware.sh` | Install the phone's Wi-Fi (and Bluetooth) firmware from dump/ into the running rootfs under ath12k's names |
 | `scripts/phone-sh.py` | Run a command in the busybox initramfs shell (172.16.42.1:23) |
 | `scripts/get-pstore.sh` | After a hang, from Android: save the previous kernel's ramoops log and tell if it was mainline |
 | `dump/` | Device dumps — **private** (IMEI/EFS in `modemst*`, `persist`, keys). Not in git. |
@@ -204,7 +205,8 @@ Notes:
 - [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
-- [~] Wi-Fi/BT: Qualcomm "peach" combo (PCI 17cb:110e) on PCIe0, powered through the WCN7850 PMU description; the link comes up (Gen3 x2) and the chip enumerates. Not yet supported by ath12k or hci_qca; firmware is not in linux-firmware (taken from Android: /vendor/firmware_mnt/image/peach and /vendor/bt_firmware)
+- [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patch 0018): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream (patch 0019). Scans 2.4/5 GHz through NetworkManager. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
+- [ ] Bluetooth: the Brahma half (product 0x21, UART18) answers the version query but needs the multi-subsystem PERI/TME-L setup Android's HAL does first (like QCC2072); DTS node present but disabled
 - [ ] Audio, modem, cameras
 
 ## License

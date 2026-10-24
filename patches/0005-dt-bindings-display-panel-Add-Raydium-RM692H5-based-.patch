@@ -1,7 +1,7 @@
 From 2b604d27535b12a339cd5325409e85cdb3ffdc94 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 23:13:58 +0200
-Subject: [PATCH 05/17] dt-bindings: display: panel: Add Raydium RM692H5 based
+Subject: [PATCH 05/19] dt-bindings: display: panel: Add Raydium RM692H5 based
  panels
 
 Document the Raydium RM692H5 AMOLED DSI panel IC, as used for the 6.8"

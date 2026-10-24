@@ -1,0 +1,131 @@
+From 256e6b29a3d3121870d0f30ce6097039f303c40e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 14:01:18 +0200
+Subject: [PATCH 19/19] arm64: dts: qcom: kaanapali-nubia-nx809j: Wi-Fi/BT rail
+ voltages and UART18
+
+Nothing sets the voltage of the Wi-Fi/BT chip's PMIC rails, so their
+floors are what gets voted. Raise them to the values downstream cnss2
+votes (S1J/S2J 0.892 V, S7F 1.328 V, S8F 1.876 V) and keep the antenna
+sharing LDO (L3K) on. With the MTP's floors the RF rails sat at 1.224 V
+and 1.8 V.
+
+Describe the Bluetooth half on UART18 but keep it disabled: it is a
+Brahma multi-subsystem controller that needs a PERI/TME-L setup before
+the usual rampatch download, which hci_qca does not do yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 47 +++++++++++++++++--
+ 1 file changed, 42 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 6cae40446..66d6fff44 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -33,6 +33,7 @@ / {
+ 
+ 	aliases {
+ 		serial0 = &uart7;
++		serial1 = &uart18;
+ 	};
+ 
+ 	chosen {
+@@ -491,16 +492,21 @@ vreg_s6f_0p5: smps6 {
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
++		/*
++		 * S7F/S8F feed the Wi-Fi/BT chip's RF (and PCIe) rails. As for
++		 * S1J/S2J, nothing sets their voltage: use downstream cnss2's
++		 * vdd-wlan-rfa2/rfa1 floors, 1.328 V and 1.876 V.
++		 */
+ 		vreg_s7f_1p2: smps7 {
+ 			regulator-name = "vreg_s7f_1p2";
+-			regulator-min-microvolt = <1224000>;
++			regulator-min-microvolt = <1328000>;
+ 			regulator-max-microvolt = <1372000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+ 		vreg_s8f_1p8: smps8 {
+ 			regulator-name = "vreg_s8f_1p8";
+-			regulator-min-microvolt = <1800000>;
++			regulator-min-microvolt = <1876000>;
+ 			regulator-max-microvolt = <2000000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+@@ -641,17 +647,22 @@ regulators-5 {
+ 		compatible = "qcom,pmh0104-rpmh-regulators";
+ 		qcom,pmic-id = "J_E1";
+ 
++		/*
++		 * S1J/S2J are the Wi-Fi/BT chip's CX and digital rails. Nothing
++		 * sets their voltage, so the floor is what gets voted: keep it at
++		 * downstream cnss2's 0.892 V, firmware crashes when started lower.
++		 */
+ 		vreg_s1j_0p8: smps1 {
+ 			regulator-name = "vreg_s1j_0p8";
+-			regulator-min-microvolt = <400000>;
++			regulator-min-microvolt = <892000>;
+ 			regulator-max-microvolt = <1000000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+ 		vreg_s2j_0p8: smps2 {
+ 			regulator-name = "vreg_s2j_0p8";
+-			regulator-min-microvolt = <500000>;
+-			regulator-max-microvolt = <1100000>;
++			regulator-min-microvolt = <892000>;
++			regulator-max-microvolt = <1000000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+@@ -694,11 +705,13 @@ vreg_l2k_0p7: ldo2 {
+ 						   RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
++		/* Wi-Fi/BT antenna sharing (downstream vdd-wlan-ant-share) */
+ 		vreg_l3k_1p2: ldo3 {
+ 			regulator-name = "vreg_l3k_1p2";
+ 			regulator-min-microvolt = <1200000>;
+ 			regulator-max-microvolt = <1200000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
+ 			regulator-allow-set-load;
+ 			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+ 						   RPMH_REGULATOR_MODE_HPM>;
+@@ -1096,6 +1109,30 @@ &uart7 {
+ 	status = "okay";
+ };
+ 
++&uart18 {
++	/* Brahma BT needs the multi-subsystem (PERI/TME-L) setup first */
++	status = "disabled";
++
++	/*
++	 * Bluetooth half of the peach combo (WCN7880, "Ganges"). It uses the
++	 * WCN7850 setup, with the Ganges firmware from the vendor partition.
++	 */
++	bluetooth {
++		compatible = "qcom,wcn7850-bt";
++
++		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
++		vddaon-supply = <&vreg_pmu_aon_0p59>;
++		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
++		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
++		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
++		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
++		vddrfa1p8-supply = <&vreg_pmu_rfa_1p8>;
++
++		firmware-name = "gngbtnv20", "gngbtfw20.tlv";
++		max-speed = <3200000>;
++	};
++};
++
+ &ufs_mem_hc {
+ 	reset-gpios = <&tlmm 217 GPIO_ACTIVE_LOW>;
+ 
+-- 
+2.56.0
+

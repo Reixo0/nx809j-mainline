@@ -1,7 +1,7 @@
 From 70ae8754d58de9e004165db185edf4a199d4ab63 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 12:06:08 +0200
-Subject: [PATCH 17/17] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable PCIe0
+Subject: [PATCH 17/19] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable PCIe0
  and the Wi-Fi chip
 
 The Wi-Fi/BT combo (peach, 17cb:110e) sits on PCIe0 and is wired like

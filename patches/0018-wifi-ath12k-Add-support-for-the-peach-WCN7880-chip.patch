@@ -1,0 +1,677 @@
+From 7b9ea3550cb00ed3beb889c6f47da7540cca3dfb Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 14:01:18 +0200
+Subject: [PATCH 18/19] wifi: ath12k: Add support for the peach (WCN7880) chip
+
+Kaanapali phones such as the Nubia RedMagic 11 Pro use Qualcomm's
+"peach" Wi-Fi 7 chip (PCI 17cb:110e, firmware variant WCN7880, family
+"Ganges"). The downstream host driver treats it like WCN7850 ("kiwi")
+for its copy engines, target definitions and shadow registers, so it is
+added as a WCN7850 variant with these differences, all taken from the
+downstream cnss2 driver:
+
+- The register window control is at 0x3278 (as on QCC2072); with
+  WCN7850's 0x310c every windowed access reads 0xffffffff.
+- aux_ucode is downloaded, and the host capability feature list carries
+  WLAN_EN_SUPPORT and AUX_UC_SUPPORT but not QDSS_CFG_MISS. Without a
+  QDSS trace configuration to wait for, the firmware completes its init
+  right after the M3 info, rejects the aux_ucode (QMI error 90) and
+  asserts about 160 ms later. Add the QDSS trace config download (QMI
+  0x44, qdss_trace_config.cfg), used when QDSS_CFG_MISS is not set.
+- Cold boot calibration: run the firmware in calibration mode (7) first,
+  then power cycle it into mission mode with cal_done set and CALDB
+  kept, as downstream does (qcom,wlan-cbc-enabled). Powering down after
+  a calibration-only boot needs ath12k_pci_power_down() to also run when
+  only MHI is up.
+
+Firmware files (from the phone's vendor partitions) in
+ath12k/PEACH/hw2.0: amss.bin (amss20.bin), m3.bin (phy_ucode20.elf),
+aux_ucode.bin (aux_ucode20.elf), board.bin (bdwlan.elf), regdb.bin and
+qdss_trace_config.cfg (qdss_trace_config_v2.cfg).
+
+Tested: calibration takes 8.3 s as on Android, then wlan0 scans 2.4 and
+5 GHz networks. Connecting has not been tested yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/core.c      |  16 ++
+ drivers/net/wireless/ath/ath12k/core.h      |   2 +
+ drivers/net/wireless/ath/ath12k/hw.h        |   2 +
+ drivers/net/wireless/ath/ath12k/pci.c       |   4 +-
+ drivers/net/wireless/ath/ath12k/qmi.c       | 242 ++++++++++++++++++++
+ drivers/net/wireless/ath/ath12k/qmi.h       |  30 +++
+ drivers/net/wireless/ath/ath12k/wifi7/hal.c |   7 +
+ drivers/net/wireless/ath/ath12k/wifi7/hw.c  | 103 +++++++++
+ drivers/net/wireless/ath/ath12k/wifi7/pci.c |  17 ++
+ 9 files changed, 422 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
+index 25987bc58..567a489fb 100644
+--- a/drivers/net/wireless/ath/ath12k/core.c
++++ b/drivers/net/wireless/ath/ath12k/core.c
+@@ -1713,6 +1713,21 @@ static void ath12k_core_restart(struct work_struct *work)
+ 	complete(&ab->restart_completed);
+ }
+ 
++/* Cold boot calibration is done: power cycle so the firmware boots again,
++ * this time into mission mode with the calibration data kept in CALDB.
++ */
++static void ath12k_core_cal_restart(struct work_struct *work)
++{
++	struct ath12k_base *ab = container_of(work, struct ath12k_base,
++					      cal_restart_work);
++	int ret;
++
++	ath12k_hif_power_down(ab, false);
++	ret = ath12k_hif_power_up(ab);
++	if (ret)
++		ath12k_err(ab, "failed to power up after calibration: %d\n", ret);
++}
++
+ static void ath12k_core_reset(struct work_struct *work)
+ {
+ 	struct ath12k_base *ab = container_of(work, struct ath12k_base, reset_work);
+@@ -2329,6 +2344,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
+ 	INIT_WORK(&ab->reset_work, ath12k_core_reset);
+ 	INIT_WORK(&ab->rfkill_work, ath12k_rfkill_work);
+ 	INIT_WORK(&ab->dump_work, ath12k_coredump_upload);
++	INIT_WORK(&ab->cal_restart_work, ath12k_core_cal_restart);
+ 	INIT_WORK(&ab->update_11d_work, ath12k_update_11d);
+ 
+ 	timer_setup(&ab->rx_replenish_retry, ath12k_ce_rx_replenish_retry, 0);
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 99d71dab7..a40bd95e0 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -158,6 +158,7 @@ enum ath12k_hw_rev {
+ 	ATH12K_HW_IPQ5332_HW10,
+ 	ATH12K_HW_QCC2072_HW10,
+ 	ATH12K_HW_IPQ5424_HW10,
++	ATH12K_HW_PEACH_HW20,
+ };
+ 
+ #define ATH12K_IRQ_NUM_MAX 57
+@@ -957,6 +958,7 @@ struct ath12k_base {
+ 	struct ath12k_dump_file_data *dump_data;
+ 	size_t ath12k_coredump_len;
+ 	struct work_struct dump_work;
++	struct work_struct cal_restart_work;
+ 
+ 	struct ath12k_htc htc;
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/hw.h b/drivers/net/wireless/ath/ath12k/hw.h
+index 52558dd12..0468dfb06 100644
+--- a/drivers/net/wireless/ath/ath12k/hw.h
++++ b/drivers/net/wireless/ath/ath12k/hw.h
+@@ -195,6 +195,8 @@ struct ath12k_hw_params {
+ 	bool reoq_lut_support:1;
+ 	bool supports_shadow_regs:1;
+ 	bool supports_aspm:1;
++	/* run firmware once in calibration mode, then restart it */
++	bool cold_boot_calib:1;
+ 	bool current_cc_support:1;
+ 	bool supports_cong_ctrl_max_msdus:1;
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index 12bbb7557..e022b6360 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1480,7 +1480,9 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
+ {
+ 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+ 
+-	if (!test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags))
++	/* MHI is also up after a calibration-only boot, before hif start */
++	if (!test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags) &&
++	    !test_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state))
+ 		return;
+ 
+ 	/* restore aspm in case firmware bootup fails */
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
+index 817bd8206..4c67d86ee 100644
+--- a/drivers/net/wireless/ath/ath12k/qmi.c
++++ b/drivers/net/wireless/ath/ath12k/qmi.c
+@@ -2058,6 +2058,122 @@ static const struct qmi_elem_info qmi_wlanfw_fw_ready_ind_msg_v01_ei[] = {
+ 	},
+ };
+ 
++static const struct qmi_elem_info qmi_wlanfw_qdss_trace_config_download_req_msg_v01_ei[] = {
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x10,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   total_size_valid),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_4_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u32),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x10,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   total_size),
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x11,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   seg_id_valid),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_4_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u32),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x11,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   seg_id),
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x12,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   data_valid),
++	},
++	{
++		.data_type	= QMI_DATA_LEN,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u16),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x12,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   data_len),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_1_BYTE,
++		.elem_len	= QMI_WLANFW_MAX_DATA_SIZE_V01,
++		.elem_size	= sizeof(u8),
++		.array_type	= VAR_LEN_ARRAY,
++		.tlv_type	= 0x12,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   data),
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x13,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   end_valid),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_1_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x13,
++		.offset		= offsetof(struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01,
++					   end),
++	},
++	{
++		.data_type	= QMI_EOTI,
++		.array_type	= NO_ARRAY,
++		.tlv_type	= QMI_COMMON_TLV_TYPE,
++	},
++};
++
++static const struct qmi_elem_info qmi_wlanfw_qdss_trace_config_download_resp_msg_v01_ei[] = {
++	{
++		.data_type	= QMI_STRUCT,
++		.elem_len	= 1,
++		.elem_size	= sizeof(struct qmi_response_type_v01),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x02,
++		.offset		=
++			offsetof(struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01,
++				 resp),
++		.ei_array	= qmi_response_type_v01_ei,
++	},
++	{
++		.data_type	= QMI_EOTI,
++		.array_type	= NO_ARRAY,
++		.tlv_type	= QMI_COMMON_TLV_TYPE,
++	},
++};
++
++static const struct qmi_elem_info qmi_wlanfw_cold_boot_cal_done_ind_msg_v01_ei[] = {
++	{
++		.data_type	= QMI_EOTI,
++		.array_type	= NO_ARRAY,
++		.tlv_type	= QMI_COMMON_TLV_TYPE,
++	},
++};
++
+ static const struct qmi_elem_info qmi_wlanfw_wlan_ini_req_msg_v01_ei[] = {
+ 	{
+ 		.data_type	= QMI_OPT_FLAG,
+@@ -3482,6 +3598,86 @@ int ath12k_qmi_wlanfw_aux_uc_info_send(struct ath12k_base *ab)
+ 	return ret;
+ }
+ 
++/* Firmware that is not told CNSS_QDSS_CFG_MISS waits for this file and only
++ * then completes its init; it is a plain text trace configuration.
++ */
++static int ath12k_qmi_qdss_trace_config_send(struct ath12k_base *ab)
++{
++	struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01 *req;
++	struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01 resp;
++	const struct firmware *fw;
++	const u8 *data;
++	u32 remaining;
++	struct qmi_txn txn;
++	int ret = 0;
++
++	fw = ath12k_core_firmware_request(ab, ATH12K_QDSS_TRACE_CONFIG_FILE);
++	if (IS_ERR(fw)) {
++		ath12k_warn(ab, "qmi failed to load %s: %ld\n",
++			    ATH12K_QDSS_TRACE_CONFIG_FILE, PTR_ERR(fw));
++		return PTR_ERR(fw);
++	}
++
++	req = kzalloc(sizeof(*req), GFP_KERNEL);
++	if (!req) {
++		ret = -ENOMEM;
++		goto out_fw;
++	}
++
++	data = fw->data;
++	remaining = fw->size;
++	while (remaining) {
++		req->total_size_valid = 1;
++		req->total_size = fw->size;
++		req->seg_id_valid = 1;
++		req->data_valid = 1;
++		req->end_valid = 1;
++		req->data_len = min_t(u32, remaining, QMI_WLANFW_MAX_DATA_SIZE_V01);
++		req->end = req->data_len == remaining;
++		memcpy(req->data, data, req->data_len);
++
++		memset(&resp, 0, sizeof(resp));
++		ret = qmi_txn_init(&ab->qmi.handle, &txn,
++				   qmi_wlanfw_qdss_trace_config_download_resp_msg_v01_ei,
++				   &resp);
++		if (ret < 0)
++			goto out;
++
++		ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
++				       QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_V01,
++				       QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_MSG_V01_MAX_LEN,
++				       qmi_wlanfw_qdss_trace_config_download_req_msg_v01_ei,
++				       req);
++		if (ret < 0) {
++			qmi_txn_cancel(&txn);
++			goto out;
++		}
++
++		ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
++		if (ret < 0)
++			goto out;
++
++		if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
++			ath12k_warn(ab, "qmi QDSS config download failed, result: %u, err: %u\n",
++				    resp.resp.result, resp.resp.error);
++			ret = -EINVAL;
++			goto out;
++		}
++
++		data += req->data_len;
++		remaining -= req->data_len;
++		req->seg_id++;
++	}
++
++	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi QDSS config downloaded (%zu bytes)\n",
++		   fw->size);
++out:
++	kfree(req);
++out_fw:
++	release_firmware(fw);
++	return ret;
++}
++
+ static int ath12k_qmi_wlanfw_mode_send(struct ath12k_base *ab,
+ 				       enum ath12k_qmi_firmware_mode mode)
+ {
+@@ -3887,6 +4083,12 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
+ 		}
+ 	}
+ 
++	if (!(hw_params->qmi_cnss_feature_bitmap & BIT(CNSS_QDSS_CFG_MISS_V01))) {
++		ret = ath12k_qmi_qdss_trace_config_send(ab);
++		if (ret < 0)
++			return ret;
++	}
++
+ 	return ret;
+ }
+ 
+@@ -3959,6 +4161,18 @@ static void ath12k_qmi_msg_fw_ready_cb(struct qmi_handle *qmi_hdl,
+ 	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_FW_READY, NULL);
+ }
+ 
++static void ath12k_qmi_msg_cold_boot_cal_done_cb(struct qmi_handle *qmi_hdl,
++						 struct sockaddr_qrtr *sq,
++						 struct qmi_txn *txn,
++						 const void *decoded)
++{
++	struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
++	struct ath12k_base *ab = qmi->ab;
++
++	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi cold boot calibration done\n");
++	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE, NULL);
++}
++
+ static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
+ 	{
+ 		.type = QMI_INDICATION,
+@@ -3981,6 +4195,14 @@ static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
+ 		.decoded_size = sizeof(struct qmi_wlanfw_fw_ready_ind_msg_v01),
+ 		.fn = ath12k_qmi_msg_fw_ready_cb,
+ 	},
++	{
++		.type = QMI_INDICATION,
++		.msg_id = QMI_WLFW_COLD_BOOT_CAL_DONE_IND_V01,
++		.ei = qmi_wlanfw_cold_boot_cal_done_ind_msg_v01_ei,
++		.decoded_size =
++			sizeof(struct qmi_wlanfw_cold_boot_cal_done_ind_msg_v01),
++		.fn = ath12k_qmi_msg_cold_boot_cal_done_cb,
++	},
+ 
+ 	/* end of list */
+ 	{},
+@@ -4091,6 +4313,18 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
+ 
+ 			clear_bit(ATH12K_FLAG_CRASH_FLUSH,
+ 				  &ab->dev_flags);
++
++			if (ab->hw_params->cold_boot_calib && !ab->qmi.cal_done) {
++				enum ath12k_qmi_firmware_mode mode_cal =
++					ATH12K_QMI_FIRMWARE_MODE_COLD_BOOT;
++
++				ath12k_info(ab, "starting cold boot calibration\n");
++				ret = ath12k_qmi_wlanfw_mode_send(ab, mode_cal);
++				if (ret < 0)
++					set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
++				break;
++			}
++
+ 			ret = ath12k_core_qmi_firmware_ready(ab);
+ 			if (!ret)
+ 				set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
+@@ -4102,6 +4336,14 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
+ 			if (ret < 0)
+ 				set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
+ 			break;
++		case ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE:
++			if (ab->qmi.cal_done)
++				break;
++			ab->qmi.cal_done = 1;
++			ath12k_info(ab, "cold boot calibration done, restarting firmware\n");
++			ath12k_qmi_wlanfw_mode_send(ab, ATH12K_QMI_FIRMWARE_MODE_OFF);
++			queue_work(ab->workqueue, &ab->cal_restart_work);
++			break;
+ 		default:
+ 			ath12k_warn(ab, "invalid event type: %d\n", event->type);
+ 			break;
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.h b/drivers/net/wireless/ath/ath12k/qmi.h
+index 1b1c88906..5d3823500 100644
+--- a/drivers/net/wireless/ath/ath12k/qmi.h
++++ b/drivers/net/wireless/ath/ath12k/qmi.h
+@@ -30,6 +30,7 @@
+ #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
+ #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
+ #define QMI_WLFW_FW_READY_IND_V01		0x0038
++#define QMI_WLFW_COLD_BOOT_CAL_DONE_IND_V01	0x003E
+ 
+ #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
+ 
+@@ -65,6 +66,7 @@ enum ath12k_qmi_event_type {
+ 	ATH12K_QMI_EVENT_POWER_UP,
+ 	ATH12K_QMI_EVENT_POWER_DOWN,
+ 	ATH12K_QMI_EVENT_HOST_CAP,
++	ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE,
+ 	ATH12K_QMI_EVENT_MAX,
+ };
+ 
+@@ -200,6 +202,7 @@ struct wlfw_host_mlo_chip_info_s_v01 {
+ 
+ enum ath12k_qmi_cnss_feature {
+ 	CNSS_FEATURE_MIN_ENUM_VAL_V01 = INT_MIN,
++	CNSS_WLAN_EN_SUPPORT_V01 = 2,
+ 	CNSS_QDSS_CFG_MISS_V01 = 3,
+ 	CNSS_PCIE_PERST_NO_PULL_V01 = 4,
+ 	CNSS_AUX_UC_SUPPORT_V01 = 6,
+@@ -378,6 +381,10 @@ struct qmi_wlanfw_fw_ready_ind_msg_v01 {
+ 	char placeholder;
+ };
+ 
++struct qmi_wlanfw_cold_boot_cal_done_ind_msg_v01 {
++	char placeholder;
++};
++
+ #define QMI_WLANFW_CAP_REQ_MSG_V01_MAX_LEN	0
+ #define QMI_WLANFW_CAP_REQ_V01			0x0024
+ 
+@@ -533,6 +540,26 @@ struct qmi_wlanfw_m3_info_resp_msg_v01 {
+ #define QMI_WLANFW_AUX_UC_INFO_REQ_MSG_V01_MAX_MSG_LEN	18
+ #define QMI_WLANFW_AUX_UC_INFO_REQ_V01	0x005A
+ 
++#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_V01		0x0044
++#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_MSG_V01_MAX_LEN	6167
++#define ATH12K_QDSS_TRACE_CONFIG_FILE		"qdss_trace_config.cfg"
++
++struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01 {
++	u8 total_size_valid;
++	u32 total_size;
++	u8 seg_id_valid;
++	u32 seg_id;
++	u8 data_valid;
++	u32 data_len;
++	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
++	u8 end_valid;
++	u8 end;
++};
++
++struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01 {
++	struct qmi_response_type_v01 resp;
++};
++
+ struct qmi_wlanfw_aux_uc_info_req_msg_v01 {
+ 	u64 addr;
+ 	u32 size;
+@@ -614,6 +641,9 @@ enum ath12k_qmi_firmware_mode {
+ 
+ 	/* firmware offline; values 2-3 reserved by firmware ABI */
+ 	ATH12K_QMI_FIRMWARE_MODE_OFF = 4,
++
++	/* cold boot calibration; values 5-6 reserved by firmware ABI */
++	ATH12K_QMI_FIRMWARE_MODE_COLD_BOOT = 7,
+ };
+ 
+ static inline void ath12k_qmi_set_event_block(struct ath12k_qmi *qmi, bool block)
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal.c b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
+index a0a1902fb..976d56706 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/hal.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
+@@ -57,6 +57,13 @@ static const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
+ 		.hal_params = &ath12k_hw_hal_params_ipq5332,
+ 		.hw_regs = &ipq5424_regs,
+ 	},
++	[ATH12K_HW_PEACH_HW20] = {
++		.hal_ops = &hal_wcn7850_ops,
++		.hal_desc_sz = sizeof(struct hal_rx_desc_wcn7850),
++		.tcl_to_wbm_rbm_map = ath12k_hal_tcl_to_wbm_rbm_map_wcn7850,
++		.hal_params = &ath12k_hw_hal_params_wcn7850,
++		.hw_regs = &wcn7850_regs,
++	},
+ };
+ 
+ int ath12k_wifi7_hal_init(struct ath12k_base *ab)
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hw.c b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
+index b1c17cc19..43e8a8396 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/hw.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
+@@ -909,6 +909,109 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
+ 		.host_alloc_ml_id = true,
+ 		.advertise_iface_mac_pool = false,
+ 	},
++	/*
++	 * Qualcomm "peach" (Kaanapali phones). WCN7850 plus the aux_ucode
++	 * download and cold boot calibration, as Android's cnss2 does.
++	 */
++	{
++		.name = "peach hw2.0",
++		.hw_rev = ATH12K_HW_PEACH_HW20,
++
++		.fw = {
++			.dir = "PEACH/hw2.0",
++			.board_size = 256 * 1024,
++			.cal_offset = 256 * 1024,
++			.m3_loader = ath12k_m3_fw_loader_driver,
++			.download_aux_ucode = true,
++		},
++
++		.max_radios = 1,
++		.single_pdev_only = true,
++		.qmi_service_ins_id = ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_WCN7850,
++		.qmi_max_chunk_size = SZ_512K,
++		.internal_sleep_clock = true,
++
++		.hw_ops = &wcn7850_ops,
++		.ring_mask = &ath12k_wifi7_hw_ring_mask_wcn7850,
++
++		.host_ce_config = ath12k_wifi7_host_ce_config_wcn7850,
++		.ce_count = 9,
++		.target_ce_config = ath12k_wifi7_target_ce_config_wlan_wcn7850,
++		.target_ce_count = 9,
++		.svc_to_ce_map =
++			ath12k_wifi7_target_service_to_ce_map_wlan_wcn7850,
++		.svc_to_ce_map_len = 14,
++
++		.rxdma1_enable = false,
++		.num_rxdma_per_pdev = 2,
++		.num_rxdma_dst_ring = 1,
++		.rx_mac_buf_ring = true,
++		.vdev_start_delay = true,
++
++		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
++				   BIT(NL80211_IFTYPE_AP) |
++				   BIT(NL80211_IFTYPE_P2P_DEVICE) |
++				   BIT(NL80211_IFTYPE_P2P_CLIENT) |
++				   BIT(NL80211_IFTYPE_P2P_GO),
++		.supports_monitor = true,
++		.supports_cong_ctrl_max_msdus = false,
++
++		.idle_ps = true,
++		.download_calib = false,
++		.supports_suspend = true,
++		.tcl_ring_retry = false,
++		.reoq_lut_support = false,
++		.supports_shadow_regs = true,
++
++		.num_tcl_banks = 7,
++		.max_tx_ring = 3,
++
++		.mhi_config = &ath12k_wifi7_mhi_config_wcn7850,
++
++		.wmi_init = ath12k_wifi7_wmi_init_wcn7850,
++
++		/* downstream sends 0x46; no PCIe DRV here */
++		.qmi_cnss_feature_bitmap = BIT(CNSS_WLAN_EN_SUPPORT_V01) |
++					   BIT(CNSS_AUX_UC_SUPPORT_V01),
++
++		.rfkill_pin = 0,
++		.rfkill_cfg = 0,
++		.rfkill_on_level = 0,
++
++		.rddm_size = 0x780000,
++
++		.def_num_link = 2,
++		.max_mlo_peer = 32,
++
++		.otp_board_id_register = 0,
++
++		.supports_sta_ps = true,
++
++		.acpi_guid = &wcn7850_uuid,
++		.supports_dynamic_smps_6ghz = false,
++
++		.iova_mask = ATH12K_PCIE_MAX_PAYLOAD_SIZE - 1,
++
++		.supports_aspm = true,
++		/* downstream qcom,wlan-cbc-enabled */
++		.cold_boot_calib = true,
++
++		.ce_ie_addr = NULL,
++		.ce_remap = NULL,
++		.bdf_addr_offset = 0,
++
++		.current_cc_support = true,
++
++		.dp_primary_link_only = false,
++		.client = {
++			.max_client_single = 512,
++			.max_client_dbs = 128,
++			.max_client_dbs_sbs = 128,
++		},
++
++		.host_alloc_ml_id = false,
++		.advertise_iface_mac_pool = true,
++	},
+ };
+ 
+ /* Note: called under rcu_read_lock() */
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/pci.c b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
+index 6c96b52de..739c5757d 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/pci.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
+@@ -20,6 +20,7 @@
+ #define QCN9274_DEVICE_ID		0x1109
+ #define WCN7850_DEVICE_ID		0x1107
+ #define QCC2072_DEVICE_ID		0x1112
++#define PEACH_DEVICE_ID			0x110e
+ 
+ #define ATH12K_PCI_W7_SOC_HW_VERSION_1	1
+ #define ATH12K_PCI_W7_SOC_HW_VERSION_2	2
+@@ -35,6 +36,7 @@ static const struct pci_device_id ath12k_wifi7_pci_id_table[] = {
+ 	{ PCI_VDEVICE(QCOM, QCN9274_DEVICE_ID) },
+ 	{ PCI_VDEVICE(QCOM, WCN7850_DEVICE_ID) },
+ 	{ PCI_VDEVICE(QCOM, QCC2072_DEVICE_ID) },
++	{ PCI_VDEVICE(QCOM, PEACH_DEVICE_ID) },
+ 	{}
+ };
+ 
+@@ -165,6 +167,21 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
+ 		/* there is only one version till now */
+ 		ab->hw_rev = ATH12K_HW_QCC2072_HW10;
+ 		break;
++	case PEACH_DEVICE_ID:
++		ab->id.bdf_search = ATH12K_BDF_SEARCH_BUS_AND_BOARD;
++		ab_pci->msi_config = &ath12k_wifi7_msi_config[0];
++		ab->static_window_map = false;
++		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_wcn7850;
++		/* PEACH_PCIE_REMAP_BAR_CTRL_OFFSET in downstream cnss2 */
++		ab_pci->window_reg_addr = WINDOW_REG_ADDRESS_QCC2072;
++		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,
++						 &soc_hw_version_minor);
++		dev_info(&pdev->dev, "peach soc hw version %u.%u\n",
++			 soc_hw_version_major, soc_hw_version_minor);
++		ab->target_mem_mode = ATH12K_QMI_MEMORY_MODE_DEFAULT;
++		/* Android only ships the "20" firmware files for this chip */
++		ab->hw_rev = ATH12K_HW_PEACH_HW20;
++		break;
+ 	default:
+ 		dev_err(&pdev->dev, "Unknown Wi-Fi 7 PCI device found: 0x%x\n",
+ 			pci_dev->device);
+-- 
+2.56.0
+
