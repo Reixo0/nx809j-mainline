@@ -1,0 +1,16 @@
+# Mark slot a's boot as successful, as Android's boot control HAL does on
+# every boot. Without it ABL counts boot_a's attempts down and eventually
+# marks the slot unbootable (the phone then stops in stock fastboot).
+# ABL passes no slot_suffix to this kernel, so the slot is named explicitly:
+# Linux only ever boots from slot a. This only sets the GPT "successful"
+# attribute of the _a partitions; slot b is never touched.
+[Unit]
+Description=Mark boot slot a successful
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/qbootctl -m a
+
+[Install]
+WantedBy=multi-user.target
