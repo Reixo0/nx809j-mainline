@@ -1,7 +1,7 @@
 From af208e01cffa7757abba00aab2f353e80911d4cf Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:01:18 +0200
-Subject: [PATCH 18/32] arm64: dts: qcom: kaanapali-nubia-nx809j: Wi-Fi/BT rail
+Subject: [PATCH 18/39] arm64: dts: qcom: kaanapali-nubia-nx809j: Wi-Fi/BT rail
  voltages and UART18
 
 Nothing sets the voltage of the Wi-Fi/BT chip's PMIC rails, so their

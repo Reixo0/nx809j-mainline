@@ -216,6 +216,9 @@ Notes:
   "infiniti" mainline series, and fixes by Joonhoe Kim and mzak, as carried in
   [iceland-linux](https://github.com/mzakamin-hub/iceland-linux) (OnePlus Pad 4 mainline,
   same SoC). Applied unchanged with their authorship.
+- Suspend (patches 0033-0039): Kaanapali GDSC retention and clock fixes by
+  Krishna Chaitanya Chundru and Qiang Yu (Qualcomm), Victor Fuentes, Joonhoe
+  Kim and mzak, from the same queue.
 - GPU (patches 0027-0032): the rpmhpd clamp fix by Oleg Keri, the GMU address
   fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
   Burch, from the same queue (which carries the OnePlus 15

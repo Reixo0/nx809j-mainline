@@ -1,7 +1,7 @@
 From c98bf700b894d45cf65dad9564eb6ece2fc1419a Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 10 Oct 2026 04:33:09 +0300
-Subject: [PATCH 25/32] Bluetooth: hci_qca: Discard the RX burst of the WCN7860
+Subject: [PATCH 25/39] Bluetooth: hci_qca: Discard the RX burst of the WCN7860
  baudrate change
 
 Every WCN7860 setup logs "Frame reassembly failed (-84)" about 0.1 ms

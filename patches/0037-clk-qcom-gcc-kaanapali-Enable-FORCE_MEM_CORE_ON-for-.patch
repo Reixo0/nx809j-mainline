@@ -1,0 +1,43 @@
+From 2288f6f24b6900b97c7a502d959bc9c719d7a977 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 10 Oct 2026 04:19:18 +0300
+Subject: [PATCH 37/39] clk: qcom: gcc-kaanapali: Enable FORCE_MEM_CORE_ON for
+ UFS AXI PHY clock
+
+As on SM8650, SM8750 and Eliza, the UFS AXI PHY clock needs
+FORCE_MEM_CORE_ON for the UFS controller in MCQ mode. Without it the MCQ
+configuration is lost over system suspend, and with MCQ enabled every
+resume from s2idle ends in an SMMU fault and a host reset.
+
+The UFS PHY ICE core clock already has the bit set; set it for the UFS
+PHY AXI clock as well.
+
+Fixes: d1919c375f21 ("clk: qcom: Add support for Global clock controller on Kaanapali")
+Assisted-by: LLM
+Signed-off-by: Joonhoe Kim <26rote@gmail.com>
+Reviewed-by: Abel Vesa <abel.vesa@oss.qualcomm.com>
+
+[ from patchwork.kernel.org series 1180949, patch 1; not applied upstream yet ]
+[ up3: context rebased (our gcc-kaanapali.c sets the PCIe pipe clock bits after the UFS ICE line); same one-line change. ]
+[ upstream author: Joonhoe Kim <26rote@gmail.com>; picked for the iceland kernel q89 ]
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/clk/qcom/gcc-kaanapali.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/clk/qcom/gcc-kaanapali.c b/drivers/clk/qcom/gcc-kaanapali.c
+index cdcbe54a4..e52367693 100644
+--- a/drivers/clk/qcom/gcc-kaanapali.c
++++ b/drivers/clk/qcom/gcc-kaanapali.c
+@@ -3484,6 +3484,7 @@ static void clk_kaanapali_regs_configure(struct device *dev, struct regmap *regm
+ 
+ 	/* FORCE_MEM_CORE_ON for ufs phy ice core clocks */
+ 	qcom_branch_set_force_mem_core(regmap, gcc_ufs_phy_ice_core_clk, true);
++	qcom_branch_set_force_mem_core(regmap, gcc_ufs_phy_axi_clk, true);
+ 
+ 	qcom_branch_set_force_mem_core(regmap, gcc_pcie_0_pipe_clk, true);
+ 	qcom_branch_set_force_periph_on(regmap, gcc_pcie_0_pipe_clk, true);
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 From fc698b2aa583dfc6599f89f84994957024aa1520 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:04:21 +0200
-Subject: [PATCH 08/32] power: supply: qcom_battmgr: Ignore unsolicited
+Subject: [PATCH 08/39] power: supply: qcom_battmgr: Ignore unsolicited
  messages on SM8350-style firmware
 
 Kaanapali firmware sends messages with opcode 0x101 every few seconds.

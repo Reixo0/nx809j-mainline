@@ -1,7 +1,7 @@
 From 96c3f7fdab4dd06c410b6f933a99053f1d2ffd1e Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Thu, 15 Oct 2026 12:00:00 +0300
-Subject: [PATCH 29/32] drm/msm/a8xx: use the A8xx GMU keep-alive register in
+Subject: [PATCH 29/39] drm/msm/a8xx: use the A8xx GMU keep-alive register in
  the hang IRQ
 
 a8xx_fault_detect_irq() votes for GMU keep-alive so that the GPU stays
