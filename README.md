@@ -191,7 +191,7 @@ Notes:
 - [x] Boots, framebuffer console visible (via shim, boot_a)
 - [x] UFS: all LUNs and partitions enumerate (nothing mounted yet)
 - [x] USB gadget networking, shell via `scripts/phone-sh.py`
-- [x] cpufreq via SCMI (cpucp mailbox built in): 384 MHz-3.63 GHz / 768 MHz-4.40 GHz
+- [x] cpufreq via SCMI (cpucp mailbox built in): 384 MHz-3.63 GHz / 768 MHz-4.40 GHz, plus 4.51 and 4.61 GHz boost steps on the prime cores (enabled at boot by a tmpfiles entry; under sustained load the CPU firmware soon lowers the limit to about 4.26 GHz, at 38 °C)
 - [ ] pm8010 (SPMI1 SID 0xc/0xd) and pmd802x (SID 4) don't answer on SPMI
 - [x] Buttons: power + volume down (PMIC PON, `POWER_RESET_QCOM_PON=y`), volume up (GPIO 101), game slider (GPIO 97, `SW_PEN_INSERTED`, 1 = down)
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)

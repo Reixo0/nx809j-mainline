@@ -2,7 +2,7 @@
 pkgname=device-nubia-nx809j
 pkgdesc="Nubia RedMagic 11 Pro"
 pkgver=1
-pkgrel=3
+pkgrel=4
 url="https://github.com/Reixo0/nx809j-mainline"
 license="MIT"
 arch="aarch64"
@@ -22,6 +22,7 @@ source="
 	50-nx809j-usb0-unmanaged.conf
 	80-nx809j.preset
 	nx809j-usb-uplink.service
+	nx809j-cpufreq-boost.conf
 "
 
 build() {
@@ -37,6 +38,8 @@ package() {
 		-t "$pkgdir"/usr/lib/systemd/system/
 	install -Dm644 "$srcdir"/80-nx809j.preset \
 		-t "$pkgdir"/usr/lib/systemd/system-preset/
+	install -Dm644 "$srcdir"/nx809j-cpufreq-boost.conf \
+		"$pkgdir"/usr/lib/tmpfiles.d/nx809j-cpufreq-boost.conf
 }
 
 sha512sums="
@@ -44,4 +47,5 @@ e19d5042d4e4013d4298804c9b0cfccc748c32068520030ea3962f781866a041d2a93d7cbe13772a
 8905211b070b16edad3a427d0f609d6df45b77ca72ff03ad944e7d2ebe02c6754603b7a385234e569bde3f00055e464c52c662a8f6e9de551c8aa79c0441b462  50-nx809j-usb0-unmanaged.conf
 ea02a0d5477463a12b997b89b05e3c32b258f10fc925128692322653ff888719c77d1e5011e91f95c90059918b599fa359bc405fd1246d0e20d87afcc6344345  80-nx809j.preset
 0e5d31527e0127d0c06824fc2994720f73d55e3ddd16edea08414165879cbf2ffa2d082d2498fe2465c1c220f2a4007945247e30961f8cafdc96a9d58a178787  nx809j-usb-uplink.service
+7987d4e1aa4ad25bfd17685523e933ddbee149c19e0dc3cf7332a2a2dd867cd077c9601ca73ee593ef90b72de9d0b36824e2cf11f8eca44878ae064b4e22c4c5  nx809j-cpufreq-boost.conf
 "
