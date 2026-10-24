@@ -26,6 +26,8 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `scripts/pmos-kernel-pkg.sh` | Package `out/kernel` for pmOS and copy the port into `tools/pmaports` |
 | `scripts/pmos-prepare-root.sh` | Copy/grow pmbootstrap's root image, make `/boot` nofail |
 | `scripts/nbd-root.sh` | Serve the pmOS root image to the phone over USB (NBD, no root needed) |
+| `scripts/make-super-image.sh` | Shrink the pmOS image into a sparse `linux_root` image for `super` |
+| `scripts/super-dm-cmdline.py` | Read `super`'s LP metadata, print `dm-mod.create=` for `linux_root` |
 | `scripts/host-usb-nat.sh` | One-time (sudo): ufw NAT so the phone gets internet through the PC |
 | `scripts/phone-sh.py` | Run a command in the busybox initramfs shell (172.16.42.1:23) |
 | `scripts/get-pstore.sh` | After a hang, from Android: save the previous kernel's ramoops log and tell if it was mainline |
@@ -83,6 +85,29 @@ Read logs from a failed boot after returning to Android:
 ```bash
 adb shell su -c 'cat /sys/fs/pstore/*'
 ```
+
+## Root filesystem inside super (fast, no PC needed)
+
+postmarketOS can live in a logical partition `linux_root` inside `super`'s free
+space (12.8 GiB free on stock layout). Android's partitions and `userdata` are
+not touched. The kernel maps it with dm-init from the cmdline.
+
+```bash
+scripts/make-super-image.sh 9G                    # phone off / image unused
+# phone: superfastboot -> `fastboot reboot recovery` -> "Enter fastboot"
+fastboot getvar is-userspace                      # yes
+fastboot getvar snapshot-update-status            # none / merged
+fastboot create-logical-partition linux_root 9663676416
+fastboot flash linux_root out/pmos/linux_root.simg
+# boot any mainline image once, then read super's metadata (read-only):
+ssh reixo@172.16.42.1 'sudo dd if=/dev/sda7 bs=4096 count=256' > super-head.bin
+scripts/mkboot.sh nx809j.root=dm "$(scripts/super-dm-cmdline.py super-head.bin)"
+fastboot flash boot_a out/boot.img                # from superfastboot
+```
+
+Back up `super`'s first 1 MiB (its partition tables) before creating the
+partition. A full ROM flash that rewrites `super` removes `linux_root`; OTAs
+need some free space in `super` for snapshots.
 
 ## postmarketOS over USB (Android untouched)
 
@@ -171,7 +196,7 @@ Notes:
 - [x] Buttons: power + volume down (PMIC PON, `POWER_RESET_QCOM_PON=y`), volume up (GPIO 101), game slider (GPIO 97, `SW_PEN_INSERTED`, 1 = down)
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
 - [x] Battery/charger via battmgr, USB-C via UCSI (role switching still forced to device mode)
-- [x] postmarketOS (console, systemd) booting from an NBD rootfs on the PC, internet via the PC
+- [x] postmarketOS Plasma Mobile: rootfs in `super` (linux_root, dm-init) or over NBD from the PC; internet via the PC
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [ ] Display: 90/120 Hz modes
