@@ -1,7 +1,7 @@
 From 7bfb2c5ef430b1edb72633716e9514987e492c0b Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 04/19] power: supply: qcom_battmgr: Report charge capacity on
+Subject: [PATCH 04/21] power: supply: qcom_battmgr: Report charge capacity on
  SM8350-style firmware
 
 Only the SC8280XP-style battery info message carries the capacity unit,

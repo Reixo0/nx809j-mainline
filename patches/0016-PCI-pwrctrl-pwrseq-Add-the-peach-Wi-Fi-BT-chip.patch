@@ -1,7 +1,7 @@
 From cd9d4cb22ed6b08ad7bb5206f3f687ad9d9bd665 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 12:06:08 +0200
-Subject: [PATCH 16/19] PCI/pwrctrl: pwrseq: Add the peach Wi-Fi/BT chip
+Subject: [PATCH 16/21] PCI/pwrctrl: pwrseq: Add the peach Wi-Fi/BT chip
 
 Power the peach chip (17cb:110e) through its PMU, the same way as
 WCN7850, so the PCIe controller can bring the link up.

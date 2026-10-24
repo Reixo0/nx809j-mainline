@@ -1,7 +1,7 @@
 From a3b2f3a9441ee0df0ca84ca410ead69eb43884c3 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 02/19] dt-bindings: arm: qcom: Add Nubia RedMagic 11 Pro
+Subject: [PATCH 02/21] dt-bindings: arm: qcom: Add Nubia RedMagic 11 Pro
 
 Document the Nubia RedMagic 11 Pro (NX809J), a phone based on the
 Kaanapali (Snapdragon 8 Elite Gen 5) SoC.

@@ -1,0 +1,63 @@
+From 4a8487ffede1142f7253d6d729944239a2ebeec7 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 14:30:52 +0200
+Subject: [PATCH 20/21] wifi: ath12k: Describe the host DDR range element in
+ host capability
+
+The ddr_range array in the host capability request is a QMI_STRUCT
+without an ei_array, so encoding it would emit a malformed TLV (firmware
+answers QMI error 1). Describe its start/size members like the
+downstream wlfw_host_ddr_range_s_v01_ei. Nothing sets ddr_range_valid
+yet, so this does not change what is sent today.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/qmi.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
+index 4c67d86ee..38a061856 100644
+--- a/drivers/net/wireless/ath/ath12k/qmi.c
++++ b/drivers/net/wireless/ath/ath12k/qmi.c
+@@ -64,6 +64,30 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
+ 	},
+ };
+ 
++static const struct qmi_elem_info qmi_wlanfw_host_ddr_range_s_v01_ei[] = {
++	{
++		.data_type	= QMI_UNSIGNED_8_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u64),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0,
++		.offset		= offsetof(struct qmi_wlanfw_host_ddr_range, start),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_8_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u64),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0,
++		.offset		= offsetof(struct qmi_wlanfw_host_ddr_range, size),
++	},
++	{
++		.data_type	= QMI_EOTI,
++		.array_type	= NO_ARRAY,
++		.tlv_type	= QMI_COMMON_TLV_TYPE,
++	},
++};
++
+ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
+ 	{
+ 		.data_type	= QMI_OPT_FLAG,
+@@ -361,6 +385,7 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
+ 		.tlv_type	= 0x1F,
+ 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+ 					   ddr_range),
++		.ei_array	= qmi_wlanfw_host_ddr_range_s_v01_ei,
+ 	},
+ 	{
+ 		.data_type	= QMI_OPT_FLAG,
+-- 
+2.56.0
+
