@@ -204,7 +204,7 @@ Notes:
 - [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
-- [~] Wi-Fi/BT: Qualcomm "peach" combo (PCI 17cb:110e) on PCIe0, powered through the WCN7850 PMU description; the link comes up (Gen3 x2) and the chip enumerates. Not yet supported by ath12k or hci_qca; firmware is not in linux-firmware (taken from the phone's vendor/bt_firmware partitions)
+- [~] Wi-Fi/BT: Qualcomm "peach" combo (PCI 17cb:110e) on PCIe0, powered through the WCN7850 PMU description; the link comes up (Gen3 x2) and the chip enumerates. Not yet supported by ath12k or hci_qca; firmware is not in linux-firmware (taken from Android: /vendor/firmware_mnt/image/peach and /vendor/bt_firmware)
 - [ ] Audio, modem, cameras
 
 ## License
