@@ -1,0 +1,196 @@
+From 70ae8754d58de9e004165db185edf4a199d4ab63 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:06:08 +0200
+Subject: [PATCH 17/17] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable PCIe0
+ and the Wi-Fi chip
+
+The Wi-Fi/BT combo (peach, 17cb:110e) sits on PCIe0 and is wired like
+the WCN7850 on the Kaanapali MTP: wlan-en on TLMM 16, bt-en on PMH0104
+GPIO 5, sw_ctrl on TLMM 18 and RF_CLK1, with the same supplies (checked
+against the downstream qcom,cnss-peach and bt_peach nodes). Describe its
+PMU with the WCN7850 one and add the PCIe0 controller, PHY and pins.
+
+The link comes up at Gen3 x2 and the chip enumerates.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 149 ++++++++++++++++++
+ 1 file changed, 149 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index b215edfe3..6cae40446 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -179,6 +179,73 @@ pmic_glink_sbu: endpoint {
+ 			};
+ 		};
+ 	};
++
++	/*
++	 * The Wi-Fi/BT combo is Qualcomm's "peach" (PCI 17cb:110e), not the
++	 * MTP's WCN7850, but it is wired the same way: same enable GPIOs,
++	 * supplies and RF clock (downstream qcom,cnss-peach and bt_peach).
++	 */
++	wcn-pmu {
++		compatible = "qcom,wcn7850-pmu";
++
++		pinctrl-0 = <&bt_default>, <&sw_ctrl_default>, <&wlan_en>;
++		pinctrl-names = "default";
++
++		bt-enable-gpios = <&pmh0104_j_e1_gpios 5 GPIO_ACTIVE_HIGH>;
++		wlan-enable-gpios = <&tlmm 16 GPIO_ACTIVE_HIGH>;
++
++		vdd-supply = <&vreg_s2j_0p8>;
++		vddio-supply = <&vreg_l2g_1p8>;
++		vddio1p2-supply = <&vreg_l3g_1p2>;
++		vddaon-supply = <&vreg_s7g_0p9>;
++		vdddig-supply = <&vreg_s1j_0p8>;
++		vddrfa1p2-supply = <&vreg_s7f_1p2>;
++		vddrfa1p8-supply = <&vreg_s8f_1p8>;
++
++		clocks = <&rpmhcc RPMH_RF_CLK1>;
++
++		regulators {
++			vreg_pmu_rfa_cmn: ldo0 {
++				regulator-name = "vreg_pmu_rfa_cmn";
++			};
++
++			vreg_pmu_aon_0p59: ldo1 {
++				regulator-name = "vreg_pmu_aon_0p59";
++			};
++
++			vreg_pmu_wlcx_0p8: ldo2 {
++				regulator-name = "vreg_pmu_wlcx_0p8";
++			};
++
++			vreg_pmu_wlmx_0p85: ldo3 {
++				regulator-name = "vreg_pmu_wlmx_0p85";
++			};
++
++			vreg_pmu_btcmx_0p85: ldo4 {
++				regulator-name = "vreg_pmu_btcmx_0p85";
++			};
++
++			vreg_pmu_rfa_0p8: ldo5 {
++				regulator-name = "vreg_pmu_rfa_0p8";
++			};
++
++			vreg_pmu_rfa_1p2: ldo6 {
++				regulator-name = "vreg_pmu_rfa_1p2";
++			};
++
++			vreg_pmu_rfa_1p8: ldo7 {
++				regulator-name = "vreg_pmu_rfa_1p8";
++			};
++
++			vreg_pmu_pcie_0p9: ldo8 {
++				regulator-name = "vreg_pmu_pcie_0p9";
++			};
++
++			vreg_pmu_pcie_1p8: ldo9 {
++				regulator-name = "vreg_pmu_pcie_1p8";
++			};
++		};
++	};
+ };
+ 
+ &apps_rsc {
+@@ -848,6 +915,52 @@ &mdss_dsi0_phy {
+ 	status = "okay";
+ };
+ 
++&pcie0 {
++	pinctrl-0 = <&pcie0_default_state>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
++
++&pcie0_phy {
++	vdda-phy-supply = <&vreg_l3i_0p8>;
++	vdda-pll-supply = <&vreg_l1d_1p2>;
++
++	status = "okay";
++};
++
++&pcie_port0 {
++	wake-gpios = <&tlmm 104 GPIO_ACTIVE_LOW>;
++	reset-gpios = <&tlmm 102 GPIO_ACTIVE_LOW>;
++
++	wifi@0 {
++		compatible = "pci17cb,110e";
++		reg = <0x10000 0x0 0x0 0x0 0x0>;
++
++		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
++		vddaon-supply = <&vreg_pmu_aon_0p59>;
++		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
++		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
++		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
++		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
++		vddrfa1p8-supply = <&vreg_pmu_rfa_1p8>;
++		vddpcie0p9-supply = <&vreg_pmu_pcie_0p9>;
++		vddpcie1p8-supply = <&vreg_pmu_pcie_1p8>;
++	};
++};
++
++&pmh0104_j_e1_gpios {
++	bt_default: bt-default-state {
++		pins = "gpio5";
++		function = "normal";
++		input-disable;
++		output-enable;
++		output-low;
++		bias-disable;
++		power-source = <1>;
++	};
++};
++
+ &pmih0108_e1_eusb2_repeater {
+ 	vdd18-supply = <&vreg_l15b_1p8>;
+ 	vdd3-supply = <&vreg_l5b_3p1>;
+@@ -941,6 +1054,42 @@ mdp_vsync_suspend: mdp-vsync-suspend-state {
+ 		drive-strength = <2>;
+ 		bias-pull-down;
+ 	};
++
++	pcie0_default_state: pcie0-default-state {
++		perst-n-pins {
++			pins = "gpio102";
++			function = "gpio";
++			drive-strength = <2>;
++			bias-disable;
++		};
++
++		clkreq-n-pins {
++			pins = "gpio103";
++			function = "pcie0_clk_req_n";
++			drive-strength = <2>;
++			bias-pull-up;
++		};
++
++		wake-n-pins {
++			pins = "gpio104";
++			function = "gpio";
++			drive-strength = <2>;
++			bias-pull-up;
++		};
++	};
++
++	sw_ctrl_default: sw-ctrl-default-state {
++		pins = "gpio18";
++		function = "gpio";
++		bias-pull-down;
++	};
++
++	wlan_en: wlan-en-state {
++		pins = "gpio16";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-pull-down;
++	};
+ };
+ 
+ &uart7 {
+-- 
+2.56.0
+

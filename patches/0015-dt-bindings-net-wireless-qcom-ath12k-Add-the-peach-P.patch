@@ -1,0 +1,30 @@
+From 073667f1bbee86e44b61373740125b1b01d91ed4 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:06:08 +0200
+Subject: [PATCH 15/17] dt-bindings: net: wireless: qcom,ath12k: Add the peach
+ PCI ID
+
+Kaanapali phones such as the Nubia RedMagic 11 Pro carry Qualcomm's
+"peach" Wi-Fi 7 / Bluetooth combo chip, PCI ID 17cb:110e. It is wired
+and powered like WCN7850.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Documentation/devicetree/bindings/net/wireless/qcom,ath12k.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/net/wireless/qcom,ath12k.yaml b/Documentation/devicetree/bindings/net/wireless/qcom,ath12k.yaml
+index dc68dd599..a92fd9d90 100644
+--- a/Documentation/devicetree/bindings/net/wireless/qcom,ath12k.yaml
++++ b/Documentation/devicetree/bindings/net/wireless/qcom,ath12k.yaml
+@@ -17,6 +17,7 @@ properties:
+   compatible:
+     enum:
+       - pci17cb,1107  # WCN7850
++      - pci17cb,110e  # peach (Kaanapali phones)
+ 
+   reg:
+     maxItems: 1
+-- 
+2.56.0
+

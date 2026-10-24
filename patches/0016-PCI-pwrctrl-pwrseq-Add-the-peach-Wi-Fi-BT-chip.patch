@@ -1,0 +1,32 @@
+From cd9d4cb22ed6b08ad7bb5206f3f687ad9d9bd665 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:06:08 +0200
+Subject: [PATCH 16/17] PCI/pwrctrl: pwrseq: Add the peach Wi-Fi/BT chip
+
+Power the peach chip (17cb:110e) through its PMU, the same way as
+WCN7850, so the PCIe controller can bring the link up.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.c b/drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.c
+index c5ced8794..06d11d919 100644
+--- a/drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.c
++++ b/drivers/pci/pwrctrl/pci-pwrctrl-pwrseq.c
+@@ -122,6 +122,11 @@ static const struct of_device_id pwrseq_pwrctrl_of_match[] = {
+ 		.compatible = "pci17cb,1107",
+ 		.data = &pwrseq_pwrctrl_qcom_wcn_pdata,
+ 	},
++	{
++		/* ATH12K in "peach" package (Kaanapali phones). */
++		.compatible = "pci17cb,110e",
++		.data = &pwrseq_pwrctrl_qcom_wcn_pdata,
++	},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, pwrseq_pwrctrl_of_match);
+-- 
+2.56.0
+

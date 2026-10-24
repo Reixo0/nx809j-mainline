@@ -1,7 +1,7 @@
 From 8e991da3c1202e73b5b0ed25be06076036270ab4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 01:26:50 +0200
-Subject: [PATCH 14/14] [LOCAL] drm/msm/a6xx: Add hfi_skip parameter to skip
+Subject: [PATCH 14/17] [LOCAL] drm/msm/a6xx: Add hfi_skip parameter to skip
  GMU power features
 
 Not for upstream: a bring-up switch. Bits 0..3 skip the CLX table, the
