@@ -186,6 +186,12 @@ Notes:
   sync_state (which never came, partly because upstream placed the GMU at
   0x3d6c000 instead of 0x3d37000): patches 0027-0028 from the iceland queue
   fix both, and the GPU now runs with the upstream CLX and limits tables.
+- **Wi-Fi wake-on-packet:** the firmware side works (`iw phy phy0 wowlan enable
+  magic-packet patterns <mac>`: it keeps the link through s2idle, offloads
+  ARP/NS/GTK and reports `WOW_REASON_PATTERN_MATCH_FOUND`), but the SoC does
+  not wake: PCIe WAKE# (GPIO 104), the downstream "dev SOL" GPIO 205 and GPIO 19
+  stay quiet. The PCIe link stays up in s2idle, so the chip signals in-band
+  (MSI), which is not a wakeup source; Android takes the link down instead.
 - **Reserved GPIOs:** 40-43, 74, 119-120, 144-147 (from downstream
   `qcom,gpios-reserved`). Touching them crashes the device.
 
