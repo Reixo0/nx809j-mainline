@@ -1,0 +1,31 @@
+#!/bin/sh
+# Give the Wi-Fi interface the phone's own MAC address: the chip only reports
+# a placeholder (00:03:7f:...). Android keeps the address in wifimac.dat on
+# the persist partition ("wifiaddr:0xDC 0xF0 ..."). Read it with debugfs -c
+# (opens the filesystem read-only, no mount, so no journal replay) and hand
+# it to udev as a .link file, applied when wlan0 appears.
+# NetworkManager still uses its stable per-network addresses on top
+# (postmarketOS default); this is the device address underneath.
+set -eu
+part=/dev/disk/by-partlabel/persist
+link=/run/systemd/network/10-nx809j-wlan-mac.link
+
+line=$(debugfs -c -R "cat /wifimac.dat" "$part" 2>/dev/null | head -n 1)
+mac=$(echo "$line" | sed -n 's/^wifiaddr:\(.*\)$/\1/p' |
+	awk '{ for (i = 1; i <= NF; i++) { sub(/^0[xX]/, "", $i); printf "%s%02s", (i > 1 ? ":" : ""), tolower($i) } }' |
+	tr ' ' 0)
+case $mac in
+[0-9a-f][02468ace]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]) ;;
+*) echo "no usable MAC in wifimac.dat: '$line'" >&2; exit 0 ;;
+esac
+
+mkdir -p "${link%/*}"
+cat > "$link" <<LINK
+[Match]
+Driver=ath12k_wifi7_pci
+
+[Link]
+MACAddress=$mac
+LINK
+udevadm control --reload
+echo "wlan0 MAC from persist: $mac"

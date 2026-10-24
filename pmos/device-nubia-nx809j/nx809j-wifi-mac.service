@@ -1,0 +1,16 @@
+# Set the Wi-Fi device MAC address from Android's persist partition (read
+# only). wlan0 appears ~15 s into boot (after the firmware's calibration),
+# well after this has run.
+[Unit]
+Description=Wi-Fi MAC address from the persist partition
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/nx809j-wifi-mac
+
+[Install]
+WantedBy=multi-user.target
