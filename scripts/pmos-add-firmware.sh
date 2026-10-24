@@ -15,7 +15,8 @@ FILES="qcom/gen80200_sqe.fw qcom/gen80200_gmu.bin qcom/gen80200_aqe.fw
   qcom/kaanapali/nubia/nx809j/cdsp.mbn qcom/kaanapali/nubia/nx809j/cdsp_dtb.mbn
   qcom/kaanapali/nubia/nx809j/soccp.mbn qcom/kaanapali/nubia/nx809j/soccp_dtb.mbn"
 
-if pgrep -f "qemu-nbd.*$(basename "$IMG")" >/dev/null; then
+# exact path match: a pattern could also match other image names
+if pgrep -a qemu-nbd | grep -qF -- "$IMG"; then
   echo "qemu-nbd is serving $IMG; stop it (and keep the phone off) first" >&2
   exit 1
 fi

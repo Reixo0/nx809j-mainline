@@ -75,20 +75,36 @@ nbd_root() {
 		[ "$(cat /sys/block/nbd0/size 2>/dev/null)" -gt 0 ] 2>/dev/null && break
 		sleep 0.1
 	done
+	switch_to /dev/nbd0
+}
+
+# nx809j.root=dm: rootfs in a logical partition inside super ("linux_root"),
+# mapped by the kernel itself from the dm-mod.create= cmdline argument
+dm_root() {
+	for i in $(seq 1 100); do
+		[ -b /dev/dm-0 ] && break
+		sleep 0.1
+	done
+	[ -b /dev/dm-0 ] || { echo "!! /dev/dm-0 didn't show up (dm-mod.create= missing?)"; return 1; }
+	switch_to /dev/dm-0
+}
+
+# Mount an ext4 rootfs from $1 and hand over to its init; returns on failure
+switch_to() {
 	mkdir -p /newroot
 	for i in 1 2 3 4 5; do
-		mount -t ext4 /dev/nbd0 /newroot && break
+		mount -t ext4 "$1" /newroot && break
 		sleep 1
 	done
-	mountpoint -q /newroot || { echo "!! mounting /dev/nbd0 failed"; return 1; }
+	mountpoint -q /newroot || { echo "!! mounting $1 failed"; return 1; }
 	if [ ! -x /newroot/sbin/init ]; then
-		echo "!! no /sbin/init on the NBD rootfs"
+		echo "!! no /sbin/init on $1"
 		umount /newroot
 		return 1
 	fi
-	echo ">> switching to the NBD rootfs"
+	echo ">> switching to the rootfs on $1"
 	# The rootfs takes over from here; our nc shell lives in the initramfs
-	# that switch_root deletes, so stop it. usb0 and nbd-client stay up.
+	# that switch_root deletes, so stop it. usb0 (and nbd-client) stay up.
 	kill $(pidof nc) 2>/dev/null
 	for m in /dev /proc /sys; do
 		mkdir -p /newroot$m
@@ -97,11 +113,16 @@ nbd_root() {
 	exec switch_root -c /dev/console /newroot /sbin/init
 }
 
-if grep -q 'nx809j.root=nbd' /proc/cmdline; then
+ROOT_KIND=$(sed -n 's/.*nx809j\.root=\([a-z]*\).*/\1/p' /proc/cmdline)
+if [ -n "$ROOT_KIND" ]; then
 	setup_usb
-	nbd_root
-	echo "!! NBD root failed, staying in the initramfs"
-	# nbd_root may have killed the nc shell before failing
+	case $ROOT_KIND in
+		nbd) nbd_root ;;
+		dm) dm_root ;;
+		*) echo "!! unknown nx809j.root=$ROOT_KIND" ;;
+	esac
+	echo "!! switching to the rootfs failed, staying in the initramfs"
+	# switch_to may have killed the nc shell before failing
 	pidof nc >/dev/null || nc -lk -s 172.16.42.1 -p 23 -e /nx809j/bin/sh &
 else
 	setup_usb &
