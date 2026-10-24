@@ -1,0 +1,291 @@
+From ee7858c4cc4f798d6b6e259ce0f22e18c77a4c1e Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 17 Oct 2026 12:00:00 +0300
+Subject: [PATCH 30/32] drm/msm/a6xx: wait for the GMU to leave IFPC before
+ triggering preemption
+
+With IFPC, the first fenced register write of a preemption trigger is
+what wakes the GX domain: the AHB fence drops writes while the GPU is
+collapsed, and fenced_write() keeps re-writing until the GMU has
+powered it up. The write landing only means the GX is accessible
+again, not that the GMU has finished its wake-up sequence, yet the
+trigger goes on to write CP_CONTEXT_SWITCH_CNTL right away, so the CP
+can start a ring switch while the GMU is still restoring the GX
+state. The return values of the fenced writes are ignored as well: a
+dropped CP_CONTEXT_SWITCH_CNTL write leaves the state machine in
+PREEMPT_TRIGGERED until the 10 s preemption timer fires.
+
+The downstream kgsl driver (gen7/gen8 preemption trigger) does the
+following, and this patch does the same:
+ - after the first fenced write, poll GPU_GMU_CX_GMU_RPMH_POWER_STATE
+   until the GMU reports ACTIVE (bits 3:0 == 0), for up to 100 ms,
+   before writing the remaining preemption registers and the trigger;
+ - treat a failed fenced write or a GMU that does not become active as
+   a fault and recover at once instead of waiting for the timer.
+
+Only a real failure recovers: a6xx_fenced_write() returns -ETIMEDOUT
+only when the write is still dropped after its full 2 ms budget. A
+write that lands in the second millisecond returns 0 and only prints
+"delay in fenced register write"; the trigger carries on as before.
+That message reports a late but successful write, so print it at info
+level, as the downstream driver does with its equivalent message.
+
+The wait uses the atomic poll because the trigger also runs from the
+interrupt handler; there the GPU is awake (keep-alive vote) and the
+poll returns on the first read. The full 100 ms are only spent when
+the GMU does not wake up, right before the recovery.
+
+On the OnePlus Pad 4 (A840, IFPC + preemption, GMU firmware 5.3.33)
+long desktop sessions log 8-16 "delay in fenced register write (0x8c1)"
+lines per boot -- 0x8c1 being CP_CONTEXT_SWITCH_SMMU_INFO, the first
+fenced write of a8xx_preempt_trigger() -- each one a write that
+succeeded, with no GPU recovery and no preemption fault. With this
+patch these stay successful triggers (now also waiting for ACTIVE),
+logged at info level.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/adreno/a6xx_gmu.c     | 32 +++++++++++++++++++++++
+ drivers/gpu/drm/msm/adreno/a6xx_gmu.h     |  7 +++++
+ drivers/gpu/drm/msm/adreno/a6xx_gpu.c     | 12 +++++----
+ drivers/gpu/drm/msm/adreno/a6xx_gpu.h     |  1 +
+ drivers/gpu/drm/msm/adreno/a6xx_preempt.c | 28 ++++++++++++++------
+ drivers/gpu/drm/msm/adreno/a6xx_preempt.h | 21 +++++++++++++++
+ drivers/gpu/drm/msm/adreno/a8xx_preempt.c | 28 ++++++++++++++------
+ 7 files changed, 108 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
+index 662f09bec..d4cc9892b 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
+@@ -301,6 +301,38 @@ int a6xx_gmu_wait_for_idle(struct a6xx_gmu *gmu)
+ 	return spin_until(a6xx_gmu_check_idle_level(gmu));
+ }
+ 
++/*
++ * A fenced register write wakes the GPU out of IFPC, but the GMU may still be in
++ * the middle of its wake-up sequence when the write lands. Wait until the GMU
++ * reports the ACTIVE power state before the CP is asked to do something that can
++ * interrupt that sequence, such as a preemption. Usable in atomic context.
++ */
++int a6xx_gmu_wait_for_active(struct a6xx_gmu *gmu)
++{
++	struct a6xx_gpu *a6xx_gpu = container_of(gmu, struct a6xx_gpu, gmu);
++	struct adreno_gpu *adreno_gpu = &a6xx_gpu->base;
++	u32 reg, val;
++	int ret;
++
++	if (adreno_has_gmu_wrapper(adreno_gpu) || adreno_has_rgmu(adreno_gpu))
++		return 0;
++
++	if (gmu->idle_level != GMU_IDLE_STATE_IFPC)
++		return 0;
++
++	reg = adreno_is_a8xx(adreno_gpu) ? REG_A8XX_GPU_GMU_CX_GMU_RPMH_POWER_STATE :
++					   REG_A6XX_GPU_GMU_CX_GMU_RPMH_POWER_STATE;
++
++	ret = gmu_poll_timeout_atomic(gmu, reg, val,
++				      (val & 0xf) == GMU_IDLE_STATE_ACTIVE, 10,
++				      GMU_ACTIVE_TIMEOUT_US);
++	if (ret)
++		dev_err_ratelimited(gmu->dev,
++				    "GMU did not reach the active state: 0x%x\n", val);
++
++	return ret;
++}
++
+ static int a6xx_gmu_start(struct a6xx_gmu *gmu)
+ {
+ 	struct a6xx_gpu *a6xx_gpu = container_of(gmu, struct a6xx_gpu, gmu);
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.h b/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
+index d3f6cd8b9..1a2f82df6 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
+@@ -60,6 +60,13 @@ struct a6xx_bcm {
+ /* The GMU does automatic IFPC (intra-frame power collapse) */
+ #define GMU_IDLE_STATE_IFPC 3
+ 
++/*
++ * How long the GMU may take to report ACTIVE after a fenced write woke the GPU
++ * out of IFPC: the 100 ms of the downstream driver. Normally the first read
++ * already returns ACTIVE; only a GMU that does not wake up uses the budget.
++ */
++#define GMU_ACTIVE_TIMEOUT_US 100000
++
+ struct a6xx_gmu {
+ 	struct device *dev;
+ 
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+index 92e8c8abb..f7273914f 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+@@ -84,12 +84,14 @@ static int fenced_write(struct a6xx_gpu *a6xx_gpu, u32 offset, u32 value, u32 ma
+ 	if (!gmu_poll_timeout(gmu, REG_A6XX_GMU_AHB_FENCE_STATUS, status,
+ 			fence_status_check(gpu, offset, value, status, mask), 0, 1000)) {
+ 		/*
+-		 * The 'delay' warning is here because the pause to print this
+-		 * warning will allow gpu to move to power collapse which
+-		 * defeats the purpose of continuous polling for 2 ms
++		 * The 'delay' message is here because the pause to print this
++		 * message will allow gpu to move to power collapse which
++		 * defeats the purpose of continuous polling for 2 ms.
++		 * The write did land, only late: not an error (the downstream
++		 * driver logs this at info level too).
+ 		 */
+-		dev_err_ratelimited(gmu->dev, "delay in fenced register write (0x%x)\n",
+-				offset);
++		dev_info_ratelimited(gmu->dev, "delay in fenced register write (0x%x)\n",
++				     offset);
+ 		return 0;
+ 	}
+ 
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.h b/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
+index 79912a33e..809110639 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
+@@ -289,6 +289,7 @@ int a6xx_gmu_resume(struct a6xx_gpu *gpu);
+ int a6xx_gmu_stop(struct a6xx_gpu *gpu);
+ 
+ int a6xx_gmu_wait_for_idle(struct a6xx_gmu *gmu);
++int a6xx_gmu_wait_for_active(struct a6xx_gmu *gmu);
+ 
+ bool a6xx_gmu_isidle(struct a6xx_gmu *gmu);
+ 
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_preempt.c b/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
+index 1e599d4dd..e2669fee6 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
+@@ -170,6 +170,7 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
+ 	unsigned long flags;
+ 	struct msm_ringbuffer *ring;
+ 	unsigned int cntl;
++	int ret;
+ 	bool sysprof;
+ 
+ 	if (gpu->nr_rings == 1)
+@@ -247,13 +248,22 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
+ 	/* Set the keepalive bit to keep the GPU ON until preemption is complete */
+ 	a6xx_preempt_keepalive_vote(gpu, true);
+ 
+-	a6xx_fenced_write(a6xx_gpu,
+-		REG_A6XX_CP_CONTEXT_SWITCH_SMMU_INFO, a6xx_gpu->preempt_smmu_iova[ring->id],
+-		BIT(1), true);
+-
+-	a6xx_fenced_write(a6xx_gpu,
+-		REG_A6XX_CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR,
+-		a6xx_gpu->preempt_iova[ring->id], BIT(1), true);
++	/*
++	 * The first fenced write brings the GPU out of IFPC. Let the GMU finish
++	 * that transition before the CP is asked to switch rings.
++	 */
++	ret = a6xx_fenced_write(a6xx_gpu, REG_A6XX_CP_CONTEXT_SWITCH_SMMU_INFO,
++				a6xx_gpu->preempt_smmu_iova[ring->id], BIT(1), true);
++	if (!ret)
++		ret = a6xx_gmu_wait_for_active(&a6xx_gpu->gmu);
++	if (!ret)
++		ret = a6xx_fenced_write(a6xx_gpu,
++					REG_A6XX_CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR,
++					a6xx_gpu->preempt_iova[ring->id], BIT(1), true);
++	if (ret) {
++		preempt_trigger_fault(gpu, PREEMPT_START, ret);
++		return;
++	}
+ 
+ 	a6xx_gpu->next_ring = ring;
+ 
+@@ -273,7 +283,9 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
+ 	set_preempt_state(a6xx_gpu, PREEMPT_TRIGGERED);
+ 
+ 	/* Trigger the preemption */
+-	a6xx_fenced_write(a6xx_gpu, REG_A6XX_CP_CONTEXT_SWITCH_CNTL, cntl, BIT(1), false);
++	ret = a6xx_fenced_write(a6xx_gpu, REG_A6XX_CP_CONTEXT_SWITCH_CNTL, cntl, BIT(1), false);
++	if (ret)
++		preempt_trigger_fault(gpu, PREEMPT_TRIGGERED, ret);
+ }
+ 
+ static int preempt_init_ring(struct a6xx_gpu *a6xx_gpu,
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_preempt.h b/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
+index df36c945b..84c8e466c 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
++++ b/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
+@@ -80,3 +80,24 @@ static inline struct msm_ringbuffer *get_next_ring(struct msm_gpu *gpu)
+ 	return NULL;
+ }
+ 
++/*
++ * A register write of the preemption trigger was dropped (a6xx_fenced_write()
++ * gave up after its full 2 ms: -ETIMEDOUT; a write that only landed late
++ * returns 0 and is not a fault), or the GMU did not reach ACTIVE within
++ * GMU_ACTIVE_TIMEOUT_US: the CP never saw a complete request, so do not wait
++ * for the preemption timer and recover now.
++ */
++static inline void preempt_trigger_fault(struct msm_gpu *gpu,
++					 enum a6xx_preempt_state from, int err)
++{
++	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(to_adreno_gpu(gpu));
++
++	if (!try_preempt_state(a6xx_gpu, from, PREEMPT_FAULTED))
++		return;
++
++	timer_delete(&a6xx_gpu->preempt_timer);
++	a6xx_gpu->next_ring = NULL;
++
++	dev_err(gpu->dev->dev, "%s: preemption trigger failed: %d\n", gpu->name, err);
++	kthread_queue_work(gpu->worker, &gpu->recover_work);
++}
+diff --git a/drivers/gpu/drm/msm/adreno/a8xx_preempt.c b/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
+index 6cb53a071..91e095dfe 100644
+--- a/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
++++ b/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
+@@ -151,6 +151,7 @@ void a8xx_preempt_trigger(struct msm_gpu *gpu)
+ 	unsigned long flags;
+ 	struct msm_ringbuffer *ring;
+ 	unsigned int cntl;
++	int ret;
+ 	bool sysprof;
+ 
+ 	if (gpu->nr_rings == 1)
+@@ -228,13 +229,22 @@ void a8xx_preempt_trigger(struct msm_gpu *gpu)
+ 	/* Set the keepalive bit to keep the GPU ON until preemption is complete */
+ 	a8xx_preempt_keepalive_vote(gpu, true);
+ 
+-	a6xx_fenced_write(a6xx_gpu,
+-		REG_A8XX_CP_CONTEXT_SWITCH_SMMU_INFO, a6xx_gpu->preempt_smmu_iova[ring->id],
+-		BIT(1), true);
+-
+-	a6xx_fenced_write(a6xx_gpu,
+-		REG_A8XX_CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR,
+-		a6xx_gpu->preempt_iova[ring->id], BIT(1), true);
++	/*
++	 * The first fenced write brings the GPU out of IFPC. Let the GMU finish
++	 * that transition before the CP is asked to switch rings.
++	 */
++	ret = a6xx_fenced_write(a6xx_gpu, REG_A8XX_CP_CONTEXT_SWITCH_SMMU_INFO,
++				a6xx_gpu->preempt_smmu_iova[ring->id], BIT(1), true);
++	if (!ret)
++		ret = a6xx_gmu_wait_for_active(&a6xx_gpu->gmu);
++	if (!ret)
++		ret = a6xx_fenced_write(a6xx_gpu,
++					REG_A8XX_CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR,
++					a6xx_gpu->preempt_iova[ring->id], BIT(1), true);
++	if (ret) {
++		preempt_trigger_fault(gpu, PREEMPT_START, ret);
++		return;
++	}
+ 
+ 	a6xx_gpu->next_ring = ring;
+ 
+@@ -254,6 +264,8 @@ void a8xx_preempt_trigger(struct msm_gpu *gpu)
+ 	set_preempt_state(a6xx_gpu, PREEMPT_TRIGGERED);
+ 
+ 	/* Trigger the preemption */
+-	a6xx_fenced_write(a6xx_gpu, REG_A8XX_CP_CONTEXT_SWITCH_CNTL, cntl, BIT(1), false);
++	ret = a6xx_fenced_write(a6xx_gpu, REG_A8XX_CP_CONTEXT_SWITCH_CNTL, cntl, BIT(1), false);
++	if (ret)
++		preempt_trigger_fault(gpu, PREEMPT_TRIGGERED, ret);
+ }
+ 
+-- 
+2.56.0
+

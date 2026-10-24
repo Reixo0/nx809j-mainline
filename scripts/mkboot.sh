@@ -32,14 +32,11 @@ OS_PATCH_LEVEL=${OS_PATCH_LEVEL:-2026-08}
 BOOT_PART_SIZE=100663296   # boot_a, 96 MiB
 
 # Keep the bootloader-initialized display/clocks alive for simplefb.
-# msm.hfi_skip=3: don't send the GMU the reference board's CLX current
-# limiting table (and the limits table that depends on it). With it this
-# phone's GMU never answers the first GPU power vote and GPU init fails.
 # panic=10: warm-reboot 10 s after a panic (time for a photo). A warm reset
 # keeps RAM, so the log survives in pstore; a long power-button press often
 # doesn't. ABL counts these as failed boots and drops to fastboot after a few.
 CMDLINE="console=tty0 loglevel=7 ignore_loglevel clk_ignore_unused pd_ignore_unused \
-fbcon=font:TER16x32 rdinit=/nx809j-init panic=10 msm.hfi_skip=3 $*"
+fbcon=font:TER16x32 rdinit=/nx809j-init panic=10 $*"
 
 # Our init is built into the kernel (scripts/mkinitramfs.sh). Still pass a
 # copy as the boot.img ramdisk (lz4 legacy, like the stock vendor ramdisk it

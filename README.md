@@ -181,10 +181,11 @@ Notes:
   encoder uses, otherwise the picture is corrupted.
 - **UART:** `uart7` is kept as in QRD; no known accessible test points yet.
 - **Disabled for now:** CDSP, SD controller, flash LED, RGB PWM LED.
-- **GPU:** sending the reference board's CLX current-limiting table makes the
-  GMU hang on its first GX power vote, and the limits table can't go without
-  CLX. `msm.hfi_skip=3` (a local debug patch) skips both; ACD and IFPC stay
-  on. Proper fix: this board's CLX values from the downstream `msm_kgsl.ko`.
+- **GPU:** with CLX on, the GMU used to time out on its first GX power vote.
+  The cause was rpmhpd pinning the gfx/gmxc rails at their top level until
+  sync_state (which never came, partly because upstream placed the GMU at
+  0x3d6c000 instead of 0x3d37000): patches 0027-0028 from the iceland queue
+  fix both, and the GPU now runs with the upstream CLX and limits tables.
 - **Reserved GPIOs:** 40-43, 74, 119-120, 144-147 (from downstream
   `qcom,gpios-reserved`). Touching them crashes the device.
 
@@ -202,19 +203,23 @@ Notes:
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [ ] Display: 90/120 Hz modes
-- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
+- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407), with CLX and limits enabled as upstream. GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
-- [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0018-0022): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
-- [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0023-0027, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
+- [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0017-0021): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
+- [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
 - [ ] Audio, modem, cameras
 
 ## Credits
 
-- Bluetooth (patches 0023-0026): WCN7860 support by Victor Fuentes from the OnePlus 15
+- Bluetooth (patches 0022-0025): WCN7860 support by Victor Fuentes from the OnePlus 15
   "infiniti" mainline series, and fixes by Joonhoe Kim and mzak, as carried in
   [iceland-linux](https://github.com/mzakamin-hub/iceland-linux) (OnePlus Pad 4 mainline,
   same SoC). Applied unchanged with their authorship.
+- GPU (patches 0027-0032): the rpmhpd clamp fix by Oleg Keri, the GMU address
+  fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
+  Burch, from the same queue (which carries the OnePlus 15
+  [infiniti-mainline](https://github.com/infiniti-mainline/linux) series).
 
 ## License
 

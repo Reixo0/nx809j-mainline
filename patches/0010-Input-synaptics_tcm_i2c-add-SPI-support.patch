@@ -1,7 +1,7 @@
 From f58f0dc6bb6fb58260f7ce1f46bb602973b5bb35 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:48:16 +0200
-Subject: [PATCH 10/27] Input: synaptics_tcm_i2c - add SPI support
+Subject: [PATCH 10/32] Input: synaptics_tcm_i2c - add SPI support
 
 The TouchComm v1 message format is the same on SPI as on I2C: a read
 returns the next chunk of the current message, starting with the 0xa5

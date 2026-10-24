@@ -1,0 +1,42 @@
+From 96c3f7fdab4dd06c410b6f933a99053f1d2ffd1e Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Thu, 15 Oct 2026 12:00:00 +0300
+Subject: [PATCH 29/32] drm/msm/a8xx: use the A8xx GMU keep-alive register in
+ the hang IRQ
+
+a8xx_fault_detect_irq() votes for GMU keep-alive so that the GPU stays
+powered while the hang state is read and dumped. It writes
+REG_A6XX_GMU_GMU_PWR_COL_KEEPALIVE, which is the A6xx/A7xx offset
+(0x1f8c3). The A8xx GMU moved the register to 0x1f7e4, which is
+REG_A8XX_GMU_GMU_PWR_COL_KEEPALIVE in a6xx_gmu.xml. So on A8xx the vote
+never reaches the GMU and a different GMU register is written instead.
+With IFPC on A840 the GX can then power collapse while the fault
+handler is still reading it.
+
+a6xx_gmu_force_off() already clears the A8xx register when recovery
+turns the GMU off, and a8xx_preempt.c uses the A8xx variant of the
+preemption keep-alive. Use the A8xx register here as well.
+
+Fixes: 288a93200892 ("drm/msm/adreno: Introduce A8x GPU Support")
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Assisted-by: Claude
+---
+ drivers/gpu/drm/msm/adreno/a8xx_gpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/adreno/a8xx_gpu.c b/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
+index f892731cd..2bc334644 100644
+--- a/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
+@@ -1149,7 +1149,7 @@ static void a8xx_fault_detect_irq(struct msm_gpu *gpu)
+ 	 * collecting information
+ 	 */
+ 	if (!adreno_has_gmu_wrapper(adreno_gpu))
+-		gmu_write(&a6xx_gpu->gmu, REG_A6XX_GMU_GMU_PWR_COL_KEEPALIVE, 1);
++		gmu_write(&a6xx_gpu->gmu, REG_A8XX_GMU_GMU_PWR_COL_KEEPALIVE, 1);
+ 
+ 	DRM_DEV_ERROR(&gpu->pdev->dev,
+ 		"gpu fault ring %d fence %x status %8.8X gfx_status %8.8X\n",
+-- 
+2.56.0
+

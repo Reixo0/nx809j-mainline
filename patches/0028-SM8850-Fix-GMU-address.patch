@@ -1,0 +1,30 @@
+From cb52a126226de930a051e6277161e5ac08ea88c2 Mon Sep 17 00:00:00 2001
+From: map220v <map220v300@gmail.com>
+Date: Thu, 11 Jun 2026 07:56:25 +0000
+Subject: [PATCH 28/32] SM8850: Fix GMU address
+
+(cherry picked from commit 50a7944c836935cc951c1672bdd52301acbbe5f3)
+---
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index e48a179d0..92c80e1e8 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -2859,10 +2859,10 @@ opp-1300000000 {
+ 			};
+ 		};
+ 
+-		gmu: gmu@3d6c000 {
++		gmu: gmu@3d37000 {
+ 			compatible = "qcom,adreno-gmu-840.1", "qcom,adreno-gmu";
+ 
+-			reg = <0x0 0x03d6c000 0x0 0x68000>;
++			reg = <0x0 0x03d37000 0x0 0x68000>;
+ 			reg-names = "gmu";
+ 
+ 			interrupts = <GIC_SPI 304 IRQ_TYPE_LEVEL_HIGH>,
+-- 
+2.56.0
+

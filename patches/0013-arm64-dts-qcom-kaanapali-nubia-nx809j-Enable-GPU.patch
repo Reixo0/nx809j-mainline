@@ -1,7 +1,7 @@
 From ad450d59a6505c7e746149240504a6db88b2f8a4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 01:26:50 +0200
-Subject: [PATCH 13/27] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable GPU
+Subject: [PATCH 13/32] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable GPU
 
 Point the zap shader at the device's signed one. The GMU and SQE firmware
 are the generic linux-firmware ones.
