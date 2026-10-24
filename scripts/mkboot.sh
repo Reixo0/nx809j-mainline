@@ -32,11 +32,14 @@ OS_PATCH_LEVEL=${OS_PATCH_LEVEL:-2026-08}
 BOOT_PART_SIZE=100663296   # boot_a, 96 MiB
 
 # Keep the bootloader-initialized display/clocks alive for simplefb.
+# mem_sleep_default=s2idle: suspend as Android does (CPUs in their deepest
+# idle states). PSCI SYSTEM_SUSPEND ("deep") returns from the firmware within
+# ~10 ms, so the phone would wake right away.
 # panic=10: warm-reboot 10 s after a panic (time for a photo). A warm reset
 # keeps RAM, so the log survives in pstore; a long power-button press often
 # doesn't. ABL counts these as failed boots and drops to fastboot after a few.
 CMDLINE="console=tty0 loglevel=7 ignore_loglevel clk_ignore_unused pd_ignore_unused \
-fbcon=font:TER16x32 rdinit=/nx809j-init panic=10 $*"
+fbcon=font:TER16x32 rdinit=/nx809j-init mem_sleep_default=s2idle panic=10 $*"
 
 # Our init is built into the kernel (scripts/mkinitramfs.sh). Still pass a
 # copy as the boot.img ramdisk (lz4 legacy, like the stock vendor ramdisk it
