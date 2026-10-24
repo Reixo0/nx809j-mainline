@@ -10,8 +10,7 @@
 #   regdb.bin      <- peach/regdb.bin
 #   qdss_trace_config.cfg <- peach/qdss_trace_config_v2.cfg (fw waits for it)
 #
-# and the Bluetooth (Ganges) rampatch and NVM files, as named in the DTS
-# firmware-name, into qca/: bt/gngbtfw20.tlv, bt/gngbtnv20.*
+# scripts/pmos-add-firmware.sh puts the same files into a rootfs image offline.
 #
 # Usage: scripts/install-wifi-firmware.sh [user@host]   (default reixo@172.16.42.1)
 set -euo pipefail
@@ -38,9 +37,3 @@ tar -C "$STAGE" --owner=0 --group=0 -czf - . | ssh "$HOST" "
   sudo sh -c 'chmod 644 $DIR/*'
   ls -l $DIR"
 
-tar -C "$ROOT/dump/firmware/wifi-bt/bt" --owner=0 --group=0 -czf - gngbtfw20.tlv $(cd "$ROOT/dump/firmware/wifi-bt/bt" && ls gngbtnv20.*) | ssh "$HOST" "
-  set -e
-  sudo mkdir -p /usr/lib/firmware/qca
-  sudo tar -xzf - -C /usr/lib/firmware/qca --no-same-permissions
-  sudo sh -c 'chmod 644 /usr/lib/firmware/qca/gngbt*'
-  ls /usr/lib/firmware/qca | grep -c gngbt"

@@ -20,7 +20,8 @@ cp "$K/.config" "$STAGE/config"
 # postmarketOS finds the kernel release via /usr/lib/modules/<release>; ship
 # the built-in module lists even when no modules are packaged
 cp "$K/include/config/kernel.release" "$K/modules.builtin" "$K/modules.builtin.modinfo" "$STAGE/"
-if [[ ${INCLUDE_MODULES:-0} == 1 && -d $ROOT/out/modules/lib/modules ]]; then
+# Modules are needed (ath12k, the PCIe pwrctrl driver, ...); INCLUDE_MODULES=0 skips them
+if [[ ${INCLUDE_MODULES:-1} == 1 && -d $ROOT/out/modules/lib/modules ]]; then
   cp -a "$ROOT/out/modules/lib" "$STAGE/"
 fi
 tar -C "$STAGE" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$PKG/kernel.tar.gz" .
