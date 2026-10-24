@@ -205,7 +205,7 @@ Notes:
 - [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407). Needs `msm.hfi_skip=3` (no CLX/limits tables; see notes), GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
-- [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patch 0018): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream (patch 0019). Scans 2.4/5 GHz through NetworkManager. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
+- [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0018-0022): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
 - [ ] Bluetooth: the Brahma half (product 0x21, UART18) answers the version query but needs the multi-subsystem PERI/TME-L setup Android's HAL does first (like QCC2072); DTS node present but disabled
 - [ ] Audio, modem, cameras
 

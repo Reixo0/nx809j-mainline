@@ -1,0 +1,56 @@
+From 85d546d89ab4815c4c1fcd7660fd22b4ec732bac Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 14:40:32 +0200
+Subject: [PATCH 22/22] wifi: ath12k: peach: Use 32-bit TLVs (QCC2072 HAL)
+
+Peach is built with word-based (32-bit) TLVs, like QCC2072: its REO
+command and status descriptors lack WCN7850's tlv64 padding, and all
+its descriptors match fw-api's qcc2072 ones. With the WCN7850 HAL the
+REO commands sent at association (rx queue update) were misparsed and
+the firmware hit a NOC error ("NOC ERROR DETECTED") about 1.5 s after
+associating, before the 4-way handshake completed.
+
+Use the QCC2072 HAL ops, rx descriptor size and rxdma ring selection,
+with peach's own register table.
+
+Tested: WPA2 connects to a 5 GHz AP, DHCP, about 475 Mbit/s down and
+280 Mbit/s up over SSH on the LAN, no firmware crashes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/wifi7/hal.c | 5 +++--
+ drivers/net/wireless/ath/ath12k/wifi7/hw.c  | 2 +-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal.c b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
+index 05c8d9f4e..3c6cf7ae2 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/hal.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
+@@ -58,8 +58,9 @@ static const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
+ 		.hw_regs = &ipq5424_regs,
+ 	},
+ 	[ATH12K_HW_PEACH_HW20] = {
+-		.hal_ops = &hal_wcn7850_ops,
+-		.hal_desc_sz = sizeof(struct hal_rx_desc_wcn7850),
++		/* 32-bit TLVs like QCC2072 (descriptors match fw-api qcc2072) */
++		.hal_ops = &hal_qcc2072_ops,
++		.hal_desc_sz = sizeof(struct hal_rx_desc_qcc2072),
+ 		.tcl_to_wbm_rbm_map = ath12k_hal_tcl_to_wbm_rbm_map_wcn7850,
+ 		.hal_params = &ath12k_hw_hal_params_wcn7850,
+ 		.hw_regs = &peach_regs,
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hw.c b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
+index 43e8a8396..adb5d8c0e 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/hw.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
+@@ -931,7 +931,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
+ 		.qmi_max_chunk_size = SZ_512K,
+ 		.internal_sleep_clock = true,
+ 
+-		.hw_ops = &wcn7850_ops,
++		.hw_ops = &qcc2072_ops,
+ 		.ring_mask = &ath12k_wifi7_hw_ring_mask_wcn7850,
+ 
+ 		.host_ce_config = ath12k_wifi7_host_ce_config_wcn7850,
+-- 
+2.56.0
+

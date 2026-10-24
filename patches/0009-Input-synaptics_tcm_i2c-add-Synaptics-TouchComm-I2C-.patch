@@ -1,7 +1,7 @@
 From 8168014ba74563e023afe95451c31720c9324465 Mon Sep 17 00:00:00 2001
 From: Vsevolod Nevorotov <email-hidden-by-archive@invalid>
 Date: Thu, 10 Sep 2026 09:15:01 +0000
-Subject: [PATCH 09/21] Input: synaptics_tcm_i2c - add Synaptics TouchComm I2C
+Subject: [PATCH 09/22] Input: synaptics_tcm_i2c - add Synaptics TouchComm I2C
  touchscreen driver
 
 Add input touchscreen driver for Synaptics TouchComm (TCM) generation-1

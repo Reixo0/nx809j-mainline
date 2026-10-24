@@ -1,7 +1,7 @@
 From d34b441d4adbe783451d79deedca5c5b1345cfdb Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 23:13:58 +0200
-Subject: [PATCH 06/21] drm/panel: Add Raydium RM692H5 panel driver
+Subject: [PATCH 06/22] drm/panel: Add Raydium RM692H5 panel driver
 
 Add a driver for the Raydium RM692H5 based 6.8" 1216x2688 AMOLED panel
 found in the Nubia RedMagic 11 Pro (downstream name
