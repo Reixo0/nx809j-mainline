@@ -1,0 +1,180 @@
+From 13c07cf8cb13544c9e7e27637f668f904b901dcf Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 14:07:38 +0100
+Subject: [PATCH 73/73] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+ speakers
+
+Two Awinic AW88461 amplifiers on i2c_hub_3 (0x35 left, at the USB port
+end in landscape, and 0x34 right), with their resets on GPIO 76 and 61,
+take audio from primary MI2S data line SD1 (GPIO 124); SD0 carries their
+feedback. Their tuning comes from the stock ACF file.
+
+As on the OnePlus 15, the ADSP firmware has no audio PD and serves APM
+and PRM on GPR services 3 and 7.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 126 ++++++++++++++++++
+ 1 file changed, 126 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 62f592777..340227498 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -186,6 +186,30 @@ pmic_glink_sbu: endpoint {
+ 	 * MTP's WCN7850, but it is wired the same way: same enable GPIOs,
+ 	 * supplies and RF clock (downstream qcom,cnss-peach and bt_peach).
+ 	 */
++	sound {
++		compatible = "qcom,kaanapali-sndcard", "qcom,sm8450-sndcard";
++		model = "Nubia-NX809J";
++
++		pinctrl-0 = <&speaker_mi2s_active>;
++		pinctrl-names = "default";
++
++		speaker-playback-dai-link {
++			link-name = "Speaker Playback";
++
++			codec {
++				sound-dai = <&speaker_left>, <&speaker_right>;
++			};
++
++			cpu {
++				sound-dai = <&q6apmbedai PRIMARY_MI2S_RX>;
++			};
++
++			platform {
++				sound-dai = <&q6apm>;
++			};
++		};
++	};
++
+ 	wcn-pmu {
+ 		compatible = "qcom,wcn7850-pmu";
+ 
+@@ -886,6 +910,42 @@ &gpu_zap_shader {
+ 	firmware-name = "qcom/kaanapali/nubia/nx809j/gen80200_zap.mbn";
+ };
+ 
++&i2c_hub_3 {
++	status = "okay";
++
++	speaker_right: amplifier@34 {
++		compatible = "awinic,aw88461";
++		reg = <0x34>;
++		#sound-dai-cells = <0>;
++		sound-name-prefix = "Right";
++
++		pinctrl-0 = <&speaker_right_reset>;
++		pinctrl-names = "default";
++		reset-gpios = <&tlmm 61 GPIO_ACTIVE_LOW>;
++
++		awinic,audio-channel = <1>;
++		firmware-name = "qcom/kaanapali/nubia/nx809j/aw88461_acf.bin";
++	};
++
++	speaker_left: amplifier@35 {
++		compatible = "awinic,aw88461";
++		reg = <0x35>;
++		#sound-dai-cells = <0>;
++		sound-name-prefix = "Left";
++
++		pinctrl-0 = <&speaker_left_reset>;
++		pinctrl-names = "default";
++		reset-gpios = <&tlmm 76 GPIO_ACTIVE_LOW>;
++
++		awinic,audio-channel = <0>;
++		firmware-name = "qcom/kaanapali/nubia/nx809j/aw88461_acf.bin";
++	};
++};
++
++&i2c_master_hub {
++	status = "okay";
++};
++
+ &mdss {
+ 	status = "okay";
+ };
+@@ -1004,6 +1064,28 @@ &pon_resin {
+ 	status = "okay";
+ };
+ 
++/* The ADSP firmware has no audio PD and serves APM and PRM on GPR services 3 and 7 */
++&q6apm {
++	reg = <3>;
++	/delete-property/ qcom,protection-domain;
++};
++
++&q6apmbedai {
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	dai@10 {
++		reg = <PRIMARY_MI2S_RX>;
++		clocks = <&q6prmcc LPASS_CLK_ID_PRI_MI2S_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
++		clock-names = "bclk";
++	};
++};
++
++&q6prm {
++	reg = <7>;
++	/delete-property/ qcom,protection-domain;
++};
++
+ &remoteproc_adsp {
+ 	firmware-name = "qcom/kaanapali/nubia/nx809j/adsp.mbn",
+ 			"qcom/kaanapali/nubia/nx809j/adsp_dtb.mbn";
+@@ -1110,6 +1192,50 @@ wake-n-pins {
+ 		};
+ 	};
+ 
++	speaker_left_reset: speaker-left-reset-state {
++		pins = "gpio76";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	speaker_mi2s_active: speaker-mi2s-active-state {
++		sck-pins {
++			pins = "gpio122";
++			function = "i2s0_sck";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		data0-pins {
++			pins = "gpio123";
++			function = "i2s0_data0";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		data1-pins {
++			pins = "gpio124";
++			function = "i2s0_data1";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		ws-pins {
++			pins = "gpio125";
++			function = "i2s0_ws";
++			drive-strength = <8>;
++			bias-disable;
++		};
++	};
++
++	speaker_right_reset: speaker-right-reset-state {
++		pins = "gpio61";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	sw_ctrl_default: sw-ctrl-default-state {
+ 		pins = "gpio18";
+ 		function = "gpio";
+-- 
+2.56.0
+

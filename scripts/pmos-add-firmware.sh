@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install our phone firmware (GPU, ADSP, CDSP, SoCCP, Wi-Fi, BT; not the modem)
+# Install our phone firmware (GPU, ADSP, CDSP, SoCCP, Wi-Fi, BT, audio; not the modem)
 # into the postmarketOS root image under /lib/firmware, offline, while nothing
 # serves it. The GPU and Wi-Fi drivers load their firmware after switch_root,
 # so it has to be in the rootfs and not only in the kernel's initramfs.
@@ -46,6 +46,12 @@ BT=$ROOT/dump/firmware/wifi-bt/bt
 for f in "$BT"/brhbtfw20.mbn "$BT"/brhbtnv20.*; do
   pairs+=("qca/${f##*/}:$f")
 done
+
+# Audio: our AudioReach topology (scripts/build-topology.sh) and the speaker
+# amplifiers' tuning file from the phone's vendor firmware
+"$ROOT"/scripts/build-topology.sh >/dev/null
+pairs+=("qcom/kaanapali/Nubia-NX809J-tplg.bin:$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin")
+pairs+=("qcom/kaanapali/nubia/nx809j/aw88461_acf.bin:$ROOT/dump/firmware/vendor_firmware/aw882xx_acf.bin")
 
 cmds=$(mktemp)
 declare -A made=()

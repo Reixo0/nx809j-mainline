@@ -30,6 +30,7 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `scripts/super-dm-cmdline.py` | Read `super`'s LP metadata, print `dm-mod.create=` for `linux_root` |
 | `scripts/host-usb-nat.sh` | One-time (sudo): ufw NAT so the phone gets internet through the PC |
 | `scripts/install-modules.sh` | Install out/modules into the running phone's rootfs over SSH (needed for Wi-Fi/BT drivers) |
+| `audio/topology/Nubia-NX809J.m4`, `scripts/build-topology.sh` | AudioReach topology (DSP graph), built with the m4 library of [infiniti-mainline/audioreach-topology](https://github.com/infiniti-mainline/audioreach-topology) cloned to `tools/dl/infiniti-tplg`; installed by `pmos-add-firmware.sh` |
 | `scripts/install-wifi-firmware.sh` | Install the phone's Wi-Fi (and Bluetooth) firmware from dump/ into the running rootfs under ath12k's names |
 | `scripts/phone-sh.py` | Run a command in the busybox initramfs shell (172.16.42.1:23) |
 | `scripts/get-pstore.sh` | After a hang, from Android: save the previous kernel's ramoops log and tell if it was mainline |
@@ -217,7 +218,9 @@ Notes:
 - [ ] Haptics (AW86320), fan, shoulder triggers
 - [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0017-0021): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
 - [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
-- [ ] Audio, modem, cameras
+- [x] Speakers (patches 0067-0073): two Awinic AW88461 amplifiers on i2c_hub_3, fed from primary MI2S data line SD1 (SD0 carries their feedback), stock tuning from `aw882xx_acf.bin`. Sound card "Nubia-NX809J", our topology, and a UCM profile in the device package, so PulseAudio and Plasma show a speaker output with working volume. 32-bit streams play silence, so the topology is 16-bit only
+- [ ] Audio: headset jack, earpiece use of the top speaker, microphones (WCD9395, SoundWire, DMICs)
+- [ ] Modem, cameras
 
 ## Credits
 
@@ -236,6 +239,10 @@ Notes:
 - Display (patches 0060-0064): the DSI PLL lock fix by Dmitry Baryshkov
   (Qualcomm) and DPU/dispcc fixes by Victor Fuentes and mzak, from the same
   queue.
+- Speakers (patches 0067-0072): the AW88461 driver by Xu Qianhui from the
+  [Lenovo Legion Y700 Gen 4 port](https://github.com/xiaquwan1001/lenovo-legion-y700-gen4-tb322fc-elden-linux),
+  and Kaanapali MI2S/APM fixes by Victor Fuentes from the OnePlus 15 series. The
+  topology is based on his OnePlus 15 one.
 - GPU (patches 0027-0032): the rpmhpd clamp fix by Oleg Keri, the GMU address
   fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
   Burch, from the same queue (which carries the OnePlus 15
