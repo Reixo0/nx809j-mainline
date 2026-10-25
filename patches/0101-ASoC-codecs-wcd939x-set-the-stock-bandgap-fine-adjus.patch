@@ -1,0 +1,29 @@
+From a54ca28d8234802232bbea11540b87b151b88678 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 19:23:40 +0100
+Subject: [PATCH 101/102] ASoC: codecs: wcd939x: set the stock bandgap fine
+ adjust
+
+The stock driver writes 0xa5 to BIAS_VBG_FINE_ADJ at init (reset value
+0x55). Do the same.
+---
+ sound/soc/codecs/wcd939x.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
+index eff33e775..21d7e6120 100644
+--- a/sound/soc/codecs/wcd939x.c
++++ b/sound/soc/codecs/wcd939x.c
+@@ -372,6 +372,9 @@ static int wcd939x_io_init(struct snd_soc_component *component)
+ 	snd_soc_component_write_field(component, WCD939X_ANA_BIAS,
+ 				      WCD939X_BIAS_PRECHRG_EN, false);
+ 
++	/* Bandgap fine adjust as the stock driver sets it (reset value 0x55) */
++	snd_soc_component_write(component, WCD939X_BIAS_VBG_FINE_ADJ, 0xa5);
++
+ 	snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_L,
+ 				      WCD939X_RDAC_HD2_CTL_L_HD2_RES_DIV_CTL_L, 0x15);
+ 	snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_R,
+-- 
+2.56.0
+

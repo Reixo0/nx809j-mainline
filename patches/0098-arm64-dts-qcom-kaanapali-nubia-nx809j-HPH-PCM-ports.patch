@@ -1,0 +1,34 @@
+From 3aad08a1774a75a9b523a8c5848a0d279d2eca52 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 18:45:48 +0100
+Subject: [PATCH 098/102] arm64: dts: qcom: kaanapali-nubia-nx809j: HPH PCM
+ ports
+
+The headphones get PCM on swr1 port 9 as on stock, which also sets the
+PCM format enable of the class-H port 2.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index ff1a0d1c6..51515e662 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1207,6 +1207,12 @@ touchscreen@0 {
+ };
+ 
+ &swr1 {
++	/*
++	 * The headphones get PCM on port 9 (WCD9395 HIFI_PCM), as on stock,
++	 * which also sets the PCM format enable for the class-H port 2.
++	 */
++	qcom,pcm-ports-mask = <0x204>;
++
+ 	status = "okay";
+ 
+ 	wcd_rx: codec@0,4 {
+-- 
+2.56.0
+

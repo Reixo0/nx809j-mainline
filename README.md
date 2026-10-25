@@ -218,10 +218,11 @@ Notes:
 - [ ] Haptics (AW86320), fan, shoulder triggers
 - [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0017-0021): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
 - [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
-- [x] Speakers (patches 0067-0073): two Awinic AW88461 amplifiers on i2c_hub_3, fed from primary MI2S data line SD1 (SD0 carries their feedback), stock tuning from `aw882xx_acf.bin`. Sound card "Nubia-NX809J", our topology, and a UCM profile in the device package, so PulseAudio and Plasma show a speaker output with working volume. 32-bit streams play silence, so the topology is 16-bit only
+- [x] Speakers (patches 0067-0073): two Awinic AW88461 amplifiers on i2c_hub_3, fed from primary MI2S data line SD1 (SD0 carries their feedback), stock tuning from `aw882xx_acf.bin`. Sound card "Nubia-NX809J", our topology, and a UCM profile in the device package, so PipeWire and Plasma show a speaker output with working volume. 32-bit streams play silence on the speakers, so their stream is 16-bit
 - [x] Microphone (patches 0074-0088): the WCD9395 codec on SoundWire (RX swr1, TX swr2, as on the MTP), bottom mic = analog AMIC4, a "Mic" input in the UCM profile. The other analog inputs: AMIC3 (back or side) and AMIC5 (weak) pick up sound, AMIC1 does not
-- [ ] Headphones (3.5 mm jack): the jack is detected (impedance measured) only while the TX SoundWire bus is kept awake, and the headphone amplifier powers up but gets no audio over SoundWire (RX lane 1 carries silence, lane 0 noise; the stock RX MCLK2 clock leaves the bus unattached). Next: compare register dumps with Android
-- [ ] Audio: earpiece use of the top speaker (stock Receiver profile in the ACF), USB audio from game controllers untested
+- [x] Headphones (patches 0089-0102): the WCD9395 headphone amplifier in HPH PCM (HiFi) mode, as stock, over SoundWire port 9 (HPH PCM patches from the KONKR Pocket FIT / SM8750 work, see Credits). It needed the SoundWire stream synchronization point period programmed (patch 0094) and a 24-bit RX codec DMA (patch 0095; 16-bit delivers nothing). The headphone stream is 32-bit, so software volume keeps the low bits: with 16-bit, low volume crackled. A class-H fix (patch 0102) removed background static. Plugging and unplugging switches between the Headphones and Speaker outputs on its own. Use the PipeWire audio backend (`apk add postmarketos-base-ui-audio-backend-pipewire`, which replaces the PulseAudio one): it picks the 32-bit format on its own
+- [x] USB audio: a game controller's headphone port works (snd-usb-audio)
+- [ ] Audio: headset mic (AMIC2), earpiece use of the top speaker (stock Receiver profile in the ACF)
 - [ ] Modem, cameras
 
 ## Credits
@@ -244,6 +245,10 @@ Notes:
 - Microphone and codec (patches 0074-0087): WCD939x, MBHC, SoundWire and TX
   macro fixes by mzak and Victor Fuentes, and q6apm fixes by Shawn Guo,
   Andrey Karelin and Birk Skyum, from the same queue.
+- Headphones (patches 0089-0093): HPH PCM mode for the RX macro, WCD939x and
+  SoundWire, and MBHC fixes, from the KONKR Pocket FIT Elite (SM8750) port and
+  Anze, as carried in [Armbian](https://github.com/armbian/build)'s sm8750
+  patches. Applied with their authorship; the WCD939x one adapted to this tree.
 - Speakers (patches 0067-0072): the AW88461 driver by Xu Qianhui from the
   [Lenovo Legion Y700 Gen 4 port](https://github.com/xiaquwan1001/lenovo-legion-y700-gen4-tb322fc-elden-linux),
   and Kaanapali MI2S/APM fixes by Victor Fuentes from the OnePlus 15 series. The

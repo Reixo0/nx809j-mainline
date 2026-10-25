@@ -4,8 +4,11 @@
 # Nubia RedMagic 11 Pro (NX809J), Kaanapali. Based on the OnePlus 15
 # topology by Victor Fuentes (infiniti-mainline/audioreach-topology), itself
 # SM8550-HDK: the two AW88461 speaker amplifiers are on primary MI2S, data
-# line SD1 (SD0 carries their feedback). 32-bit streams play silence here,
-# so every stream is S16_LE.
+# line SD1 (SD0 carries their feedback). 32-bit streams play silence there,
+# so the speaker stream (MultiMedia2) is S16_LE. The headphone stream
+# (MultiMedia1) also takes S32_LE, so software volume keeps its low bits;
+# the WCD RX codec DMA needs 24 bit. S24_LE streams play silence (q6apm
+# describes them as packed 24 bit).
 include(`audioreach/audioreach.m4')
 include(`audioreach/stream-subgraph.m4')
 include(`audioreach/device-subgraph.m4')
@@ -17,7 +20,7 @@ include(`audioreach/tokens.m4')
 #
 dnl Playback MultiMedia1
 STREAM_SG_PCM_ADD(audioreach/subgraph-stream-vol-playback.m4, FRONTEND_DAI_MULTIMEDIA1,
-	`S16_LE', 48000, 48000, 2, 2,
+	``S16_LE,S32_LE'', 48000, 48000, 2, 2,
 	0x00004001, 0x00004001, 0x00006001, `110000')
 dnl Playback MultiMedia2
 STREAM_SG_PCM_ADD(audioreach/subgraph-stream-vol-playback.m4, FRONTEND_DAI_MULTIMEDIA2,
@@ -47,7 +50,7 @@ DEVICE_SG_ADD(audioreach/subgraph-device-i2s-playback.m4, `Primary', PRIMARY_MI2
 dnl
 dnl WCD RX Playback (headphones)
 DEVICE_SG_ADD(audioreach/subgraph-device-codec-dma-playback.m4, `RX_CODEC_DMA_RX_0', RX_CODEC_DMA_RX_0,
-	`S16_LE', 48000, 48000, 2, 2,
+	`S24_LE', 48000, 48000, 2, 2,
 	LPAIF_INTF_TYPE_RXTX, CODEC_INTF_IDX_RX0, 0, DATA_FORMAT_FIXED_POINT,
 	0x00004007, 0x00004007, 0x00006070)
 dnl

@@ -1,0 +1,66 @@
+From 4b083ef67a5999564d7947ed4900058a9eb85807 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 19:23:40 +0100
+Subject: [PATCH 102/102] ASoC: codecs: wcd-clsh-v2: don't leave IQ forced for
+ the second HPH channel
+
+Force IQ is released when the flyback and buck are turned on, which only
+happens for the first user. The second channel forced it again with the
+flyback already running and left it on, adding audible background noise
+on the headphones. Only force IQ while there are no flyback users.
+---
+ sound/soc/codecs/wcd-clsh-v2.c | 24 +++++++++++++++++++++---
+ 1 file changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/codecs/wcd-clsh-v2.c b/sound/soc/codecs/wcd-clsh-v2.c
+index 62ca22ea0..af8fac070 100644
+--- a/sound/soc/codecs/wcd-clsh-v2.c
++++ b/sound/soc/codecs/wcd-clsh-v2.c
+@@ -547,7 +547,13 @@ static void wcd_clsh_v3_state_hph_r(struct wcd_clsh_ctrl *ctrl, int req_state,
+ 	if (is_enable) {
+ 		wcd_clsh_v3_set_buck_regulator_mode(component, mode);
+ 		wcd_clsh_v3_set_flyback_mode(component, mode);
+-		wcd_clsh_v3_force_iq_ctl(component, mode, true);
++		/*
++		 * Force IQ only while the flyback and buck are off: turning
++		 * them on releases it, which happens for the first channel
++		 * only, and a second channel would leave it forced.
++		 */
++		if (!ctrl->flyback_users)
++			wcd_clsh_v3_force_iq_ctl(component, mode, true);
+ 		wcd_clsh_v3_flyback_ctrl(component, ctrl, mode, true);
+ 		wcd_clsh_v3_set_flyback_current(component, mode);
+ 		wcd_clsh_v3_set_buck_mode(component, mode);
+@@ -637,7 +643,13 @@ static void wcd_clsh_v3_state_hph_l(struct wcd_clsh_ctrl *ctrl, int req_state,
+ 	if (is_enable) {
+ 		wcd_clsh_v3_set_buck_regulator_mode(component, mode);
+ 		wcd_clsh_v3_set_flyback_mode(component, mode);
+-		wcd_clsh_v3_force_iq_ctl(component, mode, true);
++		/*
++		 * Force IQ only while the flyback and buck are off: turning
++		 * them on releases it, which happens for the first channel
++		 * only, and a second channel would leave it forced.
++		 */
++		if (!ctrl->flyback_users)
++			wcd_clsh_v3_force_iq_ctl(component, mode, true);
+ 		wcd_clsh_v3_flyback_ctrl(component, ctrl, mode, true);
+ 		wcd_clsh_v3_set_flyback_current(component, mode);
+ 		wcd_clsh_v3_set_buck_mode(component, mode);
+@@ -721,7 +733,13 @@ static void wcd_clsh_v3_state_ear(struct wcd_clsh_ctrl *ctrl, int req_state,
+ 	if (is_enable) {
+ 		wcd_clsh_v3_set_buck_regulator_mode(component, mode);
+ 		wcd_clsh_v3_set_flyback_mode(component, mode);
+-		wcd_clsh_v3_force_iq_ctl(component, mode, true);
++		/*
++		 * Force IQ only while the flyback and buck are off: turning
++		 * them on releases it, which happens for the first channel
++		 * only, and a second channel would leave it forced.
++		 */
++		if (!ctrl->flyback_users)
++			wcd_clsh_v3_force_iq_ctl(component, mode, true);
+ 		wcd_clsh_v3_flyback_ctrl(component, ctrl, mode, true);
+ 		wcd_clsh_v3_set_flyback_current(component, mode);
+ 		wcd_clsh_v3_set_buck_mode(component, mode);
+-- 
+2.56.0
+
