@@ -1,0 +1,83 @@
+From a51b7e5799d2cc53c19e062bc50113337bfee6a4 Mon Sep 17 00:00:00 2001
+From: Victor Fuentes <victor@vlinkz.dev>
+Date: Wed, 29 Jul 2026 01:17:35 -0700
+Subject: [PATCH 63/66] drm/msm/dpu: clear stale interface bindings when a CTL
+ is reused
+
+A CTL moved between encoders kept its previous interface active, and
+later commits waited to flush it.
+
+Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c |  4 ++++
+ drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c  | 14 ++++++++++++++
+ drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h  |  6 ++++++
+ 3 files changed, 24 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index 0a6be69a3..aaff4e9c8 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -1358,6 +1358,10 @@ static void dpu_encoder_virt_atomic_enable(struct drm_encoder *drm_enc,
+ 	trace_dpu_enc_enable(DRMID(drm_enc), cur_mode->hdisplay,
+ 			     cur_mode->vdisplay);
+ 
++	if (dpu_enc->cur_master && dpu_enc->cur_master->hw_ctl &&
++	    dpu_enc->cur_master->hw_ctl->ops.clear_intf_cfg)
++		dpu_enc->cur_master->hw_ctl->ops.clear_intf_cfg(dpu_enc->cur_master->hw_ctl);
++
+ 	/* always enable slave encoder before master */
+ 	if (dpu_enc->cur_slave && dpu_enc->cur_slave->ops.enable)
+ 		dpu_enc->cur_slave->ops.enable(dpu_enc->cur_slave);
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
+index e8729fe1c..4d9f9dcaa 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
+@@ -657,6 +657,19 @@ static void dpu_hw_ctl_intf_cfg(struct dpu_hw_ctl *ctx,
+ 	DPU_REG_WRITE(c, CTL_TOP, intf_cfg);
+ }
+ 
++static void dpu_hw_ctl_clear_intf_cfg_v1(struct dpu_hw_ctl *ctx)
++{
++	struct dpu_hw_blk_reg_map *c = &ctx->hw;
++
++	DPU_REG_WRITE(c, CTL_INTF_ACTIVE, 0);
++	DPU_REG_WRITE(c, CTL_INTF_MASTER, 0);
++	DPU_REG_WRITE(c, CTL_WB_ACTIVE, 0);
++	DPU_REG_WRITE(c, CTL_CWB_ACTIVE, 0);
++	DPU_REG_WRITE(c, CTL_DSC_ACTIVE, 0);
++	DPU_REG_WRITE(c, CTL_MERGE_3D_ACTIVE, 0);
++	DPU_REG_WRITE(c, CTL_CDM_ACTIVE, 0);
++}
++
+ static void dpu_hw_ctl_reset_intf_cfg_v1(struct dpu_hw_ctl *ctx,
+ 		struct dpu_hw_intf_cfg *cfg)
+ {
+@@ -819,6 +832,7 @@ struct dpu_hw_ctl *dpu_hw_ctl_init(struct drm_device *dev,
+ 		c->ops.trigger_flush = dpu_hw_ctl_trigger_flush_v1;
+ 		c->ops.setup_intf_cfg = dpu_hw_ctl_intf_cfg_v1;
+ 		c->ops.reset_intf_cfg = dpu_hw_ctl_reset_intf_cfg_v1;
++		c->ops.clear_intf_cfg = dpu_hw_ctl_clear_intf_cfg_v1;
+ 		c->ops.update_pending_flush_intf =
+ 			dpu_hw_ctl_update_pending_flush_intf_v1;
+ 
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
+index e535bf013..09c80f372 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
+@@ -240,6 +240,12 @@ struct dpu_hw_ctl_ops {
+ 	void (*reset_intf_cfg)(struct dpu_hw_ctl *ctx,
+ 			struct dpu_hw_intf_cfg *cfg);
+ 
++	/**
++	 * @clear_intf_cfg: clear all ctl_path interface bindings
++	 * @ctx    : ctl path ctx pointer
++	 */
++	void (*clear_intf_cfg)(struct dpu_hw_ctl *ctx);
++
+ 	/**
+ 	 * @reset: reset function for this ctl type
+ 	 */
+-- 
+2.56.0
+

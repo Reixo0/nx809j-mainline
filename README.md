@@ -211,7 +211,7 @@ Notes:
 - [x] postmarketOS Plasma Mobile: rootfs in `super` (linux_root, dm-init) or over NBD from the PC; internet via the PC
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
-- [ ] Display: 90/120 Hz modes
+- [x] Display: 60, 90, 120 and 144 Hz modes (patches 0060-0066), picked in Settings → Display; the panel gets 144 frames per second (vkmark). The msm DSI host sized the DSC link of this 10 bpc command mode panel 30/24 too slow, which held every rate to ~60 frames per second (patch 0065). Browsers (Qt WebEngine) still animate at 60
 - [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407), with CLX and limits enabled as upstream. GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [ ] Haptics (AW86320), fan, shoulder triggers
@@ -233,6 +233,9 @@ Notes:
   Victor Fuentes, Joonhoe Kim, mzak, Oleg Keri, David Vornholt, Rahul Pon,
   and Elson Serrao, Krishna Kurapati and Uttkarsh Aggarwal (Qualcomm), from
   the same queue.
+- Display (patches 0060-0064): the DSI PLL lock fix by Dmitry Baryshkov
+  (Qualcomm) and DPU/dispcc fixes by Victor Fuentes and mzak, from the same
+  queue.
 - GPU (patches 0027-0032): the rpmhpd clamp fix by Oleg Keri, the GMU address
   fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
   Burch, from the same queue (which carries the OnePlus 15
