@@ -1,0 +1,30 @@
+From ea449ae08652be5bbc210d1fea7e798096144828 Mon Sep 17 00:00:00 2001
+From: Victor Fuentes <victor@vlinkz.dev>
+Date: Wed, 23 Sep 2026 08:37:55 -0700
+Subject: [PATCH 75/88] ASoC: codecs: wcd939x: Don't fail Type-C mode changes
+ before MBHC init
+
+The mux is registered long before MBHC exists, and the error aborted the
+whole mux chain.
+
+Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
+---
+ sound/soc/codecs/wcd939x.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
+index 2d463f062..aea27dc48 100644
+--- a/sound/soc/codecs/wcd939x.c
++++ b/sound/soc/codecs/wcd939x.c
+@@ -3139,7 +3139,7 @@ static int wcd939x_typec_mux_set(struct typec_mux_dev *mux,
+ 	unsigned int previous_mode = wcd939x->typec_mode;
+ 
+ 	if (!wcd939x->wcd_mbhc)
+-		return -EINVAL;
++		return 0;
+ 
+ 	if (wcd939x->typec_mode != state->mode) {
+ 		wcd939x->typec_mode = state->mode;
+-- 
+2.56.0
+

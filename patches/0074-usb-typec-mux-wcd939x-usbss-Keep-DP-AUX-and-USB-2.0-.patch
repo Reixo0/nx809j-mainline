@@ -1,0 +1,54 @@
+From cf08199c0c4a7eb3522254db5636dbadfdabd0a4 Mon Sep 17 00:00:00 2001
+From: Victor Fuentes <victor@vlinkz.dev>
+Date: Wed, 29 Jul 2026 00:24:50 -0700
+Subject: [PATCH 74/88] usb: typec: mux: wcd939x-usbss: Keep DP AUX and USB 2.0
+ up in DP modes
+
+Ignore TYPEC_STATE_USB while in DP alt mode, it would cut AUX. USB 2.0
+also stays connected in pin assignments C and E.
+
+Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
+---
+ drivers/usb/typec/mux/wcd939x-usbss.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/usb/typec/mux/wcd939x-usbss.c b/drivers/usb/typec/mux/wcd939x-usbss.c
+index 73db3aa3c..53bcd9edd 100644
+--- a/drivers/usb/typec/mux/wcd939x-usbss.c
++++ b/drivers/usb/typec/mux/wcd939x-usbss.c
+@@ -197,6 +197,7 @@ struct wcd939x_usbss {
+ 	enum typec_orientation orientation;
+ 	unsigned long mode;
+ 	unsigned int svid;
++	bool dp_active;
+ };
+ 
+ static const struct regmap_range_cfg wcd939x_usbss_ranges[] = {
+@@ -255,6 +256,7 @@ static int wcd939x_usbss_set(struct wcd939x_usbss *usbss)
+ 		/* DP Only */
+ 		case TYPEC_DP_STATE_C:
+ 		case TYPEC_DP_STATE_E:
++			enable_usb = true;
+ 			enable_dp = true;
+ 			break;
+ 
+@@ -562,6 +564,16 @@ static int wcd939x_usbss_mux_set(struct typec_mux_dev *mux,
+ 
+ 	mutex_lock(&usbss->lock);
+ 
++	if (state->alt && state->alt->svid == USB_TYPEC_DP_SID) {
++		usbss->dp_active = true;
++	} else if (state->mode == TYPEC_STATE_SAFE) {
++		usbss->dp_active = false;
++	} else if (state->mode == TYPEC_STATE_USB && usbss->dp_active) {
++		/* Keep the SBU switches carrying DP AUX */
++		mutex_unlock(&usbss->lock);
++		return 0;
++	}
++
+ 	if (usbss->mode != state->mode) {
+ 		usbss->mode = state->mode;
+ 
+-- 
+2.56.0
+

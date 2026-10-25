@@ -1,0 +1,179 @@
+From 89dd1b7e2d1fd8c6b4f4b2c5c06b215b359802ee Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 15:42:39 +0100
+Subject: [PATCH 88/88] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+ WCD9395 codec
+
+The WCD9395 sits on SoundWire like on the MTP (RX on swr1, TX on swr2),
+with the stock mic bias voltages (2.7 V on MIC BIAS2 for the headset,
+2.5 V on the others). The microphones are analog: the bottom one is
+AMIC4. The 3.5 mm jack has normally open detect switches; there is no
+analog audio over USB-C. No WSA amplifiers, so the WSA macros are off.
+
+Capture works. Headphone playback does not yet: the amplifier powers
+up but gets no audio over SoundWire.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 113 ++++++++++++++++++
+ 1 file changed, 113 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 340227498..ff1a0d1c6 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -36,6 +36,40 @@ aliases {
+ 		serial1 = &uart18;
+ 	};
+ 
++	wcd939x: audio-codec {
++		compatible = "qcom,wcd9395-codec", "qcom,wcd9390-codec";
++
++		/*
++		 * Headphones use the 3.5 mm jack (normally open detect switches);
++		 * no analog audio over USB-C.
++		 */
++
++		pinctrl-0 = <&wcd_default>;
++		pinctrl-names = "default";
++
++		/* Stock: 2.7 V on the headset mic bias, 2.5 V on the others */
++		qcom,micbias1-microvolt = <2500000>;
++		qcom,micbias2-microvolt = <2700000>;
++		qcom,micbias3-microvolt = <2500000>;
++		qcom,micbias4-microvolt = <2500000>;
++		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000
++							  500000 500000 500000 500000>;
++		qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
++		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
++		qcom,rx-device = <&wcd_rx>;
++		qcom,tx-device = <&wcd_tx>;
++
++		reset-gpios = <&tlmm 161 GPIO_ACTIVE_LOW>;
++
++		vdd-buck-supply = <&vreg_l15b_1p8>;
++		vdd-rxtx-supply = <&vreg_l15b_1p8>;
++		vdd-io-supply = <&vreg_l15b_1p8>;
++		vdd-mic-bias-supply = <&vreg_bob1>;
++		vdd-px-supply = <&vreg_l1g_1p2>;
++
++		#sound-dai-cells = <1>;
++	};
++
+ 	chosen {
+ 		#address-cells = <2>;
+ 		#size-cells = <2>;
+@@ -189,10 +223,53 @@ pmic_glink_sbu: endpoint {
+ 	sound {
+ 		compatible = "qcom,kaanapali-sndcard", "qcom,sm8450-sndcard";
+ 		model = "Nubia-NX809J";
++		audio-routing = "IN1_HPHL", "HPHL_OUT",
++				"IN2_HPHR", "HPHR_OUT",
++				"AMIC1", "MIC BIAS1",
++				"AMIC2", "MIC BIAS2",
++				"AMIC3", "MIC BIAS3",
++				"AMIC4", "MIC BIAS4",
++				"AMIC5", "MIC BIAS4",
++				"TX SWR_INPUT0", "ADC1_OUTPUT",
++				"TX SWR_INPUT1", "ADC2_OUTPUT",
++				"TX SWR_INPUT2", "ADC3_OUTPUT",
++				"TX SWR_INPUT3", "ADC4_OUTPUT";
+ 
+ 		pinctrl-0 = <&speaker_mi2s_active>;
+ 		pinctrl-names = "default";
+ 
++		wcd-playback-dai-link {
++			link-name = "WCD Playback";
++
++			codec {
++				sound-dai = <&wcd939x 0>, <&swr1 0>, <&lpass_rxmacro 0>;
++			};
++
++			cpu {
++				sound-dai = <&q6apmbedai RX_CODEC_DMA_RX_0>;
++			};
++
++			platform {
++				sound-dai = <&q6apm>;
++			};
++		};
++
++		wcd-capture-dai-link {
++			link-name = "WCD Capture";
++
++			codec {
++				sound-dai = <&wcd939x 1>, <&swr2 0>, <&lpass_txmacro 0>;
++			};
++
++			cpu {
++				sound-dai = <&q6apmbedai TX_CODEC_DMA_TX_3>;
++			};
++
++			platform {
++				sound-dai = <&q6apm>;
++			};
++		};
++
+ 		speaker-playback-dai-link {
+ 			link-name = "Speaker Playback";
+ 
+@@ -946,6 +1023,15 @@ &i2c_master_hub {
+ 	status = "okay";
+ };
+ 
++/* No WSA amplifiers on this board */
++&lpass_wsa2macro {
++	status = "disabled";
++};
++
++&lpass_wsamacro {
++	status = "disabled";
++};
++
+ &mdss {
+ 	status = "okay";
+ };
+@@ -1120,6 +1206,26 @@ touchscreen@0 {
+ 	};
+ };
+ 
++&swr1 {
++	status = "okay";
++
++	wcd_rx: codec@0,4 {
++		compatible = "sdw20217010e00";
++		reg = <0 4>;
++		qcom,rx-port-mapping = <1 2 3 4 5 9>;
++	};
++};
++
++&swr2 {
++	status = "okay";
++
++	wcd_tx: codec@0,3 {
++		compatible = "sdw20217010e00";
++		reg = <0 3>;
++		qcom,tx-port-mapping = <2 2 3 4>;
++	};
++};
++
+ &tlmm {
+ 	/* From qcom,gpios-reserved in the downstream DT */
+ 	gpio-reserved-ranges = <40 4>, /* NFC eSE SPI */
+@@ -1249,6 +1355,13 @@ usb_dp_qmpphy_portselect: usb-dp-qmpphy-portselect-state {
+ 		bias-pull-down;
+ 	};
+ 
++	wcd_default: wcd-reset-n-active-state {
++		pins = "gpio161";
++		function = "gpio";
++		drive-strength = <16>;
++		bias-disable;
++	};
++
+ 	wlan_en: wlan-en-state {
+ 		pins = "gpio16";
+ 		function = "gpio";
+-- 
+2.56.0
+

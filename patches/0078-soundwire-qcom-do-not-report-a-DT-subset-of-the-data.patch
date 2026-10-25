@@ -1,0 +1,68 @@
+From 1e4820b4d4dc9c83e4a231c412762eddb9bdc832 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 3 Oct 2026 08:53:18 +0300
+Subject: [PATCH 78/88] soundwire: qcom: do not report a DT subset of the data
+ ports as an error
+
+The controller reports its number of data-in and data-out ports in
+SWRM_COMP_PARAMS, and the qcom,din-ports / qcom,dout-ports properties
+override them. Any difference is logged as an error, but a board DT that
+describes only the ports in use is a valid configuration: the per-port
+properties and the codecs' port mappings follow the DT's layout. The TX
+SoundWire controller of SM8550, SM8750 and Kaanapali is described with 4
+data-in and no data-out port while the hardware of the latter has 6 and
+1, so every boot logs two errors for a working setup.
+
+Keep the error when the DT claims more ports than the controller has and
+log a smaller DT count at debug level. The port counts used are
+unchanged.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/soundwire/qcom.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/soundwire/qcom.c b/drivers/soundwire/qcom.c
+index 6e0c5fb10..bc7fcd6b9 100644
+--- a/drivers/soundwire/qcom.c
++++ b/drivers/soundwire/qcom.c
+@@ -1507,22 +1507,31 @@ static int qcom_swrm_get_port_config(struct qcom_swrm_ctrl *ctrl)
+ 	ctrl->num_dout_ports = FIELD_GET(SWRM_COMP_PARAMS_DOUT_PORTS_MASK, val);
+ 	ctrl->num_din_ports = FIELD_GET(SWRM_COMP_PARAMS_DIN_PORTS_MASK, val);
+ 
++	/*
++	 * The DT may describe a subset of the controller's ports (only the
++	 * ones the board uses); only more ports than the hardware has is an
++	 * error.
++	 */
+ 	ret = of_property_read_u32(np, "qcom,din-ports", &val);
+ 	if (!ret) { /* only if present */
+-		if (val != ctrl->num_din_ports) {
++		if (val > ctrl->num_din_ports)
+ 			dev_err(ctrl->dev, "din-ports (%d) mismatch with controller (%d)",
+ 				val, ctrl->num_din_ports);
+-		}
++		else if (val < ctrl->num_din_ports)
++			dev_dbg(ctrl->dev, "DT uses %d of the controller's %d din-ports\n",
++				val, ctrl->num_din_ports);
+ 
+ 		ctrl->num_din_ports = val;
+ 	}
+ 
+ 	ret = of_property_read_u32(np, "qcom,dout-ports", &val);
+ 	if (!ret) { /* only if present */
+-		if (val != ctrl->num_dout_ports) {
++		if (val > ctrl->num_dout_ports)
+ 			dev_err(ctrl->dev, "dout-ports (%d) mismatch with controller (%d)",
+ 				val, ctrl->num_dout_ports);
+-		}
++		else if (val < ctrl->num_dout_ports)
++			dev_dbg(ctrl->dev, "DT uses %d of the controller's %d dout-ports\n",
++				val, ctrl->num_dout_ports);
+ 
+ 		ctrl->num_dout_ports = val;
+ 	}
+-- 
+2.56.0
+

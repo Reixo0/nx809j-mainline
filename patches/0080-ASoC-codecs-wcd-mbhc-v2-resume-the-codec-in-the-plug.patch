@@ -1,0 +1,55 @@
+From 2d7edc04a07fa5849591d7c6297dce9a56fcc7a0 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 3 Oct 2026 11:44:32 +0300
+Subject: [PATCH 80/88] ASoC: codecs: wcd-mbhc-v2: resume the codec in the plug
+ detect work
+
+The MBHC initialisation and the plug-type correction work take a
+runtime PM reference on the codec before they access it, but the plug
+detect work, run from the mechanical plug interrupt and from the USB-C
+plug and unplug reports, does not. It reads and writes the MBHC
+registers and starts plug-type detection while the codec, and with it
+the SoundWire device whose regmap the codec uses, may be suspended. The
+regmap is cache-only then and the volatile reads fail with -EBUSY.
+
+Hold the same reference as the other paths for the whole work.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/codecs/wcd-mbhc-v2.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
+index 850be84d6..3eb2a5fca 100644
+--- a/sound/soc/codecs/wcd-mbhc-v2.c
++++ b/sound/soc/codecs/wcd-mbhc-v2.c
+@@ -516,6 +516,17 @@ static void mbhc_plug_detect_fn(struct work_struct *work)
+ 	struct snd_soc_component *component = mbhc->component;
+ 	enum snd_jack_types jack_type;
+ 	bool detection_type;
++	int ret;
++
++	/* resume the codec and its SoundWire devices for the register access */
++	ret = pm_runtime_get_sync(component->dev);
++	if (ret < 0 && ret != -EACCES) {
++		dev_err_ratelimited(component->dev,
++				    "pm_runtime_get_sync failed in %s, ret %d\n",
++				    __func__, ret);
++		pm_runtime_put_noidle(component->dev);
++		return;
++	}
+ 
+ 	mutex_lock(&mbhc->lock);
+ 
+@@ -579,6 +590,7 @@ static void mbhc_plug_detect_fn(struct work_struct *work)
+ exit:
+ 	mbhc->in_swch_irq_handler = false;
+ 	mutex_unlock(&mbhc->lock);
++	pm_runtime_put_autosuspend(component->dev);
+ }
+ 
+ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
+-- 
+2.56.0
+

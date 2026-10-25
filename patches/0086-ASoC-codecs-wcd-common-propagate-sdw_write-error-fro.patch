@@ -1,0 +1,54 @@
+From 18b3e0a5daba42562f0aba8ae51c6e0411484f75 Mon Sep 17 00:00:00 2001
+From: Andrey Karelin <a.karelin@ideco.ru>
+Date: Fri, 16 Oct 2026 19:33:36 +0500
+Subject: [PATCH 86/88] ASoC: codecs: wcd-common: propagate sdw_write() error
+ from bus_config
+
+wcd_bus_config() programs the clock divider for the next bank via
+sdw_write() but ignores its result and always returns 0. A failed write
+is therefore hidden from sdw_notify_config(), which aborts programming
+of the stream parameters when a bus_config callback fails, and the
+codec may keep running with a wrong clock configuration after the bank
+switch.
+
+The callback is shared by the WCD938x and WCD939x SoundWire drivers.
+It was moved to the common helper as is by commit 59aebbbb0b47 ("ASoC:
+codecs: wcd-common: move status_update callback to common"); the
+original per-driver callbacks had the same problem.
+
+Return the result of sdw_write() instead.
+
+Found by Linux Verification Center (linuxtesting.org) with SVACE.
+
+Fixes: 16572522aece ("ASoC: codecs: wcd938x-sdw: add SoundWire driver")
+Fixes: be2af391cea0 ("ASoC: codecs: Add WCD939x Soundwire devices driver")
+Signed-off-by: Andrey Karelin <a.karelin@ideco.ru>
+Link: https://lore.kernel.org/r/20261016143341.417876-3-a.karelin@ideco.ru
+
+[ from patchwork.kernel.org series 1187453 (patch 14895192, 2 of 2); not applied upstream yet ]
+[ patch 1/2 of the series (wsa881x) is not taken: no WSA881x on this board ]
+[ upstream author: Andrey Karelin <a.karelin@ideco.ru>; picked for the iceland kernel q89s ]
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/codecs/wcd-common.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/sound/soc/codecs/wcd-common.c b/sound/soc/codecs/wcd-common.c
+index 1fd899bde..4e8fb7a47 100644
+--- a/sound/soc/codecs/wcd-common.c
++++ b/sound/soc/codecs/wcd-common.c
+@@ -115,9 +115,7 @@ EXPORT_SYMBOL_GPL(wcd_update_status);
+ 
+ int wcd_bus_config(struct sdw_slave *slave, struct sdw_bus_params *params)
+ {
+-	sdw_write(slave, SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(params->next_bank), 0x01);
+-
+-	return 0;
++	return sdw_write(slave, SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(params->next_bank), 0x01);
+ }
+ EXPORT_SYMBOL_GPL(wcd_bus_config);
+ 
+-- 
+2.56.0
+

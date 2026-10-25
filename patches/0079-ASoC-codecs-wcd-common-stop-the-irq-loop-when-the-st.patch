@@ -1,0 +1,56 @@
+From 59d8596f215282d58644ca92ff49c8fa63172110 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 3 Oct 2026 11:44:32 +0300
+Subject: [PATCH 79/88] ASoC: codecs: wcd-common: stop the irq loop when the
+ status read fails
+
+wcd_interrupt_callback() keeps dispatching the nested interrupt while
+any of the three interrupt status registers reads non-zero, but it does
+not check whether the reads succeeded. While the SoundWire device is
+suspended or not attached its regmap is cache-only, the volatile status
+registers cannot be read and the status words keep whatever was on the
+stack, so the loop can call the nested handlers again and again. A
+device without a regmap would pass NULL to regmap_read().
+
+Initialise the status words and leave the loop when there is no regmap
+or a read fails.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/codecs/wcd-common.c | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/codecs/wcd-common.c b/sound/soc/codecs/wcd-common.c
+index 9016e9745..1fd899bde 100644
+--- a/sound/soc/codecs/wcd-common.c
++++ b/sound/soc/codecs/wcd-common.c
+@@ -126,14 +126,20 @@ int wcd_interrupt_callback(struct sdw_slave *slave, struct irq_domain *slave_irq
+ 		unsigned int wcd_intr_status2)
+ {
+ 	struct regmap *regmap = dev_get_regmap(&slave->dev, NULL);
+-	u32 sts1, sts2, sts3;
++	u32 sts1 = 0, sts2 = 0, sts3 = 0;
+ 
+ 	do {
+ 		handle_nested_irq(irq_find_mapping(slave_irq, 0));
+-		regmap_read(regmap, wcd_intr_status0, &sts1);
+-		regmap_read(regmap, wcd_intr_status1, &sts2);
+-		regmap_read(regmap, wcd_intr_status2, &sts3);
+-
++		/*
++		 * Stop when the status cannot be read (no regmap, or a
++		 * cache-only regmap while the device is suspended or not
++		 * attached): the values would be undefined.
++		 */
++		if (!regmap ||
++		    regmap_read(regmap, wcd_intr_status0, &sts1) ||
++		    regmap_read(regmap, wcd_intr_status1, &sts2) ||
++		    regmap_read(regmap, wcd_intr_status2, &sts3))
++			break;
+ 	} while (sts1 || sts2 || sts3);
+ 
+ 	return IRQ_HANDLED;
+-- 
+2.56.0
+
