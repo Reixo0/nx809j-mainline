@@ -1,0 +1,334 @@
+From 2acee4890230b369769665393ab3c9f0ae3f5ffc Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 23:54:12 +0100
+Subject: [PATCH 109/109] arm64: dts: qcom: kaanapali-nubia-nx809j: fan and
+ liquid cooling pump
+
+The fan is a PWM fan on the PMH0101 LPG channel 3 (25 kHz) through
+PMH0101 GPIO9 in func1 with an inverted output, powered by L8B and with
+its tachometer on GPIO211. The micropump is an AWP1921 on I2C5 with its
+power enable on PMH0101 GPIO1.
+
+Both are cooling devices of the prime core and GPU thermal zones: fan
+levels 1-5 from 45 to 65 C and pump low/mid/high from 50 to 60 C.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 262 +++++++++++++++++-
+ 1 file changed, 258 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index edda5fd64..7cb432990 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -10,6 +10,7 @@
+ #include <dt-bindings/gpio/gpio.h>
+ #include <dt-bindings/input/linux-event-codes.h>
+ #include <dt-bindings/leds/common.h>
++#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+ #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+ #include "kaanapali.dtsi"
+ 
+@@ -234,6 +235,25 @@ pmic_glink_sbu: endpoint {
+ 	 * MTP's WCN7850, but it is wired the same way: same enable GPIOs,
+ 	 * supplies and RF clock (downstream qcom,cnss-peach and bt_peach).
+ 	 */
++	/*
++	 * Centrifugal fan. The PMH0101 GPIO9 output is inverted (output-high
++	 * with func1) like downstream, so the fan sees the LPG duty cycle as
++	 * its active-low speed input and a disabled LPG stops it.
++	 */
++	fan: pwm-fan {
++		compatible = "pwm-fan";
++		pwms = <&pmh0101_pwm 3 40000>;
++		fan-supply = <&vreg_l8b_3p3>;
++		interrupts-extended = <&tlmm 211 IRQ_TYPE_EDGE_FALLING>;
++		/* downstream computes rpm = pulses per 0.5 s * 40 */
++		pulses-per-revolution = <3>;
++		cooling-levels = <0 51 102 153 204 255>;
++		#cooling-cells = <2>;
++
++		pinctrl-0 = <&fan_pwm_default>, <&fan_tach_default>;
++		pinctrl-names = "default";
++	};
++
+ 	sound {
+ 		compatible = "qcom,kaanapali-sndcard", "qcom,sm8450-sndcard";
+ 		model = "Nubia-NX809J";
+@@ -443,10 +463,11 @@ vreg_l7b_1p8: ldo7 {
+ 						   RPMH_REGULATOR_MODE_AUTO>;
+ 		};
+ 
+-		vreg_l8b_1p8: ldo8 {
+-			regulator-name = "vreg_l8b_1p8";
+-			regulator-min-microvolt = <1800000>;
+-			regulator-max-microvolt = <3300000>;
++		/* Fan supply; downstream asks for 3.3 V (8 mV steps: 3.296 V) */
++		vreg_l8b_3p3: ldo8 {
++			regulator-name = "vreg_l8b_3p3";
++			regulator-min-microvolt = <3296000>;
++			regulator-max-microvolt = <3296000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_AUTO>;
+ 			regulator-allow-set-load;
+ 			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+@@ -1029,6 +1050,20 @@ wcd_usbss_headset_out: endpoint {
+ 	};
+ };
+ 
++&i2c5 {
++	status = "okay";
++
++	micropump: micropump@44 {
++		compatible = "awinic,awp1921";
++		reg = <0x44>;
++		enable-gpios = <&pmh0101_gpios 1 GPIO_ACTIVE_HIGH>;
++		#cooling-cells = <2>;
++
++		pinctrl-0 = <&micropump_en_default>;
++		pinctrl-names = "default";
++	};
++};
++
+ &i2c_hub_3 {
+ 	status = "okay";
+ 
+@@ -1150,6 +1185,28 @@ wifi@0 {
+ 	};
+ };
+ 
++&pmh0101_gpios {
++	fan_pwm_default: fan-pwm-default-state {
++		pins = "gpio9";
++		function = "func1";
++		output-high;
++		drive-push-pull;
++		power-source = <0>;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
++	};
++
++	micropump_en_default: micropump-en-default-state {
++		pins = "gpio1";
++		function = "normal";
++		power-source = <0>;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
++	};
++};
++
++&pmh0101_pwm {
++	status = "okay";
++};
++
+ &pmh0104_j_e1_gpios {
+ 	bt_default: bt-default-state {
+ 		pins = "gpio5";
+@@ -1295,6 +1352,12 @@ disp_reset_suspend: disp-reset-suspend-state {
+ 		bias-pull-down;
+ 	};
+ 
++	fan_tach_default: fan-tach-default-state {
++		pins = "gpio211";
++		function = "gpio";
++		bias-pull-up;
++	};
++
+ 	game_switch_default: game-switch-default-state {
+ 		pins = "gpio97";
+ 		function = "gpio";
+@@ -1499,3 +1562,194 @@ &usb_dp_qmpphy_out {
+ &usb_dwc3_hs {
+ 	remote-endpoint = <&pmic_glink_hs_in>;
+ };
++
++
++/*
++ * Fan and liquid cooling pump follow the prime core and GPU sensors: fan
++ * levels 1-5 from 45 to 65 C, pump low/mid/high from 50 to 60 C.
++ */
++&{/thermal-zones/cpu-1-0-0-thermal} {
++	cooling-maps {
++		fan1 {
++			trip = <&cpu_1_0_0_fan1>;
++			cooling-device = <&fan 1 1>;
++		};
++
++		fan2 {
++			trip = <&cpu_1_0_0_fan2>;
++			cooling-device = <&fan 2 2>;
++		};
++
++		fan3 {
++			trip = <&cpu_1_0_0_fan3>;
++			cooling-device = <&fan 3 3>;
++		};
++
++		fan4 {
++			trip = <&cpu_1_0_0_fan4>;
++			cooling-device = <&fan 4 4>;
++		};
++
++		fan5 {
++			trip = <&cpu_1_0_0_fan5>;
++			cooling-device = <&fan 5 5>;
++		};
++
++		pump1 {
++			trip = <&cpu_1_0_0_pump1>;
++			cooling-device = <&micropump 1 1>;
++		};
++
++		pump2 {
++			trip = <&cpu_1_0_0_pump2>;
++			cooling-device = <&micropump 2 2>;
++		};
++
++		pump3 {
++			trip = <&cpu_1_0_0_pump3>;
++			cooling-device = <&micropump 3 3>;
++		};
++	};
++};
++
++&{/thermal-zones/cpu-1-0-0-thermal/trips} {
++	cpu_1_0_0_fan1: fan1 {
++		temperature = <45000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_fan2: fan2 {
++		temperature = <50000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_fan3: fan3 {
++		temperature = <55000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_fan4: fan4 {
++		temperature = <60000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_fan5: fan5 {
++		temperature = <65000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_pump1: pump1 {
++		temperature = <50000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_pump2: pump2 {
++		temperature = <55000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	cpu_1_0_0_pump3: pump3 {
++		temperature = <60000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++};
++
++&{/thermal-zones/gpuss-0-thermal/cooling-maps} {
++	fan1 {
++		trip = <&gpuss_0_fan1>;
++		cooling-device = <&fan 1 1>;
++	};
++
++	fan2 {
++		trip = <&gpuss_0_fan2>;
++		cooling-device = <&fan 2 2>;
++	};
++
++	fan3 {
++		trip = <&gpuss_0_fan3>;
++		cooling-device = <&fan 3 3>;
++	};
++
++	fan4 {
++		trip = <&gpuss_0_fan4>;
++		cooling-device = <&fan 4 4>;
++	};
++
++	fan5 {
++		trip = <&gpuss_0_fan5>;
++		cooling-device = <&fan 5 5>;
++	};
++
++	pump1 {
++		trip = <&gpuss_0_pump1>;
++		cooling-device = <&micropump 1 1>;
++	};
++
++	pump2 {
++		trip = <&gpuss_0_pump2>;
++		cooling-device = <&micropump 2 2>;
++	};
++
++	pump3 {
++		trip = <&gpuss_0_pump3>;
++		cooling-device = <&micropump 3 3>;
++	};
++};
++
++&{/thermal-zones/gpuss-0-thermal/trips} {
++	gpuss_0_fan1: fan1 {
++		temperature = <45000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_fan2: fan2 {
++		temperature = <50000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_fan3: fan3 {
++		temperature = <55000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_fan4: fan4 {
++		temperature = <60000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_fan5: fan5 {
++		temperature = <65000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_pump1: pump1 {
++		temperature = <50000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_pump2: pump2 {
++		temperature = <55000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++
++	gpuss_0_pump3: pump3 {
++		temperature = <60000>;
++		hysteresis = <4000>;
++		type = "active";
++	};
++};
+-- 
+2.56.0
+
