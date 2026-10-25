@@ -1,0 +1,106 @@
+From dc7241149accacf5508ee32ff70859080ce1ca1f Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Fri, 2 Oct 2026 18:48:11 +0300
+Subject: [PATCH 56/59] usb: gadget: f_ncm: retry the NTB flush while every IN
+ request is busy
+
+ncm_tx_timeout() flushes a partially filled NTB by calling eth_start_xmit()
+with a NULL skb. When all IN requests are queued, eth_start_xmit() returns
+NETDEV_TX_BUSY before it gets to ncm_wrap_ntb() and the flush is lost: the
+timer is only started when a new NTB is opened, frames added to the open
+NTB do not re-arm it, and tx_complete() only wakes the queue. The NTB then
+leaves only once more frames fill it.
+
+This bites when the IN direction carries two kinds of traffic at once, for
+example NBD writes (request, then wait for the reply) while the host also
+sends data the device has to acknowledge (NBD reads): all IN requests stay
+queued, the NTB holding the last segments of a request misses its flush,
+the sender waits for their ACK until its retransmission timer fires, and
+the peer then gets both copies (D-SACK). With backoff one request can take
+seconds, and the download stalls behind it as well.
+
+Measured on a OnePlus Pad 4 (dwc3, high speed, NCM to the Windows UsbNcm
+driver), 12 s per case, without -> with this patch:
+
+  512 KiB requests one at a time + a download in parallel:
+    requests 0.12 MB/s, slowest 8411 ms, download 0.24 MB/s
+    -> requests 8.35 MB/s, slowest 104 ms, download 31.0 MB/s
+  64 KiB requests, 2 connections x 4 in flight:  slowest 676 ms -> 20 ms
+  512 KiB requests, 2 connections x 4 in flight: slowest 1141 ms -> 114 ms
+  NBD writes while reading (an image build over NBD): below 0.3 MB/s before
+
+Traffic in one direction is not affected: a continuous upload runs at
+42.9 MB/s and a download at 36 MB/s, and requests of 4 KiB to 512 KiB one
+at a time at 6.7 to 41.7 MB/s, with and without the change.
+
+When the flush finds no free IN request and an NTB is still open, start
+the timer again from the callback. hrtimer_start() is used rather than
+hrtimer_forward_now() with HRTIMER_RESTART: ncm_wrap_ntb() may start the
+timer for a new NTB on another CPU at the same time (it runs under
+u_ether's dev->lock, which the callback does not hold), and
+hrtimer_forward_now() must not be called on a timer that is enqueued; two
+concurrent hrtimer_start() calls just leave the later expiry. A suspended
+port is left alone (eth_start_xmit() returns busy there too, after waking
+the host), and the retries for one NTB are capped at about 100 ms so that
+an IN endpoint the host no longer polls cannot keep the timer running.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/usb/gadget/function/f_ncm.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/function/f_ncm.c b/drivers/usb/gadget/function/f_ncm.c
+index 500c9c19c..75dae32a2 100644
+--- a/drivers/usb/gadget/function/f_ncm.c
++++ b/drivers/usb/gadget/function/f_ncm.c
+@@ -76,6 +76,7 @@ struct f_ncm {
+ 	struct sk_buff			*skb_tx_ndp;
+ 	u16				ndp_dgram_count;
+ 	struct hrtimer			task_timer;
++	unsigned int			task_timer_rearm;
+ };
+ 
+ static inline struct f_ncm *func_to_ncm(struct usb_function *f)
+@@ -105,6 +106,8 @@ static inline struct f_ncm *func_to_ncm(struct usb_function *f)
+ 
+ /* Delay for the transmit to wait before sending an unfilled NTB frame. */
+ #define TX_TIMEOUT_NSECS	300000
++/* flush attempts of one NTB while every IN request is in flight: about 100 ms */
++#define TX_TIMEOUT_MAX_REARM	333
+ 
+ /*
+  * Although max mtu as dictated by u_ether is 15412 bytes, setting
+@@ -1092,6 +1095,7 @@ static struct sk_buff *ncm_wrap_ntb(struct gether *port,
+ 			/* Note: we skip opts->next_ndp_index */
+ 
+ 			/* Start the timer. */
++			ncm->task_timer_rearm = 0;
+ 			hrtimer_start(&ncm->task_timer, TX_TIMEOUT_NSECS,
+ 				      HRTIMER_MODE_REL_SOFT);
+ 		}
+@@ -1158,7 +1162,20 @@ static enum hrtimer_restart ncm_tx_timeout(struct hrtimer *data)
+ 		 *
+ 		 * This will call directly into u_ether's eth_start_xmit()
+ 		 */
+-		netdev->netdev_ops->ndo_start_xmit(NULL, netdev);
++		if (netdev->netdev_ops->ndo_start_xmit(NULL, netdev) == NETDEV_TX_BUSY &&
++		    READ_ONCE(ncm->skb_tx_data) && !READ_ONCE(ncm->port.is_suspend) &&
++		    ncm->task_timer_rearm++ < TX_TIMEOUT_MAX_REARM)
++			/*
++			 * Every IN request is in flight, so the open NTB was
++			 * not sent, and nothing else sends it before it is
++			 * full.  Try again later.  hrtimer_start() rather than
++			 * hrtimer_forward_now(): ncm_wrap_ntb() may start this
++			 * timer for a new NTB on another CPU meanwhile (under
++			 * u_ether's lock, which is not held here), and two
++			 * hrtimer_start() calls simply leave the later expiry.
++			 */
++			hrtimer_start(&ncm->task_timer, TX_TIMEOUT_NSECS,
++				      HRTIMER_MODE_REL_SOFT);
+ 	}
+ 	return HRTIMER_NORESTART;
+ }
+-- 
+2.56.0
+

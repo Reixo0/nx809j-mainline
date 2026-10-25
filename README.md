@@ -206,7 +206,8 @@ Notes:
 - [ ] pm8010 (SPMI1 SID 0xc/0xd) and pmd802x (SID 4) don't answer on SPMI
 - [x] Buttons: power + volume down (PMIC PON, `POWER_RESET_QCOM_PON=y`), volume up (GPIO 101), game slider (GPIO 97, `SW_PEN_INSERTED`, 1 = down)
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
-- [x] Battery/charger via battmgr, USB-C via UCSI (role switching still forced to device mode)
+- [x] Battery/charger via battmgr, USB-C via UCSI
+- [x] USB-C data roles (patches 0041-0059): pmic-glink/UCSI switches the controller between device mode (USB network shell to the PC) and host mode (game controllers, drives) on its own. SuperSpeed works: an NVMe enclosure enumerates at 10 Gbit/s and reads at about 530 MB/s. Needs a USB 3 cable; the cable in the box is USB 2 only, so the PC link stays at 480 Mbit/s. The GCC pipe clock input of the USB3 PHY was missing from `kaanapali.dtsi` (patch 0058). exFAT and NTFS (ntfs3) are modules
 - [x] postmarketOS Plasma Mobile: rootfs in `super` (linux_root, dm-init) or over NBD from the PC; internet via the PC
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
@@ -227,6 +228,11 @@ Notes:
 - Suspend (patches 0033-0039): Kaanapali GDSC retention and clock fixes by
   Krishna Chaitanya Chundru and Qiang Yu (Qualcomm), Victor Fuentes, Joonhoe
   Kim and mzak, from the same queue.
+- USB (patches 0041-0057): the Kaanapali USB3/DP PHY and qmp-combo fixes,
+  pmic_glink and UCSI fixes, eUSB2 repeater/PHY and dwc3/f_ncm fixes by
+  Victor Fuentes, Joonhoe Kim, mzak, Oleg Keri, David Vornholt, Rahul Pon,
+  and Elson Serrao, Krishna Kurapati and Uttkarsh Aggarwal (Qualcomm), from
+  the same queue.
 - GPU (patches 0027-0032): the rpmhpd clamp fix by Oleg Keri, the GMU address
   fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
   Burch, from the same queue (which carries the OnePlus 15

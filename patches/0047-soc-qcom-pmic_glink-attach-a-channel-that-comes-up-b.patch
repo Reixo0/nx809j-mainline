@@ -1,0 +1,122 @@
+From 47641bbbc06d737e9fd2b6211c4ee769b73f8ec8 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Mon, 28 Sep 2026 16:43:27 +0300
+Subject: [PATCH 47/59] soc: qcom: pmic_glink: attach a channel that comes up
+ before the platform device
+
+On Kaanapali the pmic_glink service runs on the SoCCP, which the boot chain
+starts; remoteproc only attaches to it (early_boot), so the
+PMIC_RTR_SOCCP_APPS channel is created as soon as the glink edge comes up.
+The pmic_glink platform device may not be bound by then: its PDR handle
+defers the probe until the QRTR address family is registered. The rpmsg
+probe then failed with -ENODEV and the battery, charger and USB-C clients
+never got data, although their power supplies were registered.
+
+Returning -EPROBE_DEFER does not help: a failed rpmsg probe destroys the
+endpoint, which closes the glink channel, and the channel is gone.
+
+Accept the channel instead and keep it until pmic_glink_probe() attaches
+it; messages that arrive before that have no client and are dropped. With
+an ADSP-hosted pmic_glink the firmware load always delayed the channel,
+which hid the ordering problem.
+
+Seen on the OnePlus Pad 4 (PC relay kits pc-010 D and pc-011 A).
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/soc/qcom/pmic_glink.c | 42 +++++++++++++++++++++++++++--------
+ 1 file changed, 33 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/soc/qcom/pmic_glink.c b/drivers/soc/qcom/pmic_glink.c
+index 84fd0c82c..cf6a8ffbc 100644
+--- a/drivers/soc/qcom/pmic_glink.c
++++ b/drivers/soc/qcom/pmic_glink.c
+@@ -53,6 +53,8 @@ struct pmic_glink {
+ };
+ 
+ static struct pmic_glink *__pmic_glink;
++/* a channel that came up before the platform device was bound, attached in pmic_glink_probe() */
++static struct rpmsg_device *__pmic_glink_rpdev;
+ static DEFINE_MUTEX(__pmic_glink_lock);
+ 
+ struct pmic_glink_client {
+@@ -157,6 +159,10 @@ static int pmic_glink_rpmsg_callback(struct rpmsg_device *rpdev, void *data,
+ 	struct pmic_glink *pg = dev_get_drvdata(&rpdev->dev);
+ 	unsigned long flags;
+ 
++	/* not attached yet: no client can take the message */
++	if (!pg)
++		return 0;
++
+ 	if (len < sizeof(*hdr)) {
+ 		dev_warn(pg->dev, "ignoring truncated message\n");
+ 		return 0;
+@@ -243,16 +249,9 @@ static void pmic_glink_pdr_callback(int state, char *svc_path, void *priv)
+ 	pmic_glink_state_notify_clients(pg);
+ }
+ 
+-static int pmic_glink_rpmsg_probe(struct rpmsg_device *rpdev)
++/* called with __pmic_glink_lock held */
++static void pmic_glink_attach_rpdev(struct pmic_glink *pg, struct rpmsg_device *rpdev)
+ {
+-	struct pmic_glink *pg;
+-
+-	guard(mutex)(&__pmic_glink_lock);
+-	pg = __pmic_glink;
+-	if (!pg)
+-		return dev_err_probe(&rpdev->dev, -EPROBE_DEFER,
+-				     "no pmic_glink device to attach to\n");
+-
+ 	dev_set_drvdata(&rpdev->dev, pg);
+ 	pg->pdr_available = rpdev->id.driver_data;
+ 
+@@ -261,6 +260,25 @@ static int pmic_glink_rpmsg_probe(struct rpmsg_device *rpdev)
+ 	if (!pg->pdr_available)
+ 		pg->pdr_state = SERVREG_SERVICE_STATE_UP;
+ 	pmic_glink_state_notify_clients(pg);
++}
++
++static int pmic_glink_rpmsg_probe(struct rpmsg_device *rpdev)
++{
++	struct pmic_glink *pg;
++
++	guard(mutex)(&__pmic_glink_lock);
++	pg = __pmic_glink;
++	if (!pg) {
++		/*
++		 * The SoCCP is attached rather than booted, so its channel can come up
++		 * before the platform device is bound. Failing the probe would close
++		 * the channel for good; keep it until pmic_glink_probe() attaches it.
++		 */
++		__pmic_glink_rpdev = rpdev;
++		return 0;
++	}
++
++	pmic_glink_attach_rpdev(pg, rpdev);
+ 
+ 	return 0;
+ }
+@@ -270,6 +288,8 @@ static void pmic_glink_rpmsg_remove(struct rpmsg_device *rpdev)
+ 	struct pmic_glink *pg;
+ 
+ 	guard(mutex)(&__pmic_glink_lock);
++	if (__pmic_glink_rpdev == rpdev)
++		__pmic_glink_rpdev = NULL;
+ 	pg = __pmic_glink;
+ 	if (!pg)
+ 		return;
+@@ -354,6 +374,10 @@ static int pmic_glink_probe(struct platform_device *pdev)
+ 
+ 	mutex_lock(&__pmic_glink_lock);
+ 	__pmic_glink = pg;
++	if (__pmic_glink_rpdev) {
++		pmic_glink_attach_rpdev(pg, __pmic_glink_rpdev);
++		__pmic_glink_rpdev = NULL;
++	}
+ 	mutex_unlock(&__pmic_glink_lock);
+ 
+ 	return 0;
+-- 
+2.56.0
+

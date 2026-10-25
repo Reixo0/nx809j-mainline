@@ -1,0 +1,67 @@
+From 08ccfd84c84453dd32479a099241b6a6301aa4a0 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 13:06:06 +0100
+Subject: [PATCH 59/59] arm64: dts: qcom: kaanapali-nubia-nx809j: USB role
+ switch and port select
+
+Let pmic-glink (UCSI) pick the data role instead of forcing peripheral
+mode, so USB host mode works (controllers, drives). Start as a device
+so the USB network shell comes up before the role is known.
+
+Mux GPIO60 to the QMP PHY's port select function, as the stock firmware
+does.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 20 +++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 02add4e1b..62f592777 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1116,6 +1116,13 @@ sw_ctrl_default: sw-ctrl-default-state {
+ 		bias-pull-down;
+ 	};
+ 
++	usb_dp_qmpphy_portselect: usb-dp-qmpphy-portselect-state {
++		pins = "gpio60";
++		function = "usb_phy";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++
+ 	wlan_en: wlan-en-state {
+ 		pins = "gpio16";
+ 		function = "gpio";
+@@ -1168,11 +1175,12 @@ &ufs_mem_phy {
+ 
+ &usb {
+ 	/*
+-	 * The role normally comes from pmic-glink, which needs the ADSP.
+-	 * Until that runs, force device mode for the USB network shell.
++	 * The data role comes from pmic-glink (UCSI) on the SoCCP. Start as a
++	 * device, so the USB network shell is up before the role is known.
+ 	 */
+-	dr_mode = "peripheral";
+-	/delete-property/ usb-role-switch;
++	dr_mode = "otg";
++	usb-role-switch;
++	role-switch-default-mode = "peripheral";
+ 
+ 	status = "okay";
+ };
+@@ -1190,6 +1198,10 @@ &usb_dp_qmpphy {
+ 	vdda-phy-supply = <&vreg_l4f_0p8>;
+ 	vdda-pll-supply = <&vreg_l1d_1p2>;
+ 
++	/* Port select pin, routed to the PHY as on the stock firmware */
++	pinctrl-0 = <&usb_dp_qmpphy_portselect>;
++	pinctrl-names = "default";
++
+ 	status = "okay";
+ };
+ 
+-- 
+2.56.0
+
