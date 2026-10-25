@@ -1,0 +1,283 @@
+From 4621c558d3eae7d7ff181f76093e97b3dada6211 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 20:58:45 +0100
+Subject: [PATCH 104/107] usb: typec: mux: wcd939x-usbss: add a headset jack
+ mode
+
+Some boards, like the Nubia RedMagic 11 Pro, wire a 3.5 mm jack's mic and
+ground contacts to MG1/MG2 of the switch, and use no USB-C analog audio.
+With "qcom,headset-jack" the switch passes USB through and keeps the jack
+mic, sense and AGND switches on; the codec swaps ground and mic for
+OMTP/CTIA headsets through the orientation switch. The register sequence
+and init values follow the downstream wcd939x-i2c driver (HSJ_CONNECT,
+GND_MIC_SWAP_HSJ). Without this the jack's ground floats: headsets
+screech and their mic is not detected.
+---
+ drivers/usb/typec/mux/wcd939x-usbss.c | 156 +++++++++++++++++++++++++-
+ 1 file changed, 153 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/typec/mux/wcd939x-usbss.c b/drivers/usb/typec/mux/wcd939x-usbss.c
+index 322c185a5..c8c21512d 100644
+--- a/drivers/usb/typec/mux/wcd939x-usbss.c
++++ b/drivers/usb/typec/mux/wcd939x-usbss.c
+@@ -15,16 +15,28 @@
+ #include <linux/usb/typec_dp.h>
+ #include <linux/usb/typec_mux.h>
+ 
++#define WCD_USBSS_PMP_EN			0x1
+ #define WCD_USBSS_PMP_OUT1			0x2
+ 
++#define WCD_USBSS_PMP_OUT1_HSJ_EN					BIT(6)
++
++#define WCD_USBSS_DP_EN				0x1e
++
++#define WCD_USBSS_DP_EN_P_THRESH_SEL					GENMASK(3, 1)
++
+ #define WCD_USBSS_DP_DN_MISC1			0x20
+ 
+ #define WCD_USBSS_DP_DN_MISC1_DP_PCOMP_2X_DYN_BST_ON_EN			BIT(3)
+ #define WCD_USBSS_DP_DN_MISC1_DN_PCOMP_2X_DYN_BST_ON_EN			BIT(0)
+ 
++#define WCD_USBSS_DN_EN				0x21
++
++#define WCD_USBSS_DN_EN_P_THRESH_SEL					GENMASK(3, 1)
++
+ #define WCD_USBSS_MG1_EN			0x24
+ 
+ #define WCD_USBSS_MG1_EN_CT_SNS_EN					BIT(1)
++#define WCD_USBSS_MG1_EN_OVP_CFG					GENMASK(3, 2)
+ 
+ #define WCD_USBSS_MG1_BIAS			0x25
+ 
+@@ -33,10 +45,12 @@
+ #define WCD_USBSS_MG1_MISC			0x27
+ 
+ #define WCD_USBSS_MG1_MISC_PCOMP_2X_DYN_BST_ON_EN			BIT(5)
++#define WCD_USBSS_MG1_MISC_INC_NEG_SURGE_THRESH			BIT(2)
+ 
+ #define WCD_USBSS_MG2_EN			0x28
+ 
+ #define WCD_USBSS_MG2_EN_CT_SNS_EN					BIT(1)
++#define WCD_USBSS_MG2_EN_OVP_CFG					GENMASK(3, 2)
+ 
+ #define WCD_USBSS_MG2_BIAS			0x29
+ 
+@@ -45,6 +59,12 @@
+ #define WCD_USBSS_MG2_MISC			0x2b
+ 
+ #define WCD_USBSS_MG2_MISC_PCOMP_2X_DYN_BST_ON_EN			BIT(5)
++#define WCD_USBSS_MG2_MISC_INC_NEG_SURGE_THRESH			BIT(2)
++
++#define WCD_USBSS_EXT_LIN_EN			0x3d
++#define WCD_USBSS_EXT_SW_CTRL_1			0x43
++#define WCD_USBSS_SW_LIN_CTRL_1			0x50
++#define WCD_USBSS_FSM_OVERRIDE			0x63
+ 
+ #define WCD_USBSS_DISP_AUXP_THRESH		0x80
+ 
+@@ -54,6 +74,12 @@
+ 
+ #define WCD_USBSS_DISP_AUXP_CTL_LK_CANCEL_TRK_COEFF			GENMASK(2, 0)
+ 
++#define WCD_USBSS_DISP_AUXM_THRESH		0x82
++
++#define WCD_USBSS_DISP_AUXM_THRESH_DISP_AUXM_OVPON_CM			GENMASK(7, 5)
++
++#define WCD_USBSS_DC_TRIMCODE_2			0x91
++#define WCD_USBSS_DC_TRIMCODE_3			0x92
+ #define WCD_USBSS_CPLDO_CTL2			0xa1
+ 
+ #define WCD_USBSS_SWITCH_SETTINGS_ENABLE	0x403
+@@ -96,6 +122,7 @@
+ 
+ #define WCD_USBSS_FUNCTION_ENABLE		0x413
+ 
++#define WCD_USBSS_FUNCTION_ENABLE_RDAC_CAL_CODE_SELECT			BIT(2)
+ #define WCD_USBSS_FUNCTION_ENABLE_SOURCE_SELECT				GENMASK(1, 0)
+ 
+ #define WCD_USBSS_FUNCTION_ENABLE_SOURCE_SELECT_MANUAL		1
+@@ -112,6 +139,7 @@
+ #define WCD_USBSS_USB_SS_CNTL_RCO_EN					BIT(3)
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE				GENMASK(2, 0)
+ 
++#define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_HSJ		1
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_AATC		2
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_USB		5
+ 
+@@ -119,6 +147,10 @@
+ 
+ #define WCD_USBSS_AUDIO_FSM_START_AUDIO_FSM_AUDIO_TRIG			BIT(0)
+ 
++#define WCD_USBSS_CHIP_ID1			0x439
++
++#define WCD_USBSS_CHIP_ID1_V2			1
++
+ #define WCD_USBSS_RATIO_SPKR_REXT_L_LSB		0x461
+ #define WCD_USBSS_RATIO_SPKR_REXT_L_MSB		0x462
+ #define WCD_USBSS_RATIO_SPKR_REXT_R_LSB		0x463
+@@ -198,6 +230,9 @@ struct wcd939x_usbss {
+ 	unsigned long mode;
+ 	unsigned int svid;
+ 	bool dp_active;
++
++	/* a 3.5 mm jack's mic and ground contacts are wired to MG1/MG2 */
++	bool hsj;
+ };
+ 
+ static const struct regmap_range_cfg wcd939x_usbss_ranges[] = {
+@@ -533,6 +568,109 @@ static int wcd939x_usbss_set(struct wcd939x_usbss *usbss)
+ 	return 0;
+ }
+ 
++/*
++ * Headset jack (HSJ) mode, for boards that wire a 3.5 mm jack's mic and
++ * ground contacts to MG1/MG2. USB keeps its D+/D- switches. The jack
++ * switches stay on, so they are settled when a plug goes in; the codec MBHC
++ * logic swaps them through the orientation:
++ * - None or "Normal": Mic MG2, Sense GSBU1, AGND MG1
++ * - "Swapped": Mic MG1, Sense GSBU2, AGND MG2
++ * The register sequence follows the downstream driver.
++ */
++static int wcd939x_usbss_hsj_set(struct wcd939x_usbss *usbss)
++{
++	bool swapped = usbss->orientation == TYPEC_ORIENTATION_REVERSE;
++	unsigned int jack_switches = WCD_USBSS_SWITCH_SETTINGS_ENABLE_SENSE_SWITCHES |
++				     WCD_USBSS_SWITCH_SETTINGS_ENABLE_MIC_SWITCHES |
++				     WCD_USBSS_SWITCH_SETTINGS_ENABLE_AGND_SWITCHES;
++	int ret;
++
++	ret = regmap_clear_bits(usbss->regmap, WCD_USBSS_SWITCH_SETTINGS_ENABLE,
++				jack_switches);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_USB_SS_CNTL,
++				 WCD_USBSS_USB_SS_CNTL_USB_SS_MODE,
++				 FIELD_PREP(WCD_USBSS_USB_SS_CNTL_USB_SS_MODE,
++					    WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_HSJ));
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_SWITCH_SELECT0,
++				 WCD_USBSS_SWITCH_SELECT0_SENSE_SWITCHES |
++				 WCD_USBSS_SWITCH_SELECT0_MIC_SWITCHES,
++				 swapped ? WCD_USBSS_SWITCH_SELECT0_SENSE_SWITCHES :
++					   WCD_USBSS_SWITCH_SELECT0_MIC_SWITCHES);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_SWITCH_SELECT1,
++				 WCD_USBSS_SWITCH_SELECT1_AGND_SWITCHES,
++				 swapped ? WCD_USBSS_SWITCH_SELECT1_AGND_SWITCHES : 0);
++	if (ret)
++		return ret;
++
++	return regmap_set_bits(usbss->regmap, WCD_USBSS_SWITCH_SETTINGS_ENABLE,
++			       jack_switches);
++}
++
++static int wcd939x_usbss_hsj_init(struct wcd939x_usbss *usbss)
++{
++	unsigned int id;
++	int ret;
++
++	ret = regmap_read(usbss->regmap, WCD_USBSS_CHIP_ID1, &id);
++	if (ret)
++		return ret;
++
++	/* OVP and efuse overrides, 4.2 V OVP on D+/D-, as the stock driver */
++	regmap_write(usbss->regmap, WCD_USBSS_FSM_OVERRIDE, 0x7f);
++	regmap_update_bits(usbss->regmap, WCD_USBSS_DP_EN, WCD_USBSS_DP_EN_P_THRESH_SEL,
++			   FIELD_PREP(WCD_USBSS_DP_EN_P_THRESH_SEL, 6));
++	regmap_update_bits(usbss->regmap, WCD_USBSS_DN_EN, WCD_USBSS_DN_EN_P_THRESH_SEL,
++			   FIELD_PREP(WCD_USBSS_DN_EN_P_THRESH_SEL, 6));
++	regmap_set_bits(usbss->regmap, WCD_USBSS_FUNCTION_ENABLE,
++			WCD_USBSS_FUNCTION_ENABLE_RDAC_CAL_CODE_SELECT);
++	regmap_set_bits(usbss->regmap, WCD_USBSS_MG1_MISC,
++			WCD_USBSS_MG1_MISC_INC_NEG_SURGE_THRESH);
++	regmap_set_bits(usbss->regmap, WCD_USBSS_MG2_MISC,
++			WCD_USBSS_MG2_MISC_INC_NEG_SURGE_THRESH);
++
++	/* Display common mode and OVP 4 V on the MG pins, as the stock driver */
++	regmap_update_bits(usbss->regmap, WCD_USBSS_DISP_AUXP_CTL,
++			   WCD_USBSS_DISP_AUXP_CTL_LK_CANCEL_TRK_COEFF,
++			   FIELD_PREP(WCD_USBSS_DISP_AUXP_CTL_LK_CANCEL_TRK_COEFF, 1));
++	regmap_set_bits(usbss->regmap, WCD_USBSS_DISP_AUXP_THRESH,
++			WCD_USBSS_DISP_AUXP_THRESH_DISP_AUXP_OVPON_CM);
++	regmap_set_bits(usbss->regmap, WCD_USBSS_DISP_AUXM_THRESH,
++			WCD_USBSS_DISP_AUXM_THRESH_DISP_AUXM_OVPON_CM);
++
++	/* OVP settings, and no contact sense on MG1/MG2 for version 2 */
++	regmap_set_bits(usbss->regmap, WCD_USBSS_MG1_EN, WCD_USBSS_MG1_EN_OVP_CFG);
++	regmap_set_bits(usbss->regmap, WCD_USBSS_MG2_EN, WCD_USBSS_MG2_EN_OVP_CFG);
++	if (id == WCD_USBSS_CHIP_ID1_V2) {
++		regmap_clear_bits(usbss->regmap, WCD_USBSS_MG1_EN, WCD_USBSS_MG1_EN_CT_SNS_EN);
++		regmap_clear_bits(usbss->regmap, WCD_USBSS_MG2_EN, WCD_USBSS_MG2_EN_CT_SNS_EN);
++		regmap_set_bits(usbss->regmap, WCD_USBSS_PMP_OUT1, WCD_USBSS_PMP_OUT1_HSJ_EN);
++	}
++
++	regmap_write(usbss->regmap, WCD_USBSS_PMP_EN, 0x0f);
++	regmap_write(usbss->regmap, WCD_USBSS_EXT_SW_CTRL_1, 0x00);
++	regmap_write(usbss->regmap, WCD_USBSS_EXT_LIN_EN, 0xc4);
++	regmap_write(usbss->regmap, WCD_USBSS_SW_LIN_CTRL_1, 0x01);
++	regmap_write(usbss->regmap, WCD_USBSS_DC_TRIMCODE_2, 0x3c);
++	regmap_write(usbss->regmap, WCD_USBSS_DC_TRIMCODE_3, 0x0f);
++
++	/* AGND switches on MG1 by default */
++	ret = regmap_clear_bits(usbss->regmap, WCD_USBSS_MG1_BIAS,
++				WCD_USBSS_MG1_BIAS_PCOMP_DYN_BST_EN);
++	if (ret)
++		return ret;
++
++	return wcd939x_usbss_hsj_set(usbss);
++}
++
+ static int wcd939x_usbss_switch_set(struct typec_switch_dev *sw,
+ 				    enum typec_orientation orientation)
+ {
+@@ -544,7 +682,10 @@ static int wcd939x_usbss_switch_set(struct typec_switch_dev *sw,
+ 	if (usbss->orientation != orientation) {
+ 		usbss->orientation = orientation;
+ 
+-		ret = wcd939x_usbss_set(usbss);
++		if (usbss->hsj)
++			ret = wcd939x_usbss_hsj_set(usbss);
++		else
++			ret = wcd939x_usbss_set(usbss);
+ 	}
+ 
+ 	mutex_unlock(&usbss->lock);
+@@ -635,7 +776,10 @@ static int wcd939x_usbss_probe(struct i2c_client *client)
+ 		goto err_mux_put;
+ 	}
+ 
+-	usbss->mode = TYPEC_STATE_SAFE;
++	usbss->hsj = device_property_read_bool(dev, "qcom,headset-jack");
++
++	/* With a headset jack the switch only passes USB through */
++	usbss->mode = usbss->hsj ? TYPEC_STATE_USB : TYPEC_STATE_SAFE;
+ 	usbss->orientation = TYPEC_ORIENTATION_NONE;
+ 
+ 	gpiod_set_value(usbss->reset_gpio, 1);
+@@ -707,11 +851,17 @@ static int wcd939x_usbss_probe(struct i2c_client *client)
+ 	if (ret)
+ 		goto err_regulator_disable;
+ 
+-	/* Setup in SAFE mode */
++	/* Setup in SAFE mode (USB mode with a headset jack) */
+ 	ret = wcd939x_usbss_set(usbss);
+ 	if (ret)
+ 		goto err_regulator_disable;
+ 
++	if (usbss->hsj) {
++		ret = wcd939x_usbss_hsj_init(usbss);
++		if (ret)
++			goto err_regulator_disable;
++	}
++
+ 	sw_desc.drvdata = usbss;
+ 	sw_desc.fwnode = dev_fwnode(dev);
+ 	sw_desc.set = wcd939x_usbss_switch_set;
+-- 
+2.56.0
+

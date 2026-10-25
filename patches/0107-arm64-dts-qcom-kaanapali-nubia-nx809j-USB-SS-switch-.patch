@@ -1,0 +1,96 @@
+From b90ce7a3aec566d5b3413ac49099d2776d303afe Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 20:58:45 +0100
+Subject: [PATCH 107/107] arm64: dts: qcom: kaanapali-nubia-nx809j: USB-SS
+ switch and headset jack
+
+The WCD9395 USB-SS switch (i2c3 at 0x0e, as stock) carries the 3.5 mm
+jack's mic and ground: describe it in headset jack mode and link the codec
+to it. MBHC detects on the 2.7 V mic bias, so the 1.7 V headset limit
+(meant for 1.8 V) is scaled to 2.55 V; a headset mic sits near 2.1 V.
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 46 ++++++++++++++++++-
+ 1 file changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 51515e662..edda5fd64 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -41,8 +41,11 @@ wcd939x: audio-codec {
+ 
+ 		/*
+ 		 * Headphones use the 3.5 mm jack (normally open detect switches);
+-		 * no analog audio over USB-C.
++		 * no analog audio over USB-C. The jack's mic and ground contacts
++		 * go through the USB-SS switch, which also swaps them for
++		 * OMTP/CTIA headsets.
+ 		 */
++		qcom,usbss-headset-jack;
+ 
+ 		pinctrl-0 = <&wcd_default>;
+ 		pinctrl-names = "default";
+@@ -54,7 +57,12 @@ wcd939x: audio-codec {
+ 		qcom,micbias4-microvolt = <2500000>;
+ 		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000
+ 							  500000 500000 500000 500000>;
+-		qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
++		/*
++		 * Detection runs on the 2.7 V mic bias: the stock 1.7 V headset
++		 * limit is for 1.8 V, so scale it (a headset mic sits near 2.1 V,
++		 * an open line near 2.7 V).
++		 */
++		qcom,mbhc-headset-vthreshold-microvolt = <2550000>;
+ 		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
+ 		qcom,rx-device = <&wcd_rx>;
+ 		qcom,tx-device = <&wcd_tx>;
+@@ -68,6 +76,12 @@ wcd939x: audio-codec {
+ 		vdd-px-supply = <&vreg_l1g_1p2>;
+ 
+ 		#sound-dai-cells = <1>;
++
++		port {
++			wcd_codec_headset_in: endpoint {
++				remote-endpoint = <&wcd_usbss_headset_out>;
++			};
++		};
+ 	};
+ 
+ 	chosen {
+@@ -987,6 +1001,34 @@ &gpu_zap_shader {
+ 	firmware-name = "qcom/kaanapali/nubia/nx809j/gen80200_zap.mbn";
+ };
+ 
++&i2c3 {
++	status = "okay";
++
++	/* Only passes USB 2.0 through and carries the 3.5 mm jack's mic/ground */
++	wcd_usbss: typec-mux@e {
++		compatible = "qcom,wcd9395-usbss", "qcom,wcd9390-usbss";
++		reg = <0x0e>;
++
++		vdd-supply = <&vreg_l15b_1p8>;
++
++		qcom,headset-jack;
++		orientation-switch;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@1 {
++				reg = <1>;
++
++				wcd_usbss_headset_out: endpoint {
++					remote-endpoint = <&wcd_codec_headset_in>;
++				};
++			};
++		};
++	};
++};
++
+ &i2c_hub_3 {
+ 	status = "okay";
+ 
+-- 
+2.56.0
+

@@ -222,7 +222,8 @@ Notes:
 - [x] Microphone (patches 0074-0088): the WCD9395 codec on SoundWire (RX swr1, TX swr2, as on the MTP), bottom mic = analog AMIC4, a "Mic" input in the UCM profile. The other analog inputs: AMIC3 (back or side) and AMIC5 (weak) pick up sound, AMIC1 does not
 - [x] Headphones (patches 0089-0102): the WCD9395 headphone amplifier in HPH PCM (HiFi) mode, as stock, over SoundWire port 9 (HPH PCM patches from the KONKR Pocket FIT / SM8750 work, see Credits). It needed the SoundWire stream synchronization point period programmed (patch 0094) and a 24-bit RX codec DMA (patch 0095; 16-bit delivers nothing). The headphone stream is 32-bit, so software volume keeps the low bits: with 16-bit, low volume crackled. A class-H fix (patch 0102) removed background static. Plugging and unplugging switches between the Headphones and Speaker outputs on its own. Use the PipeWire audio backend (`apk add postmarketos-base-ui-audio-backend-pipewire`, which replaces the PulseAudio one): it picks the 32-bit format on its own
 - [x] USB audio: a game controller's headphone port works (snd-usb-audio)
-- [ ] Audio: headset mic (AMIC2), earpiece use of the top speaker (stock Receiver profile in the ACF)
+- [x] Headset mic (patches 0103-0107): the 3.5 mm jack's mic and ground run through the WCD9395 USB-SS switch (i2c3, 0x0e), as on stock; without it the ground floats and headsets screech. The switch driver gets a headset jack mode (USB passes through, jack switches on, ground/mic swapped for OMTP/CTIA headsets), with the register sequence of the downstream driver, and MBHC picks the wiring before reporting. The headset limit had to be scaled for the 2.7 V mic bias (2.55 V; a headset mic sits near 2.1 V). Plugging a headset switches the output to Headphones and the input to "Headset microphone" (AMIC2); the UCM splits the stereo capture PCM by channel (bottom mic 0, headset mic 1), since PipeWire keeps devices on one PCM in separate profiles. Also fixes a mainline register address (MG2_MISC, patch 0103)
+- [ ] Audio: earpiece use of the top speaker (stock Receiver profile in the ACF), headset buttons untested
 - [ ] Modem, cameras
 
 ## Credits
@@ -245,6 +246,9 @@ Notes:
 - Microphone and codec (patches 0074-0087): WCD939x, MBHC, SoundWire and TX
   macro fixes by mzak and Victor Fuentes, and q6apm fixes by Shawn Guo,
   Andrey Karelin and Birk Skyum, from the same queue.
+- Headset jack (patches 0104-0105): the USB-SS headset jack register
+  sequences and the swap with the mic bias off follow Qualcomm's downstream
+  wcd939x-i2c and wcd-mbhc drivers, as published in OnePlus's kernel sources.
 - Headphones (patches 0089-0093): HPH PCM mode for the RX macro, WCD939x and
   SoundWire, and MBHC fixes, from the KONKR Pocket FIT Elite (SM8750) port and
   Anze, as carried in [Armbian](https://github.com/armbian/build)'s sm8750
