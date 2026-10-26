@@ -2,7 +2,10 @@
 # Builds Mu-Silicium (UEFI) for the NX809J into out/Mu-nx809j.img, a boot
 # image for boot_a.
 #
-# Usage: uefi/build.sh [RELEASE|DEBUG]
+# Usage: [FB_MARKER=1] uefi/build.sh [RELEASE|DEBUG]
+#   DEBUG prints the UEFI log on the screen.
+#   FB_MARKER=1: the boot shim paints a white band over the top of the
+#   screen before starting UEFI (shows that ABL ran it).
 #
 # Needs: tools/dl/Mu-Silicium with its submodules (except Binaries),
 # tools/dl/mu-venv (pip install -r Mu-Silicium/pip-requirements.txt),
@@ -27,6 +30,21 @@ cp "$dtb" "$mu/Resources/DTBs/nx809j.dtb"
 "$top/uefi/make-binaries.sh" "$top/dump/partitions/uefi_a.img" "$mu"
 
 cd "$mu"
+if [ "${FB_MARKER:-0}" = 1 ]; then
+	# Fill the first 300 lines of the 1216-pixel framebuffer that ABL
+	# left at 0xFC800000. x1 (payload address) must survive, and no
+	# "ldr =" constants: their literal pool would land at _Payload, where
+	# the FD is appended. 1216 * 4 * 300 / 8 = 0x2c880.
+	trap 'git -C "$mu" checkout -q BootShim/BootShim.S' EXIT
+	sed -i 's/^_Start:$/_Start:\
+  movz  x7, #0xfc80, lsl #16\
+  movz  x8, #0xc880\
+  movk  x8, #0x2, lsl #16\
+  mov   x9, #-1\
+1:str   x9, [x7], #8\
+  subs  x8, x8, #1\
+  b.ne  1b/' BootShim/BootShim.S
+fi
 "$py" build_uefi.py -d nx809j -r "$target"
 
 # The NX809J ABL wants the unsigned AVB hash footer that stock boot_a has

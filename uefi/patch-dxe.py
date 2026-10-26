@@ -10,9 +10,10 @@ firmware build fails loudly instead of being patched in the wrong place.
 
 The patches are the OnePlus 15 (infiniti) ones from Project-Silicium's
 Device-Binaries, located again in the NX809J build
-(BOOT.MXF.2.5.3-00131-KAANAPALI-1.124266.24). The OnePlus-only PmicDxe
-battery presence and QcomChargerDxe patches are not needed: that code does
-not exist in this build.
+(BOOT.MXF.2.5.3-00131-KAANAPALI-1.124266.24). From infiniti's OnePlus-only
+patches, the PmicDxe battery presence read is needed here too; its dead
+battery check and the QcomChargerDxe patch are not: that code does not
+exist in this build.
 """
 import os
 import struct
@@ -82,6 +83,10 @@ PATCHES = {
         (0x419c, insn(0x9400645b), NOP),
         (0x41a4, insn(0x94005e88), NOP),
         (0x41ac, insn(0x94003f1a), NOP),
+        # Logs the SDAM boot error code, then reads PMIC 1 SID 0xc register
+        # 0x4454 (battery presence). After ABL that SPMI channel is not
+        # ours: synchronous external abort. Same as infiniti's 0x2768c.
+        (0x1d27c, bytes.fromhex('fd7bbea9f30b00f9'), RET_0),
     ],
     # SPMI PIC init (pairs with the PmicDxe patch).
     'SPMI': [
