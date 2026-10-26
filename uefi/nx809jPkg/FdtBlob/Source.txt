@@ -1,0 +1,2 @@
+kaanapali-nubia-nx809j.dtb is copied here by uefi/build.sh from the
+kernel build (out/kernel), i.e. the mainline DTB from our linux tree.
