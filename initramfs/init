@@ -89,6 +89,21 @@ dm_root() {
 	switch_to /dev/dm-0
 }
 
+# nx809j.root=part: rootfs on a GPT partition, found by its name
+# (nx809j.partlabel=, default "linux"); no udev here, so search sysfs
+part_root() {
+	LABEL=$(sed -n 's/.*nx809j\.partlabel=\([^ ]*\).*/\1/p' /proc/cmdline)
+	LABEL=${LABEL:-linux}
+	for i in $(seq 1 100); do
+		DEV=$(grep -l "^PARTNAME=$LABEL\$" /sys/class/block/*/uevent 2>/dev/null | head -n 1)
+		[ -n "$DEV" ] && break
+		sleep 0.1
+	done
+	[ -n "$DEV" ] || { echo "!! no partition named $LABEL"; return 1; }
+	DEV=/dev/$(sed -n 's/^DEVNAME=//p' "$DEV")
+	switch_to "$DEV"
+}
+
 # Mount an ext4 rootfs from $1 and hand over to its init; returns on failure
 switch_to() {
 	mkdir -p /newroot
@@ -119,6 +134,7 @@ if [ -n "$ROOT_KIND" ]; then
 	case $ROOT_KIND in
 		nbd) nbd_root ;;
 		dm) dm_root ;;
+		part) part_root ;;
 		*) echo "!! unknown nx809j.root=$ROOT_KIND" ;;
 	esac
 	echo "!! switching to the rootfs failed, staying in the initramfs"

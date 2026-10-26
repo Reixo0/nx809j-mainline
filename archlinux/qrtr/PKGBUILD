@@ -1,0 +1,23 @@
+# NX809J: Qualcomm IPC Router library and tools (linux-msm)
+pkgname=qrtr
+pkgver=1.2
+pkgrel=1
+pkgdesc='Qualcomm IPC Router library and tools'
+arch=(aarch64)
+url='https://github.com/linux-msm/qrtr'
+license=(BSD-3-Clause)
+depends=(glibc)
+makedepends=(meson)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('7a82bf80246fe71287b13c66c0466208822e8337fcd4aaf302eee6c5fcb48a52')
+
+build() {
+  # The kernel has the name service (QRTR_NS) since 5.7
+  arch-meson $pkgname-$pkgver build -Dqrtr-ns=disabled -Dsystemd-service=disabled
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 $pkgname-$pkgver/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
