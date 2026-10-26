@@ -1,0 +1,3 @@
+# NX809J: a modem restart (SSR) does not work with IPA yet and freezes the
+# whole SoC, so leave a crashed modem down until the next reboot.
+ACTION=="add", SUBSYSTEM=="remoteproc", ATTR{name}=="modem", ATTR{recovery}="disabled"

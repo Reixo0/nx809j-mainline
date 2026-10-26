@@ -3,6 +3,7 @@
 # the pmaports checkout pmbootstrap uses (tools/pmaports).
 #
 #   pmos/linux-nubia-nx809j/kernel.tar.gz   <- out/kernel (Image, dtb, config)
+#   pmos/device-nubia-nx809j/device-files.tar.gz <- device/rootfs
 #   tools/pmaports/device/testing/{device,linux}-nubia-nx809j  <- pmos/*
 #
 # Run after scripts/build.sh, then: pmbootstrap build --force linux-nubia-nx809j
@@ -25,6 +26,10 @@ if [[ ${INCLUDE_MODULES:-1} == 1 && -d $ROOT/out/modules/lib/modules ]]; then
   cp -a "$ROOT/out/modules/lib" "$STAGE/"
 fi
 tar -C "$STAGE" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$PKG/kernel.tar.gz" .
+
+# The device files every distribution gets (device/rootfs)
+tar -C "$ROOT/device/rootfs" --owner=0 --group=0 --sort=name --mtime=@0 \
+  -czf "$ROOT/pmos/device-nubia-nx809j/device-files.tar.gz" .
 
 # Refresh checksums the way `pmbootstrap checksum` would
 python3 -I - "$ROOT/pmos" <<'PY'

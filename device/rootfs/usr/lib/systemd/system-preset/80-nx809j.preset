@@ -2,3 +2,6 @@ enable nx809j-usb-uplink.service
 enable nx809j-mark-boot-successful.service
 enable nx809j-wifi-mac.service
 enable nx809j-bt-addr.service
+enable rmtfs.service
+enable tqftpserv.service
+enable ModemManager.service

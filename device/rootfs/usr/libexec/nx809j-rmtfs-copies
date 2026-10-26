@@ -1,0 +1,23 @@
+#!/bin/sh
+# The modem keeps its file system (EFS: IMEI, calibration, network state) in
+# modemst1, modemst2, fsc and fsg. Android owns those partitions, so rmtfs
+# serves copies from /var/lib/rmtfs instead (see the rmtfs drop-in). Make the
+# copies once, reading the partitions only; existing copies are never
+# replaced, since the modem keeps writing to them.
+set -eu
+dir=/var/lib/rmtfs
+
+[ -f $dir/modem_fs1 ] && [ -f $dir/modem_fs2 ] && [ -f $dir/modem_fsc ] && [ -f $dir/modem_fsg ] && exit 0
+
+mkdir -p $dir
+chmod 700 $dir
+for pair in modemst1:modem_fs1 modemst2:modem_fs2 fsc:modem_fsc fsg:modem_fsg; do
+	part=/dev/disk/by-partlabel/${pair%%:*}
+	file=$dir/${pair#*:}
+	[ -f "$file" ] && continue
+	[ -b "$part" ] || { echo "missing $part" >&2; exit 1; }
+	# cat opens the partition read only
+	(umask 077; cat "$part" > "$file.tmp")
+	mv "$file.tmp" "$file"
+	echo "copied ${pair%%:*} to $file"
+done

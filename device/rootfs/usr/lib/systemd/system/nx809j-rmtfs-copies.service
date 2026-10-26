@@ -1,0 +1,12 @@
+# Copy the modem's file system partitions to /var/lib/rmtfs on first boot
+# (read only on the partitions), before rmtfs serves them to the modem.
+[Unit]
+Description=Copies of the modem file system partitions for rmtfs
+DefaultDependencies=no
+After=local-fs.target systemd-udevd.service
+Before=rmtfs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/nx809j-rmtfs-copies

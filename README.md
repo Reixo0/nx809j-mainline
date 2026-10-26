@@ -22,6 +22,9 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `scripts/mkboot.sh` | Build `out/boot.img` for flashing to `boot_a`: header v4, shim + kernel (gzip) + appended DTB, os_version 16.0.0/2026-08, AVB footer |
 | `probe/` | Tiny boot-path probes (PSCI off/reset), `probe/build.sh <name>` |
 | `scripts/boot.sh` | `fastboot boot out/boot.img` from superfastboot (RAM boot). **Never reaches the kernel** on this phone (see notes) |
+| `device/` | Distribution-neutral phone files (`device/rootfs`: services, rmtfs and modem setup, udev rules, UCM); see `device/README.md` |
+| `scripts/install-device-files.sh` | Install `device/rootfs`, all firmware and the modules into any systemd root filesystem |
+| `scripts/firmware-files.sh` | List of the phone's firmware files and where they come from (used by the two install scripts) |
 | `pmos/` | postmarketOS device port (`device-nubia-nx809j`, prebuilt `linux-nubia-nx809j`) |
 | `scripts/pmos-kernel-pkg.sh` | Package `out/kernel` for pmOS and copy the port into `tools/pmaports` |
 | `scripts/pmos-prepare-root.sh` | Copy/grow pmbootstrap's root image, make `/boot` nofail |
