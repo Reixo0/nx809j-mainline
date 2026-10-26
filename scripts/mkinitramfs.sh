@@ -14,6 +14,10 @@ STAGE=$ROOT/out/initramfs
 rm -rf "$STAGE"; mkdir -p "$STAGE/nx809j"
 install -m755 "$BUSYBOX" "$STAGE/nx809j/busybox"
 install -m755 "$ROOT/initramfs/init" "$STAGE/nx809j-init"
+# busybox switch_root refuses to run without a regular file at /init. Booted
+# by ABL, the vendor ramdisk brings Android's /init (and replaces this);
+# booted through UEFI, our initramfs is the only one.
+ln -s nx809j-init "$STAGE/init"
 # Firmware for the remoteprocs we start (scripts/pack-firmware.py output).
 # Kept to what's enabled: it's built into the kernel image.
 FW_SRC=$ROOT/out/firmware/lib/firmware
