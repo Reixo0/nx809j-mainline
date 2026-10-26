@@ -1,0 +1,64 @@
+From 7eb598fdb745e8b3b9ebbf3be1b197b8f959b6ae Mon Sep 17 00:00:00 2001
+From: Joonhoe Kim <26rote@gmail.com>
+Date: Fri, 16 Oct 2026 21:45:59 +0900
+Subject: [PATCH 113/121] net: qrtr: ns: retry service announcements on -EAGAIN
+
+Since commit 544d85de4dc2 ("net: qrtr: Send HELLO message on endpoint
+register"), qrtr_node_enqueue() returns -EAGAIN for every packet but
+HELLO until our HELLO has gone out to the node. The HELLO is retried,
+but the NEW_SERVER announcements sent in reply to the remote's HELLO
+are not, so a service registered before the remote came up is never
+announced to it.
+
+On Kaanapali the modem sends its HELLO before it accepts ours. With
+rmtfs started first, the modem never learns about rmtfs and its
+watchdog resets the SoC about 40 s later.
+
+Retry each announcement for up to 10 s while it fails with -EAGAIN.
+announce_servers() runs from the name service worker, which can sleep.
+
+Fixes: 544d85de4dc2 ("net: qrtr: Send HELLO message on endpoint register")
+Cc: stable@vger.kernel.org
+Signed-off-by: Joonhoe Kim <26rote@gmail.com>
+Link: https://lore.kernel.org/r/20261016124600.31-1-26rote@gmail.com
+
+[ from patchwork.kernel.org series 1187314 (patch 14894719, 1 of 1); not applied upstream yet ]
+[ replaces our queue 0262, the 10 Oct draft of the same author: the posted
+  version bounds the retry by 10 s of jiffies instead of 100 tries and
+  keeps the original error message ]
+[ upstream author: Joonhoe Kim <26rote@gmail.com>; picked for the iceland kernel q89s ]
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ net/qrtr/ns.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/net/qrtr/ns.c b/net/qrtr/ns.c
+index bcb090ee7..33a9c4449 100644
+--- a/net/qrtr/ns.c
++++ b/net/qrtr/ns.c
+@@ -5,6 +5,7 @@
+  * Copyright (c) 2020, Linaro Ltd.
+  */
+ 
++#include <linux/delay.h>
+ #include <linux/module.h>
+ #include <linux/qrtr.h>
+ #include <linux/workqueue.h>
+@@ -226,7 +227,13 @@ static int announce_servers(struct sockaddr_qrtr *sq)
+ 
+ 	/* Announce the list of servers registered in this node */
+ 	xa_for_each(&node->servers, index, srv) {
++		unsigned long timeout = jiffies + 10 * HZ;
++
+ 		ret = service_announce_new(sq, srv);
++		while (ret == -EAGAIN && time_before(jiffies, timeout)) {
++			msleep(100);
++			ret = service_announce_new(sq, srv);
++		}
+ 		if (ret < 0) {
+ 			if (ret == -ENODEV)
+ 				continue;
+-- 
+2.56.0
+

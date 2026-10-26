@@ -1,0 +1,282 @@
+From e70822328cf99f06b798f6fe1fc9710dbd1467a5 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 17:12:31 +0100
+Subject: [PATCH 115/121] net: ipa: tell IPA v5.5 modems about SMEM and filter
+ statistics
+
+The downstream driver adds three TLVs to the INIT_DRIVER request on
+IPA v5.5:
+
+ - 0x23: the part of the hardware filter statistics table managed by
+   the modem (offset, size, first and last index 64-254)
+ - 0x24: the size of the SMEM region shared with the modem
+ - 0x25: the first 2 KB of that region, used for peripheral statistics
+
+The Kaanapali modem expects its SMEM region to be 0x19000 bytes, as
+given by the AP; without the size it asserts in its SMEM allocation.
+Add the TLVs and record the SMEM item address and size for them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/ipa/ipa.h         |  4 ++
+ drivers/net/ipa/ipa_mem.c     |  2 +
+ drivers/net/ipa/ipa_qmi.c     | 26 ++++++++++
+ drivers/net/ipa/ipa_qmi_msg.c | 98 +++++++++++++++++++++++++++++++++++
+ drivers/net/ipa/ipa_qmi_msg.h | 25 ++++++++-
+ 5 files changed, 154 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ipa/ipa.h b/drivers/net/ipa/ipa.h
+index 7ef10a4ff..9f7d4d0c7 100644
+--- a/drivers/net/ipa/ipa.h
++++ b/drivers/net/ipa/ipa.h
+@@ -51,6 +51,8 @@ struct ipa_smp2p;
+  * @imem_size:		Size of IMEM region
+  * @smem_iova:		I/O virtual address of IPA region in SMEM
+  * @smem_size:		Size of SMEM region
++ * @smem_addr:		Physical address of the SMEM item
++ * @smem_item_size:	Size of the SMEM item
+  * @zero_addr:		DMA address of preallocated zero-filled memory
+  * @zero_virt:		Virtual address of preallocated zero-filled memory
+  * @zero_size:		Size (bytes) of preallocated zero-filled memory
+@@ -105,6 +107,8 @@ struct ipa {
+ 
+ 	unsigned long smem_iova;
+ 	size_t smem_size;
++	phys_addr_t smem_addr;
++	u32 smem_item_size;
+ 
+ 	dma_addr_t zero_addr;
+ 	void *zero_virt;
+diff --git a/drivers/net/ipa/ipa_mem.c b/drivers/net/ipa/ipa_mem.c
+index 5430a1ee2..2afd6aa96 100644
+--- a/drivers/net/ipa/ipa_mem.c
++++ b/drivers/net/ipa/ipa_mem.c
+@@ -602,6 +602,8 @@ static int ipa_smem_init(struct ipa *ipa, size_t size)
+ 
+ 	ipa->smem_iova = iova;
+ 	ipa->smem_size = size;
++	ipa->smem_addr = addr;
++	ipa->smem_item_size = actual;
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/ipa/ipa_qmi.c b/drivers/net/ipa/ipa_qmi.c
+index d771f3a71..ce91e28d9 100644
+--- a/drivers/net/ipa/ipa_qmi.c
++++ b/drivers/net/ipa/ipa_qmi.c
+@@ -269,6 +269,10 @@ static const struct qmi_msg_handler ipa_client_msg_handlers[] = {
+ 	{ },
+ };
+ 
++/* Filter statistics table entries managed by the modem (IPA v5.5+) */
++#define IPA_QMI_FILTER_STATS_START	64
++#define IPA_QMI_FILTER_STATS_COUNT	191
++
+ /* Return a pointer to an init modem driver request structure, which contains
+  * configuration parameters for the modem.  The modem may be started multiple
+  * times, but generally these parameters don't change so we can reuse the
+@@ -394,6 +398,28 @@ init_modem_driver_req(struct ipa_qmi *ipa_qmi)
+ 		}
+ 	}
+ 
++	/* Newer modems manage part of the filter statistics table */
++	mem = ipa_mem_find(ipa, IPA_MEM_STATS_FILTER_ROUTE);
++	if (mem && mem->size && ipa->version >= IPA_VERSION_5_5) {
++		req.filter_stats_info_valid = 1;
++		req.filter_stats_info.start = ipa->mem_offset + mem->offset;
++		req.filter_stats_info.size = IPA_QMI_FILTER_STATS_COUNT * 16;
++		req.filter_stats_info.start_index = IPA_QMI_FILTER_STATS_START;
++		req.filter_stats_info.end_index = IPA_QMI_FILTER_STATS_START +
++						  IPA_QMI_FILTER_STATS_COUNT - 1;
++	}
++
++	/* Newer modems are told the size of the SMEM region, and use its
++	 * first 2KB for peripheral statistics.
++	 */
++	if (ipa->smem_item_size && ipa->version >= IPA_VERSION_5_5) {
++		req.smem_info_valid = 1;
++		req.smem_info.size = ipa->smem_item_size;
++		req.per_stats_smem_info_valid = 1;
++		req.per_stats_smem_info.start = ipa->smem_addr;
++		req.per_stats_smem_info.size = SZ_2K;
++	}
++
+ 	return &req;
+ }
+ 
+diff --git a/drivers/net/ipa/ipa_qmi_msg.c b/drivers/net/ipa/ipa_qmi_msg.c
+index 51dc13a57..6c7728ed8 100644
+--- a/drivers/net/ipa/ipa_qmi_msg.c
++++ b/drivers/net/ipa/ipa_qmi_msg.c
+@@ -250,6 +250,41 @@ const struct qmi_elem_info ipa_mem_range_ei[] = {
+ 	},
+ };
+ 
++/* QMI message structure definition for struct ipa_filter_stats_info */
++const struct qmi_elem_info ipa_filter_stats_info_ei[] = {
++	{
++		.data_type	= QMI_UNSIGNED_4_BYTE,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_filter_stats_info, start),
++		.offset		= offsetof(struct ipa_filter_stats_info, start),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_4_BYTE,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_filter_stats_info, size),
++		.offset		= offsetof(struct ipa_filter_stats_info, size),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_1_BYTE,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_filter_stats_info, start_index),
++		.offset		= offsetof(struct ipa_filter_stats_info, start_index),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_1_BYTE,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_filter_stats_info, end_index),
++		.offset		= offsetof(struct ipa_filter_stats_info, end_index),
++	},
++	{
++		.data_type	= QMI_EOTI,
++	},
++};
++
+ /* QMI message structure definition for struct ipa_init_modem_driver_req */
+ const struct qmi_elem_info ipa_init_modem_driver_req_ei[] = {
+ 	{
+@@ -640,6 +675,69 @@ const struct qmi_elem_info ipa_init_modem_driver_req_ei[] = {
+ 		.offset		= offsetof(struct ipa_init_modem_driver_req,
+ 					   hw_stats_drop_size),
+ 	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     filter_stats_info_valid),
++		.tlv_type	= 0x23,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   filter_stats_info_valid),
++	},
++	{
++		.data_type	= QMI_STRUCT,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     filter_stats_info),
++		.tlv_type	= 0x23,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   filter_stats_info),
++		.ei_array	= ipa_filter_stats_info_ei,
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     smem_info_valid),
++		.tlv_type	= 0x24,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   smem_info_valid),
++	},
++	{
++		.data_type	= QMI_STRUCT,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     smem_info),
++		.tlv_type	= 0x24,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   smem_info),
++		.ei_array	= ipa_mem_range_ei,
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     per_stats_smem_info_valid),
++		.tlv_type	= 0x25,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   per_stats_smem_info_valid),
++	},
++	{
++		.data_type	= QMI_STRUCT,
++		.elem_len	= 1,
++		.elem_size	=
++			sizeof_field(struct ipa_init_modem_driver_req,
++				     per_stats_smem_info),
++		.tlv_type	= 0x25,
++		.offset		= offsetof(struct ipa_init_modem_driver_req,
++					   per_stats_smem_info),
++		.ei_array	= ipa_mem_range_ei,
++	},
+ 	{
+ 		.data_type	= QMI_EOTI,
+ 	},
+diff --git a/drivers/net/ipa/ipa_qmi_msg.h b/drivers/net/ipa/ipa_qmi_msg.h
+index 644b8c271..e7d642011 100644
+--- a/drivers/net/ipa/ipa_qmi_msg.h
++++ b/drivers/net/ipa/ipa_qmi_msg.h
+@@ -27,7 +27,7 @@
+  */
+ #define IPA_QMI_INDICATION_REGISTER_REQ_SZ	20	/* -> server handle */
+ #define IPA_QMI_INDICATION_REGISTER_RSP_SZ	7	/* <- server handle */
+-#define IPA_QMI_INIT_DRIVER_REQ_SZ		162	/* client handle -> */
++#define IPA_QMI_INIT_DRIVER_REQ_SZ		197	/* client handle -> */
+ #define IPA_QMI_INIT_DRIVER_RSP_SZ		25	/* client handle <- */
+ #define IPA_QMI_INIT_COMPLETE_IND_SZ		7	/* <- server handle */
+ #define IPA_QMI_DRIVER_INIT_COMPLETE_REQ_SZ	4	/* -> server handle */
+@@ -119,6 +119,16 @@ struct ipa_mem_range {
+ 	u32 size;
+ };
+ 
++/* This defines the part of the hardware filter statistics table
++ * that is managed by the modem.
++ */
++struct ipa_filter_stats_info {
++	u32 start;		/* Offset in IPA memory */
++	u32 size;
++	u8 start_index;
++	u8 end_index;
++};
++
+ /* The message for the IPA_QMI_INIT_DRIVER request contains information
+  * from the AP that affects modem initialization.
+  */
+@@ -216,6 +226,18 @@ struct ipa_init_modem_driver_req {
+ 	u32			hw_stats_drop_base_addr;
+ 	u8			hw_stats_drop_size_valid;
+ 	u32			hw_stats_drop_size;
++
++	/* The modem's part of the hardware filter statistics table */
++	u8			filter_stats_info_valid;
++	struct ipa_filter_stats_info filter_stats_info;
++
++	/* The SMEM region shared with the modem (newer modems need its
++	 * size), and the part of it used for peripheral statistics.
++	 */
++	u8			smem_info_valid;
++	struct ipa_mem_range	smem_info;
++	u8			per_stats_smem_info_valid;
++	struct ipa_mem_range	per_stats_smem_info;
+ };
+ 
+ /* The response to a IPA_QMI_INIT_DRIVER request begins with a standard
+@@ -256,6 +278,7 @@ extern const struct qmi_elem_info ipa_init_complete_ind_ei[];
+ extern const struct qmi_elem_info ipa_mem_bounds_ei[];
+ extern const struct qmi_elem_info ipa_mem_array_ei[];
+ extern const struct qmi_elem_info ipa_mem_range_ei[];
++extern const struct qmi_elem_info ipa_filter_stats_info_ei[];
+ extern const struct qmi_elem_info ipa_init_modem_driver_req_ei[];
+ extern const struct qmi_elem_info ipa_init_modem_driver_rsp_ei[];
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,52 @@
+From ea0cf2afa4d68fa0a2ba0e3900dd3fe5cdc37653 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 17:12:33 +0100
+Subject: [PATCH 118/121] dt-bindings: net: qcom,ipa: add Kaanapali
+
+Kaanapali has IPA v5.5, compatible with SM8550.
+
+Its IPA may only use a window of the IOVA space for DMA, which is
+described with a second memory-region: a reserved memory node with an
+iommu-addresses property.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../devicetree/bindings/net/qcom,ipa.yaml         | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/net/qcom,ipa.yaml b/Documentation/devicetree/bindings/net/qcom,ipa.yaml
+index 38e383051..e513f6453 100644
+--- a/Documentation/devicetree/bindings/net/qcom,ipa.yaml
++++ b/Documentation/devicetree/bindings/net/qcom,ipa.yaml
+@@ -60,6 +60,7 @@ properties:
+           - const: qcom,sc7180-ipa
+       - items:
+           - enum:
++              - qcom,kaanapali-ipa
+               - qcom,sm8650-ipa
+           - const: qcom,sm8550-ipa
+ 
+@@ -168,11 +169,15 @@ properties:
+       absent, the AP loads GSI firmware.
+ 
+   memory-region:
+-    maxItems: 1
+-    description:
+-      If present, a phandle for a reserved memory area that holds
+-      the firmware passed to Trust Zone for authentication.  Required
+-      when the AP (not the modem) performs early initialization.
++    minItems: 1
++    items:
++      - description:
++          A reserved memory area that holds the firmware passed to Trust
++          Zone for authentication.  Required when the AP (not the modem)
++          performs early initialization.
++      - description:
++          IOVA ranges the IPA must not use for DMA, given as a reserved
++          memory node with an iommu-addresses property.
+ 
+   firmware-name:
+     maxItems: 1
+-- 
+2.56.0
+

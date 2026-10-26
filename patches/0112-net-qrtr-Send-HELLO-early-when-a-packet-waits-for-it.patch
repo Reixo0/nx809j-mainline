@@ -1,0 +1,57 @@
+From 4826ca5a9225ec826182625be02cb6c31b4d25d2 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sat, 10 Oct 2026 04:19:21 +0300
+Subject: [PATCH 112/121] net: qrtr: Send HELLO early when a packet waits for
+ it
+
+qrtr_node_enqueue() drops every non-HELLO packet to a node until our
+HELLO to it has gone out, and that HELLO is sent from a work item that
+backs off for 100 ms whenever sending it fails.
+
+If the remote's HELLO arrives in that window, the name server's
+announcements of the local services are dropped and announce_servers()
+gives up, so the remote never learns about them. On Kaanapali the modem
+then can't find its remote file system and its watchdog fires.
+
+When a packet hits the gate, run the pending HELLO work right away and
+check again.
+
+Fixes: 544d85de4dc2 ("net: qrtr: Send HELLO message on endpoint register")
+
+[ from infiniti-mainline/linux master, commit 839c154d7e75 ]
+[ upstream author: Victor Fuentes <victor@vlinkz.dev>; picked for the iceland kernel q89 ]
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ net/qrtr/af_qrtr.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/net/qrtr/af_qrtr.c b/net/qrtr/af_qrtr.c
+index e7b364742..d79bc99de 100644
+--- a/net/qrtr/af_qrtr.c
++++ b/net/qrtr/af_qrtr.c
+@@ -352,8 +352,19 @@ static int qrtr_node_enqueue(struct qrtr_node *node, struct sk_buff *skb,
+ 	mutex_lock(&node->ep_lock);
+ 	if (!node->hello_sent && type != QRTR_TYPE_HELLO) {
+ 		mutex_unlock(&node->ep_lock);
+-		kfree_skb(skb);
+-		return -EAGAIN;
++
++		/* Our HELLO may still be backing off while the remote
++		 * already talks to us: send it now.
++		 */
++		mod_delayed_work(system_percpu_wq, &node->say_hello, 0);
++		flush_delayed_work(&node->say_hello);
++
++		mutex_lock(&node->ep_lock);
++		if (!node->hello_sent) {
++			mutex_unlock(&node->ep_lock);
++			kfree_skb(skb);
++			return -EAGAIN;
++		}
+ 	}
+ 	mutex_unlock(&node->ep_lock);
+ 
+-- 
+2.56.0
+

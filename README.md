@@ -225,7 +225,10 @@ Notes:
 - [x] USB audio: a game controller's headphone port works (snd-usb-audio)
 - [x] Headset mic (patches 0103-0107): the 3.5 mm jack's mic and ground run through the WCD9395 USB-SS switch (i2c3, 0x0e), as on stock; without it the ground floats and headsets screech. The switch driver gets a headset jack mode (USB passes through, jack switches on, ground/mic swapped for OMTP/CTIA headsets), with the register sequence of the downstream driver, and MBHC picks the wiring before reporting. The headset limit had to be scaled for the 2.7 V mic bias (2.55 V; a headset mic sits near 2.1 V). Plugging a headset switches the output to Headphones and the input to "Headset microphone" (AMIC2); the UCM splits the stereo capture PCM by channel (bottom mic 0, headset mic 1), since PipeWire keeps devices on one PCM in separate profiles. Also fixes a mainline register address (MG2_MISC, patch 0103)
 - [ ] Audio: earpiece use of the top speaker (stock Receiver profile in the ACF), headset buttons untested
-- [ ] Modem, cameras
+- [x] Modem and mobile data (patches 0110-0121): the modem boots from the phone's own firmware (Kaanapali modem patches by Victor Fuentes and two QRTR fixes from the iceland queue, see Credits), registers on LTE and 5G NR, and ModemManager brings up mobile data through IPA v5.5. IPA needed the Kaanapali settings of the downstream driver: its own endpoint numbers, SRAM layout, DDR write limit and SMEM size, three extra TLVs in the modem init request, and a marker in the microcontroller descriptor RAM (without it, starting the microcontroller froze the whole SoC). Its DMA is held to IOVAs 0x20000000-0x3fffffff as on stock (above that, UFS stalled under load) and its interrupt is level triggered (edge lost downlink wakeups). The modem's file system is served by rmtfs from **copies** of modemst1/modemst2/fsc/fsg in `/var/lib/rmtfs`, so Linux never writes Android's partitions; `rmtfs -s` starts the modem at boot. Operator DNS servers (Orange ES) strip DNSSEC signatures, so systemd-resolved needs `DNSSEC=no`
+- [ ] Modem crash recovery: stopping the modem works, but starting it again freezes the SoC (the IPA microcontroller is still running from the first boot), so recovery is disabled by a udev rule and a crashed modem stays down until reboot
+- [ ] Voice call audio, SMS, GPS
+- [ ] Cameras
 
 ## Credits
 
@@ -262,6 +265,10 @@ Notes:
   fix by map220v and A8xx/Adreno fixes by mzak, Mohammed AlHashim and Michael
   Burch, from the same queue (which carries the OnePlus 15
   [infiniti-mainline](https://github.com/infiniti-mainline/linux) series).
+- Modem (patches 0110-0113): the Kaanapali modem binding and DT node by Victor
+  Fuentes, and QRTR fixes by mzak and Joonhoe Kim, from the same queue. The
+  Kaanapali IPA settings (patches 0114-0121) follow Qualcomm's downstream
+  dataipa driver (tag LA.VENDOR.16.2.6.r1-10900-kaanapali.0 on CodeLinaro).
 
 ## License
 

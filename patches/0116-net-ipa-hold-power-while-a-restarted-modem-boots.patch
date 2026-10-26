@@ -1,0 +1,144 @@
+From a5c7b3bb47d5f93ec2f2281c24ea1befe0cc6d0e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 17:12:32 +0100
+Subject: [PATCH 116/121] net: ipa: hold power while a restarted modem boots
+
+The modem accesses IPA while it boots. On the first boot the driver
+holds a proxy power reference until the microcontroller reports that
+it is initialized, but when the modem restarts, the microcontroller is
+already running and never reports again, so nothing keeps IPA powered.
+If IPA is runtime suspended then, the modem's first access hangs the
+SoC on Kaanapali.
+
+Like the downstream driver, take a proxy power reference every time the
+modem powers up, and drop it once the modem handshake has completed (or
+when the modem stops before that).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/ipa/ipa.h       |  2 ++
+ drivers/net/ipa/ipa_modem.c |  1 +
+ drivers/net/ipa/ipa_qmi.c   |  4 ++++
+ drivers/net/ipa/ipa_uc.c    | 26 +++++++++++++++++++++++++-
+ drivers/net/ipa/ipa_uc.h    |  6 ++++++
+ 5 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ipa/ipa.h b/drivers/net/ipa/ipa.h
+index 9f7d4d0c7..3a0168f0e 100644
+--- a/drivers/net/ipa/ipa.h
++++ b/drivers/net/ipa/ipa.h
+@@ -39,6 +39,7 @@ struct ipa_smp2p;
+  * @interrupt:		IPA Interrupt information
+  * @uc_powered:		true if power is active by proxy for microcontroller
+  * @uc_loaded:		true after microcontroller has reported it's ready
++ * @modem_powered:	true if power is active by proxy for a restarting modem
+  * @reg_virt:		Virtual address used for IPA register access
+  * @regs:		IPA register definitions
+  * @mem_addr:		DMA address of IPA-local memory space
+@@ -91,6 +92,7 @@ struct ipa {
+ 	struct ipa_interrupt *interrupt;
+ 	bool uc_powered;
+ 	bool uc_loaded;
++	bool modem_powered;
+ 
+ 	void __iomem *reg_virt;
+ 	const struct regs *regs;
+diff --git a/drivers/net/ipa/ipa_modem.c b/drivers/net/ipa/ipa_modem.c
+index d84c1dbd3..9466f3e11 100644
+--- a/drivers/net/ipa/ipa_modem.c
++++ b/drivers/net/ipa/ipa_modem.c
+@@ -471,6 +471,7 @@ static int ipa_modem_notify(struct notifier_block *nb, unsigned long action,
+ 			 notify_data->crashed ? "crashed" : "stopping");
+ 		if (ipa->setup_complete)
+ 			ipa_modem_crashed(ipa);
++		ipa_uc_power_modem_done(ipa);
+ 		break;
+ 
+ 	case QCOM_SSR_AFTER_SHUTDOWN:
+diff --git a/drivers/net/ipa/ipa_qmi.c b/drivers/net/ipa/ipa_qmi.c
+index ce91e28d9..b04241408 100644
+--- a/drivers/net/ipa/ipa_qmi.c
++++ b/drivers/net/ipa/ipa_qmi.c
+@@ -12,6 +12,7 @@
+ #include "ipa_mem.h"
+ #include "ipa_modem.h"
+ #include "ipa_qmi_msg.h"
++#include "ipa_uc.h"
+ 
+ /**
+  * DOC: AP/Modem QMI Handshake
+@@ -145,6 +146,9 @@ static void ipa_qmi_ready(struct ipa_qmi *ipa_qmi)
+ 	ret = ipa_modem_start(ipa);
+ 	if (ret)
+ 		dev_err(ipa->dev, "error %d starting modem\n", ret);
++
++	/* The modem handshake is complete; it no longer needs proxy power */
++	ipa_uc_power_modem_done(ipa);
+ }
+ 
+ /* All QMI clients from the modem node are gone (modem shut down or crashed). */
+diff --git a/drivers/net/ipa/ipa_uc.c b/drivers/net/ipa/ipa_uc.c
+index dc7e92f2a..e25cfef5f 100644
+--- a/drivers/net/ipa/ipa_uc.c
++++ b/drivers/net/ipa/ipa_uc.c
+@@ -212,8 +212,22 @@ void ipa_uc_power(struct ipa *ipa)
+ 	static bool already;
+ 	int ret;
+ 
+-	if (already)
++	/* When the modem restarts, the microcontroller is already running
++	 * and won't report again.  The modem still accesses IPA while it
++	 * boots, so hold power until the modem handshake completes.
++	 */
++	if (already) {
++		if (ipa->modem_powered)
++			return;
++		ret = pm_runtime_get_sync(dev);
++		if (ret < 0) {
++			pm_runtime_put_noidle(dev);
++			dev_err(dev, "error %d getting modem proxy power\n", ret);
++		} else {
++			ipa->modem_powered = true;
++		}
+ 		return;
++	}
+ 	already = true;		/* Only do this on first boot */
+ 
+ 	/* This power reference dropped in ipa_uc_response_hdlr() above */
+@@ -226,6 +240,16 @@ void ipa_uc_power(struct ipa *ipa)
+ 	}
+ }
+ 
++/* Drop the power reference taken for a restarting modem (if any) */
++void ipa_uc_power_modem_done(struct ipa *ipa)
++{
++	if (!ipa->modem_powered)
++		return;
++
++	ipa->modem_powered = false;
++	(void)pm_runtime_put_autosuspend(ipa->dev);
++}
++
+ /* Send a command to the microcontroller */
+ static void send_uc_command(struct ipa *ipa, u32 command, u32 command_param)
+ {
+diff --git a/drivers/net/ipa/ipa_uc.h b/drivers/net/ipa/ipa_uc.h
+index 12997ecf5..20d504682 100644
+--- a/drivers/net/ipa/ipa_uc.h
++++ b/drivers/net/ipa/ipa_uc.h
+@@ -41,6 +41,12 @@ void ipa_uc_deconfig(struct ipa *ipa);
+  */
+ void ipa_uc_power(struct ipa *ipa);
+ 
++/**
++ * ipa_uc_power_modem_done() - Drop the proxy power held for a restarting modem
++ * @ipa:	IPA pointer
++ */
++void ipa_uc_power_modem_done(struct ipa *ipa);
++
+ /**
+  * ipa_uc_panic_notifier()
+  * @ipa:	IPA pointer
+-- 
+2.56.0
+

@@ -1,0 +1,48 @@
+From aa300c99588d87be6a7f47a69eff3d2f9859c4b2 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 17:12:36 +0100
+Subject: [PATCH 121/121] arm64: dts: qcom: kaanapali-nubia-nx809j: enable the
+ modem and IPA
+
+Enable the modem with the phone's own firmware and IPA with its GSI
+firmware. Mobile data works with LTE and 5G NR through ModemManager.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 7cb432990..57c86bcb4 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1101,6 +1101,12 @@ &i2c_master_hub {
+ };
+ 
+ /* No WSA amplifiers on this board */
++&ipa {
++	firmware-name = "qcom/kaanapali/nubia/nx809j/ipa_fws.mbn";
++
++	status = "okay";
++};
++
+ &lpass_wsa2macro {
+ 	status = "disabled";
+ };
+@@ -1283,6 +1289,13 @@ &remoteproc_cdsp {
+ 			"qcom/kaanapali/nubia/nx809j/cdsp_dtb.mbn";
+ };
+ 
++&remoteproc_mpss {
++	firmware-name = "qcom/kaanapali/nubia/nx809j/modem.mbn",
++			"qcom/kaanapali/nubia/nx809j/modem_dtb.mbn";
++
++	status = "okay";
++};
++
+ &remoteproc_soccp {
+ 	firmware-name = "qcom/kaanapali/nubia/nx809j/soccp.mbn",
+ 			"qcom/kaanapali/nubia/nx809j/soccp_dtb.mbn";
+-- 
+2.56.0
+
