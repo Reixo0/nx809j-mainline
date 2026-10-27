@@ -89,5 +89,30 @@ gbl-chainload 2.2.2):
 Back out: `fastboot flash efisp <old efisp image>` from Canoe's Super
 Fastboot (or EDL); gbl-chainload ignores `efisp.fat`.
 
-Canoe's menus use the firmware text console, whose font is small on this
-1216x2688 panel.
+### Large boot-menu font
+
+Canoe draws its menus and the Super Fastboot screens through the firmware
+text console, whose 8x19 font is tiny on this 1216x2688 panel.
+`canoe/canoe-big-console.patch` (against Canoe ae950bb, 7.0.11) adds
+`SuperFbBigConsole.c`, a `gST->ConOut` replacement that draws the same EDK2
+glyphs through GOP at 3x (50x47 grid) and shows the highlighted row white on
+red. The first menu or fastboot screen installs it; it is removed around
+every child `StartImage` (Android loader, dispatcher, `fastboot boot`), so
+the silent default boot and the started images see the firmware console
+as before. Menu text no longer reaches the firmware's serial log (the
+`SFB: MARK` lines still do).
+
+Build (host, no Docker; needs clang/lld, nasm and `tools/dl/mu-venv`):
+
+```
+git clone https://github.com/1vivy/gbl_root_canoe tools/dl/gbl_root_canoe
+git -C tools/dl/gbl_root_canoe checkout ae950bb
+uefi/canoe/build-bds.sh          # applies the patch -> out/canoe/BDS.efi
+```
+
+The script runs Canoe's `submodules/uefi` `build` recipe with the host
+fixes it needs for clang 23 and Python 3.14 (see its header). Test from RAM
+before flashing: hold volume up at boot, "Enter Super Fastboot", then
+`fastboot boot out/canoe/BDS.efi`. Flash only once the menu is confirmed
+readable: `fastboot flash efisp out/canoe/BDS.efi` from Super Fastboot,
+check with `fastboot fetch efisp` (compare the leading `BDS.efi` bytes).
