@@ -54,10 +54,12 @@ ABL -> efisp: Canoe BDS -> persist/efisp.fat
 ```
 
 * A plain boot starts Android; volume up during boot opens Canoe's menu.
-* `nx809j-reboot-linux` (Arch) and the KernelSU module in
-  `device/android/reboot-linux` (Action button) write Canoe's boot-once
-  record `canoe-once:linux` into the command field of `misc` and reboot, so
-  Linux starts without any menu. Canoe clears the record first.
+* `nx809j-reboot-linux` (Arch) and, on Android,
+  [android-reboot-to-linux](https://github.com/Reixo0/android-reboot-to-linux)
+  (KernelSU module, or **Linux** in the power menu's restart options) write
+  Canoe's boot-once record `canoe-once:linux` into the command field of
+  `misc` and reboot, so Linux starts without any menu. Canoe clears the
+  record first.
 * The dispatcher no-ops Qualcomm's display power protocol before
   `ExitBootServices`; ABL's "Boot to ESP" path registers a callback that
   powers the panel off there, which left Linux with a broken display.
