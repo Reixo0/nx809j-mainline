@@ -13,6 +13,7 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `linux/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts` | Board DTS (derived from `kaanapali-qrd.dts`) |
 | `configs/nx809j.config` | Kconfig fragment merged over arm64 `defconfig` |
 | `initramfs/init` | Bring-up init: fb console + USB NCM telnet at 172.16.42.1 |
+| `firmware/nx809j-firmware.sh` | Copies the firmware Linux needs from the phone's rooted Android into the Linux partition ([firmware/README.md](firmware/README.md)) |
 | `scripts/dump-phone.sh` | Dump partitions, live DT, dmesg, debugfs, firmware via adb root |
 | `scripts/split-dtbs.py` | Split + decompile concatenated DTBs (vendor_boot, dtbo) |
 | `scripts/compare-regulators.py` | Diff RPMh regulator ranges: downstream live DT vs upstream dts |
