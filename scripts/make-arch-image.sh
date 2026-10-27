@@ -45,7 +45,12 @@ work=$(mktemp -d /var/tmp/nx809j-image.XXXXXX)
 M=$work/root
 cleanup() {
   umount -R "$M" 2>/dev/null || true
-  rm -rf "$work"
+  # Never delete through a mount: the image (or worse) may still be on $M
+  if mountpoint -q "$M" || mountpoint -q "$M/boot"; then
+    echo "$M is still mounted, leaving $work" >&2
+  else
+    rm -rf --one-file-system "$work"
+  fi
 }
 trap cleanup EXIT
 
@@ -110,6 +115,7 @@ echo "$USERNAME:$PASSWORD" | chpasswd
 passwd -l root >/dev/null
 systemctl enable ${SERVICES[*]}
 bootctl install --no-variables --esp-path=/boot >/dev/null
+gpgconf --homedir /etc/pacman.d/gnupg --kill all
 EOF
 
 # Boot chain on the ESP: the dispatcher starts Mu-Silicium when the
@@ -127,7 +133,9 @@ EOF
 rm -rf "$M"/var/cache/pacman/pkg/* "$M"/var/log/journal/* "$M/boot/loader/random-seed"
 : > "$M/etc/machine-id"
 
-umount -R "$M"
+# Give anything the chroot started a moment to let go of the mount
+for i in 1 2 3 4 5; do umount -R "$M" 2>/dev/null && break; sleep 2; done
+mountpoint -q "$M" && { echo "can't unmount $M" >&2; exit 1; }
 e2fsck -fy "$OUT/linux.img" >/dev/null || true
 resize2fs -M "$OUT/linux.img" >/dev/null 2>&1
 blocks=$(dumpe2fs -h "$OUT/linux.img" 2>/dev/null | awk -F: '/^Block count/ { print $2 }')
