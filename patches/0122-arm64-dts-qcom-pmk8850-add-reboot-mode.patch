@@ -1,0 +1,39 @@
+From 9b880d33c73965d6b29cb6d06b826652f4eb956b Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 22:02:30 +0100
+Subject: [PATCH] arm64: dts: qcom: pmk8850: add reboot-mode
+
+Expose the PMIC SDAM restart reason through nvmem-reboot-mode, as on
+pmk8550, so that "reboot recovery" and "reboot bootloader" reach the
+bootloader. The cell and its values match the downstream qcom,reboot-reason
+node.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/pmk8850.dtsi | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/pmk8850.dtsi b/arch/arm64/boot/dts/qcom/pmk8850.dtsi
+index c7ba72fd4..a2981bee9 100644
+--- a/arch/arm64/boot/dts/qcom/pmk8850.dtsi
++++ b/arch/arm64/boot/dts/qcom/pmk8850.dtsi
+@@ -8,6 +8,16 @@
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/spmi/spmi.h>
+ 
++/ {
++	reboot-mode {
++		compatible = "nvmem-reboot-mode";
++		nvmem-cells = <&reboot_reason>;
++		nvmem-cell-names = "reboot-mode";
++		mode-recovery = <0x01>;
++		mode-bootloader = <0x02>;
++	};
++};
++
+ &spmi_bus0 {
+ 	pmic@0 {
+ 		compatible = "qcom,pmk8850", "qcom,spmi-pmic";
+-- 
+2.56.0
+
