@@ -1,0 +1,20 @@
+# NX809J: the device files (device/rootfs: services, rmtfs drop-in, udev
+# rules, UCM, ...) and our AudioReach topology, packed into
+# device-files.tar.gz by scripts/arch-pkgs.sh. The phone's own firmware is
+# not here: firmware/nx809j-firmware.sh copies it from Android.
+pkgname=nx809j-device
+pkgver=20261027
+pkgrel=1
+pkgdesc='Device support files for the Nubia RedMagic 11 Pro (NX809J)'
+arch=(any)
+url='https://github.com/Reixo0/nx809j-mainline'
+license=(GPL-2.0-only)
+depends=(linux-nx809j linux-firmware-qcom qrtr rmtfs tqftpserv qbootctl
+         modemmanager networkmanager e2fsprogs bluez-utils alsa-ucm-conf)
+install=nx809j-device.install
+source=(device-files.tar.gz)
+sha256sums=('SKIP')
+
+package() {
+  cp -a usr "$pkgdir/"
+}

@@ -1,0 +1,30 @@
+# NX809J: mainline kernel for the Nubia RedMagic 11 Pro, built by
+# scripts/build.sh from https://github.com/Reixo0/linux (branch nx809j) and
+# packed into kernel.tar.gz by scripts/arch-pkgs.sh, which also sets pkgver.
+# The image and DTB go to the ESP (/boot), where systemd-boot loads them.
+pkgname=linux-nx809j
+pkgver=7.3.0.next20261022.r123.gde620c580
+pkgrel=1
+pkgdesc='Mainline Linux for the Nubia RedMagic 11 Pro (NX809J)'
+arch=(aarch64)
+url='https://github.com/Reixo0/linux'
+license=(GPL-2.0-only)
+depends=(kmod)
+optdepends=('linux-firmware-qcom: Adreno 840 microcode')
+backup=(boot/loader/entries/nx809j.conf boot/loader/entries/nx809j-noruntime.conf)
+options=(!strip !debug)
+source=(kernel.tar.gz nx809j.conf nx809j-noruntime.conf)
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  local rel; rel=$(<kernel.release)
+  install -Dm644 Image "$pkgdir/boot/nx809j/Image"
+  install -Dm644 kaanapali-nubia-nx809j.dtb "$pkgdir/boot/nx809j/kaanapali-nubia-nx809j.dtb"
+  install -Dm644 nx809j.conf nx809j-noruntime.conf -t "$pkgdir/boot/loader/entries/"
+
+  install -d "$pkgdir/usr/lib/modules"
+  cp -a "lib/modules/$rel" "$pkgdir/usr/lib/modules/"
+  rm -f "$pkgdir/usr/lib/modules/$rel"/{build,source}
+  install -Dm644 config "$pkgdir/usr/lib/modules/$rel/config"
+  echo "$pkgname" > "$pkgdir/usr/lib/modules/$rel/pkgbase"
+}

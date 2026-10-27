@@ -1,0 +1,5 @@
+# Enable what 80-nx809j.preset names (rmtfs, tqftpserv, ModemManager and our
+# services) on first install; later changes are the user's.
+post_install() {
+  systemctl preset $(awk '$1 == "enable" { print $2 }' /usr/lib/systemd/system-preset/80-nx809j.preset) 2>/dev/null || true
+}
