@@ -8,8 +8,8 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 
 | Path | What |
 |---|---|
-| `linux/` | linux-next checkout (its own git repo, not in this repo). Board work lives on its `nx809j` branch. |
-| `patches/` | That branch exported with `git format-patch` (regenerate after kernel commits) |
+| `linux/` | Kernel checkout (its own git repo, not in this repo): the `nx809j` branch of [Reixo0/linux](https://github.com/Reixo0/linux), based on `next-20261022` |
+| `patches/` | That branch exported with `git format-patch` (regenerate and push the branch after kernel commits) |
 | `linux/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts` | Board DTS (derived from `kaanapali-qrd.dts`) |
 | `configs/nx809j.config` | Kconfig fragment merged over arm64 `defconfig` |
 | `initramfs/init` | Bring-up init: fb console + USB NCM telnet at 172.16.42.1 |
@@ -47,16 +47,17 @@ Host tools: clang/LLVM (`LLVM=1` build, no cross gcc), `dtc`/`fdtget`,
 under `tools/` (not in git):
 
 ```bash
-git clone --depth=1 https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git linux
+git clone --depth=1 -b nx809j https://github.com/Reixo0/linux linux
 git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
 git clone --depth=1 https://android.googlesource.com/platform/external/avb tools/avb
 git clone --depth=1 https://github.com/msm8916-mainline/linux-mdss-dsi-panel-driver-generator tools/panel-gen
 ```
 
-Then apply the kernel patches (made against `next-20261022`):
+The kernel branch already carries all of `patches/`. To apply them to your
+own linux-next checkout instead (they are made against `next-20261022`):
 
 ```bash
-git -C linux switch -c nx809j && git -C linux am ../patches/*.patch
+git -C linux switch -c nx809j next-20261022 && git -C linux am ../patches/*.patch
 ```
 
 Static arm64 busybox: `bin/busybox.static` from Alpine's `busybox-static`
