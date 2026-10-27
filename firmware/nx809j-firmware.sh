@@ -11,14 +11,15 @@
 #   FILE.tar          an archive with usr/lib/firmware/... inside
 #
 # The source directories can be overridden (FW_IMAGE, FW_BT, FW_VENDOR, and
-# SOCCP as a directory or a FAT image) to run it on a copy of these files.
+# SOCCP) to run it on a copy of these files.
 set -eu
 
 FW_IMAGE=${FW_IMAGE:-/vendor/firmware_mnt/image}
 FW_BT=${FW_BT:-/vendor/bt_firmware/image}
 FW_VENDOR=${FW_VENDOR:-/vendor/firmware}
 SLOT=$(getprop ro.boot.slot_suffix 2>/dev/null || true)
-SOCCP=${SOCCP:-/dev/block/by-name/soccp$SLOT}
+SOCCP=${SOCCP:-/vendor/soccp_firmware/image}
+SOCCP_DEV=/dev/block/by-name/soccp$SLOT
 TARGET=${1:-/dev/block/by-name/linux}
 
 DEV=qcom/kaanapali/nubia/nx809j
@@ -74,13 +75,14 @@ for n in adsp adsp_dtb cdsp cdsp_dtb modem modem_dtb ipa_fws; do
   squash $n
 done
 
-# SoCCP lives in its own FAT partition, which Android doesn't mount
+# SoCCP lives in its own FAT partition. Android mounts it (SELinux then
+# refuses a second mount of it); mount it ourselves only if it hasn't.
 if [ -d "$SOCCP" ]; then
   src=$SOCCP
 else
-  [ -e "$SOCCP" ] || die "$SOCCP not found"
+  [ -e "$SOCCP_DEV" ] || die "$SOCCP_DEV not found"
   mkdir -p "$WORK/soccp"
-  mount -t vfat -o ro "$SOCCP" "$WORK/soccp" || die "can't mount $SOCCP"
+  mount -t vfat -o ro "$SOCCP_DEV" "$WORK/soccp" || die "can't mount $SOCCP_DEV"
   mounts="$WORK/soccp $mounts" src=$WORK/soccp/image
 fi
 cp "$src/soccp.mbn" "$src/soccp_dtb.mbn" "$STAGE/$DEV/"
@@ -108,7 +110,8 @@ cp "$FW_BT/brhbtfw20.mbn" "$FW_BT"/brhbtnv20.* "$STAGE/qca/"
 # Where these came from, for when Android is updated
 {
   echo "Copied from Android by nx809j-firmware.sh on $(date -u '+%Y-%m-%d %H:%M UTC')"
-  echo "fingerprint: $(getprop ro.build.fingerprint 2>/dev/null || echo unknown)"
+  # The vendor build, not the system one: custom ROMs may spoof the latter
+  echo "vendor: $(getprop ro.vendor.build.fingerprint 2>/dev/null || echo unknown)"
   echo "modem: $(getprop gsm.version.baseband 2>/dev/null || echo unknown)"
 } > "$STAGE/$DEV/SOURCE"
 chmod -R u=rwX,go=rX "$WORK/stage"
