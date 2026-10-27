@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Reboot to Linux
+Comment=Reboot straight into Linux (Canoe boot once)
+Exec=nx809j-reboot-linux
+Icon=system-reboot
+Terminal=false
+Categories=System;

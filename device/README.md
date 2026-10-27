@@ -18,7 +18,13 @@ local changes.
 | `50-nx809j-usb0-unmanaged.conf` | Keeps NetworkManager off `usb0` (the rootfs may come over NBD on it) |
 | `nx809j-cpufreq-boost.conf` | Allows the prime cores' boost steps (4.51 and 4.61 GHz) |
 | UCM (`Nubia-NX809J.conf`, `HiFi.conf`) | ALSA use case profile: speakers, mic, headphones, headset mic |
+| `iio-sensor-proxy.service.d/nx809j.conf` | 3 s stop timeout: the Qualcomm sensor backend waits for a sensor hub that never answers (no hexagonrpcd) and held shutdown for 90 s |
+| `nx809j-reboot-linux` (+ "Reboot to Linux" launcher) | Dual boot: arms the Canoe boot manager's boot-once record for Linux in `misc`, then reboots (see `uefi/README.md`); needs passwordless sudo when run as a user |
 | `80-nx809j.preset` | Which of these services (and rmtfs, tqftpserv, ModemManager) systemd enables |
+
+`android/reboot-linux/` is the Android side: a KernelSU module whose Action
+button does the same from Android (`cd android/reboot-linux && zip -X
+reboot-linux.zip module.prop action.sh`, install with KernelSU).
 
 ## Packages
 

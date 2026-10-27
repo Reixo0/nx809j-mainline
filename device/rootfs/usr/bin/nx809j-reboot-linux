@@ -1,0 +1,21 @@
+#!/bin/sh
+# Dual boot: a plain reboot starts Android, the Canoe boot manager's default.
+# This arms Canoe's boot-once record for its "linux" entry (Mu-Silicium ->
+# systemd-boot -> Linux) in the command field of the bootloader control block
+# (first 32 bytes of misc), then reboots. Canoe clears the record before it
+# launches the entry. A stale "bootonce-bootloader" (left by Android's
+# "reboot bootloader"; Canoe ignores it) is replaced; any other pending
+# command (e.g. boot-recovery) is left alone and nothing is rebooted.
+set -eu
+[ "$(id -u)" = 0 ] || exec sudo -n "$0" "$@"
+f=$(grep -l '^PARTNAME=misc$' /sys/class/block/*/uevent | head -n 1)
+[ -n "$f" ] || { echo "no misc partition" >&2; exit 1; }
+dev=/dev/$(sed -n 's/^DEVNAME=//p' "$f")
+cmd=$(head -c 32 "$dev" | tr -d '\000')
+case $cmd in
+'' | canoe-once:* | bootonce-bootloader) ;;
+*) echo "misc already holds \"$cmd\", not touching it" >&2; exit 1 ;;
+esac
+printf 'canoe-once:linux' | dd of="$dev" bs=32 count=1 conv=sync,notrunc,fsync status=none
+[ "$(head -c 32 "$dev" | tr -d '\000')" = canoe-once:linux ]
+exec systemctl reboot

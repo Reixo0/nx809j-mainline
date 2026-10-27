@@ -1,0 +1,25 @@
+diff --git a/tools/canoe-image/src/loader.rs b/tools/canoe-image/src/loader.rs
+index 1e32448..5e3ff19 100644
+--- a/tools/canoe-image/src/loader.rs
++++ b/tools/canoe-image/src/loader.rs
+@@ -92,9 +92,17 @@ pub fn prepare_loader(
+     if vbmeta.is_empty() || vbmeta.len() > 16 * 1024 * 1024 {
+         return Err(Error::Profile("vbmeta must be 1 byte to 16 MiB".into()));
+     }
+-    let gm2p = mode2_profile::derive_profile(vbmeta)
+-        .map_err(|e| Error::Profile(e.to_string()))?
+-        .to_bytes();
++    // nx809j local change: a 120-byte GM2P file stands in for vbmeta, so an
++    // existing installation's profile is reused byte for byte.
++    let gm2p = if vbmeta.len() == mode2_profile::PROFILE_SIZE && vbmeta.starts_with(b"GM2P") {
++        mode2_profile::Profile::decode(vbmeta)
++            .map_err(|e| Error::Profile(e.to_string()))?
++            .to_bytes()
++    } else {
++        mode2_profile::derive_profile(vbmeta)
++            .map_err(|e| Error::Profile(e.to_string()))?
++            .to_bytes()
++    };
+     let (loader, source, tzmap) = inspect_and_patch(abl, Some(policy))?;
+     let tzmap = tzmap.expect("explicit derivation policy always produces TZ map");
+     Ok(PreparedLoader {
