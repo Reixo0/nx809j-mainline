@@ -5,23 +5,21 @@
 # scripts/install-device-files.sh (any rootfs directory).
 #
 # Sources: out/firmware (scripts/pack-firmware.py, from the phone's firmware
-# partitions), upstream linux-firmware where it has the file, the private
-# dump/ (Wi-Fi/BT, modem extras, speaker tuning) and our audio topology.
+# partitions), the private dump/ (Wi-Fi/BT, modem extras, speaker tuning) and
+# our audio topology. The Adreno 840 microcode (qcom/gen80200_*) comes from
+# the distribution's linux-firmware-qcom package. On the phone itself,
+# firmware/nx809j-firmware.sh does the same from Android.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FW=$ROOT/out/firmware/lib/firmware
 DEV=qcom/kaanapali/nubia/nx809j
 
-files="qcom/gen80200_sqe.fw qcom/gen80200_gmu.bin qcom/gen80200_aqe.fw
-  $DEV/gen80200_zap.mbn
+files="$DEV/gen80200_zap.mbn
   $DEV/adsp.mbn $DEV/adsp_dtb.mbn $DEV/cdsp.mbn $DEV/cdsp_dtb.mbn
   $DEV/soccp.mbn $DEV/soccp_dtb.mbn
   $DEV/modem.mbn $DEV/modem_dtb.mbn $DEV/ipa_fws.mbn"
 for f in $files; do
-  src=$FW/$f
-  # Same preference as scripts/mkinitramfs.sh: upstream linux-firmware first
-  [[ -f $ROOT/tools/dl/linux-firmware/$f ]] && src=$ROOT/tools/dl/linux-firmware/$f
-  echo "$f:$src"
+  echo "$f:$FW/$f"
 done
 
 # The modem loads these over tqftpserv from next to modem.mbn: its MBN
