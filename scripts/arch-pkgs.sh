@@ -13,6 +13,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 K=$ROOT/out/kernel
 A=$ROOT/archlinux
 REPO=$ROOT/out/arch/repo
+# Every package is built (or copied) again: start from an empty repository
+# so no older version can win
+rm -rf "$REPO"
 mkdir -p "$REPO"
 
 # Packages hold no compiled code of their own, so the host's makepkg can
@@ -47,22 +50,20 @@ tar -C "$st" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$A/linux-nx809j/ke
 setver "$A/linux-nx809j" "${rel%%-*}.${base//-/}.r$n.g$h"
 build "$A/linux-nx809j"
 
-# Device files: pkgver is the date of the last change to them
+# Device files: pkgver is the date and time of the last change to them
 "$ROOT/scripts/build-topology.sh" >/dev/null
 st=$ROOT/out/arch/device; rm -rf "$st"; mkdir -p "$st"
 cp -a "$ROOT/device/rootfs/usr" "$st/"
 install -Dm644 "$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin" \
   "$st/usr/lib/firmware/qcom/kaanapali/Nubia-NX809J-tplg.bin"
 tar -C "$st" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$A/nx809j-device/device-files.tar.gz" .
-setver "$A/nx809j-device" "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y%m%d -- device audio)"
+setver "$A/nx809j-device" "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y%m%d.%H%M -- device audio)"
 build "$A/nx809j-device"
 
 if [[ -n ${PKGS_FROM:-} ]]; then
   cp "$PKGS_FROM"/*.pkg.tar.* "$REPO/"
 fi
 
-# Only the newest of each package goes into the database
-rm -f "$REPO"/nx809j.{db,files}*
 shopt -s nullglob
-(cd "$REPO" && repo-add -q -n -R nx809j.db.tar.gz ./*.pkg.tar.{zst,xz} 2>/dev/null)
+(cd "$REPO" && repo-add -q nx809j.db.tar.gz ./*.pkg.tar.{zst,xz})
 ls -1 "$REPO"
