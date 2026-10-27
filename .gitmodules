@@ -1,0 +1,3 @@
+[submodule "uefi/mu-silicium-nx809j"]
+	path = uefi/mu-silicium-nx809j
+	url = https://github.com/Reixo0/mu-silicium-nx809j

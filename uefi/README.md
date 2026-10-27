@@ -1,44 +1,36 @@
 # Mu-Silicium (UEFI) for the NX809J
 
-Port of [Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium) based
-on the OnePlus 15 (`infiniti`, same SoC) port. Status: boots Linux (Arch
-Linux ARM via systemd-boot), started either from `boot_a` or, for dual boot
-with Android, from the Canoe boot manager (below).
+The Mu-Silicium port itself lives in
+[mu-silicium-nx809j](https://github.com/Reixo0/mu-silicium-nx809j), a git
+submodule here (`git submodule update --init uefi/mu-silicium-nx809j`): the
+device package, the driver extraction and patches, the ESP dispatcher
+(`esp-dispatch/`) and the debugging probes. It boots Linux (Arch Linux ARM
+via systemd-boot), started either from `boot_a` or, for dual boot with
+Android, from the Canoe boot manager (below).
 
 | File | What it is |
 |---|---|
-| `nx809jPkg/` | Device package (goes to `Platforms/ZTE/nx809jPkg`): memory map (OnePlus 15 map plus the Nubia RamConsole at 0xE2000000, where our kernel keeps pstore), configuration map (from `xbl_config`), 1216x2688 framebuffer, SMBIOS, driver lists |
-| `nx809j.toml` | Build config: FD at 0xC6900000, boot image v4 with the `os_version` our ABL requires |
-| `fv-extract.py` | Extracts the drivers from the phone's `uefi` partition (ELF with LZMA firmware volumes) |
-| `patch-dxe.py` | The OnePlus 15 driver patches, located again in this phone's firmware build; each checks the bytes it replaces |
-| `Binaries/nx809j/` | `.inf` files only; `make-binaries.sh` puts the phone's own drivers next to them |
-| `build.sh` | Builds everything into `out/Mu-nx809j.img` (with the AVB footer ABL wants) |
-| `esp-dispatch/` | `BOOTAA64.EFI` that starts Mu-Silicium from the Qualcomm UEFI (Canoe entry or "Boot to ESP") and, under Mu, systemd-boot; `extract-mu-fd.py` gets its `MU.fd` |
-| `canoe/` | Dual boot with the Canoe boot manager: profile extraction, orange-screen patch, boot-root installer, `canoe-image` patch |
-| `include/efi-mini.h` | Minimal freestanding EFI definitions for the small loaders here |
-| `probe/` | Debugging aids: `AblProbe.c` (`ABL_PROBE=1` build shows ABL's hand-off) and `abldump/` (kernel module that dumps it from Linux) |
-| `android-loader/` | Experiment: start Android's kernel from Mu-Silicium. Android's TrustZone services fail after Mu has run Qualcomm's TZ drivers, so it is not used |
-
-The drivers are Qualcomm/Nubia binaries from the phone, so they are never in
-git: `make-binaries.sh` builds them from `dump/partitions/uefi_a.img`.
+| `mu-silicium-nx809j/` | The port (submodule) |
+| `build-mu.sh` | Builds it with this repository's inputs: `dump/partitions/uefi_a.img`, our kernel's DTB, `tools/avb/avbtool.py`, Mu-Silicium in `tools/dl` |
+| `canoe/` | Dual boot with the Canoe boot manager: profile extraction, orange-screen patch, boot-root installer, `canoe-image` patch, large-font menu |
 
 ## Building
 
 Host packages: clang, lld, nasm, mono. Then:
 
 ```bash
+git submodule update --init uefi/mu-silicium-nx809j
 git clone https://github.com/Project-Silicium/Mu-Silicium tools/dl/Mu-Silicium
-cd tools/dl/Mu-Silicium
-git submodule update --init --recursive Common Mu_Basecore Silicium-ACPI Silicon
-cd ../../..
+git -C tools/dl/Mu-Silicium submodule update --init --recursive Common Mu_Basecore Silicium-ACPI Silicon
 python3 -m venv tools/dl/mu-venv
 tools/dl/mu-venv/bin/pip install -r tools/dl/Mu-Silicium/pip-requirements.txt
-uefi/build.sh
+uefi/build-mu.sh
 ```
 
-The `Binaries` submodule (every device's blobs) is not needed.
-`out/Mu-nx809j.img` goes to `boot_a`; `fastboot boot` never reaches the
-kernel on this phone.
+`uefi/mu-silicium-nx809j/out/Mu-nx809j.img` goes to `boot_a`; `fastboot boot`
+never reaches the kernel on this phone. The ESP dispatcher:
+`uefi/mu-silicium-nx809j/esp-dispatch/build.sh`, and its `MU.fd`:
+`uefi/mu-silicium-nx809j/esp-dispatch/extract-mu-fd.py <image> MU.fd`.
 
 ## Dual boot with Canoe
 
@@ -79,8 +71,9 @@ gbl-chainload 2.2.2):
 3. `canoe/skip-orange.py staged-orig/boot.efi staged/boot.efi`, copy the
    `.gm2p`/`.tzmap` beside it.
 4. Bundle those with the one-shot package's `bin/canoe-provision`,
-   `bin/canoe-bootmgr` and `efisp/tools`, `out/esp-dispatch/BOOTAA64.EFI`
-   as `nx809j/dispatch.efi` and `MU.fd`, then run
+   `bin/canoe-bootmgr` and `efisp/tools`, the ESP dispatcher
+   (`mu-silicium-nx809j/out/esp-dispatch/BOOTAA64.EFI`) as
+   `nx809j/dispatch.efi` and `MU.fd`, then run
    `canoe/install-boot-root.sh --apply` as root on Android (SELinux
    permissive meanwhile).
 5. Superfastboot: `fastboot stage BDS.efi`, `fastboot oem boot-efi`, hold

@@ -1,1 +1,0 @@
-obj-m := abldump.o
