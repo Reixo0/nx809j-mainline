@@ -1,0 +1,89 @@
+From ff5aa8497a8b24a8d2002b8384d9e50ef0c88e58 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 17:41:06 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: reserve the
+ firmware regions
+
+Booted through Mu-Silicium, the UEFI memory map lists nine regions of
+the stock reserved-memory (CPUCP, TrustZone, LLCC LPI, minidump, QUP
+firmware) and the 2 MiB that ABL keeps from the top of RAM as free
+memory. The kernel used them as page cache, and a write there is a
+synchronous external abort (seen under a 1 GiB package install).
+Reserve them as the stock device tree does.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 57 +++++++++++++++++++
+ 1 file changed, 57 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 57c86bcb49ac..abbd819201d6 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -108,6 +108,63 @@ reserved-memory {
+ 		#size-cells = <2>;
+ 		ranges;
+ 
++		/*
++		 * Firmware regions from the stock device tree that the UEFI
++		 * memory map (Mu-Silicium) reports as free RAM. TrustZone and
++		 * the CPUCP protect them: a write there is a synchronous
++		 * external abort.
++		 */
++		cpucp_pdp_mem: cpucp-pdp@81200000 {
++			reg = <0x0 0x81200000 0x0 0x100000>;
++			no-map;
++		};
++
++		cpucp_scandump_mem: cpucp-scandump@82000000 {
++			reg = <0x0 0x82000000 0x0 0x380000>;
++			no-map;
++		};
++
++		adsp_mhi_mem: adsp-mhi@82380000 {
++			reg = <0x0 0x82380000 0x0 0x20000>;
++			no-map;
++		};
++
++		soccp_sdi_mem: soccp-sdi@823a0000 {
++			reg = <0x0 0x823a0000 0x0 0x40000>;
++			no-map;
++		};
++
++		pmic_minidump_mem: pmic-minidump@823e0000 {
++			reg = <0x0 0x823e0000 0x0 0x80000>;
++			no-map;
++		};
++
++		qup_fw_mem: qup-fw@82460000 {
++			reg = <0x0 0x82460000 0x0 0x18000>;
++			no-map;
++		};
++
++		tz_stat_mem: tz-stat@82700000 {
++			reg = <0x0 0x82700000 0x0 0x100000>;
++			no-map;
++		};
++
++		tz_merged_mem: tz-merged@d8000000 {
++			reg = <0x0 0xd8000000 0x0 0x800000>;
++			no-map;
++		};
++
++		llcc_lpi_mem: llcc-lpi@ff800000 {
++			reg = <0x0 0xff800000 0x0 0x800000>;
++			no-map;
++		};
++
++		/* Left out of the RAM that ABL gives Android */
++		fw_top_mem: fw-top@bffdff000 {
++			reg = <0xb 0xffdff000 0x0 0x201000>;
++			no-map;
++		};
++
+ 		cont_splash_mem: cont-splash@fc800000 {
+ 			reg = <0x0 0xfc800000 0x0 0x2b00000>;
+ 			no-map;
+-- 
+2.56.0
+

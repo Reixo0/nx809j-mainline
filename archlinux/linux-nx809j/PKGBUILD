@@ -3,7 +3,7 @@
 # packed into kernel.tar.gz by scripts/arch-pkgs.sh, which also sets pkgver.
 # The image and DTB go to the ESP (/boot), where systemd-boot loads them.
 pkgname=linux-nx809j
-pkgver=7.3.0.next20261022.r123.gde620c580
+pkgver=7.3.0.next20261022.r124.gff5aa8497
 pkgrel=1
 pkgdesc='Mainline Linux for the Nubia RedMagic 11 Pro (NX809J)'
 arch=(aarch64)

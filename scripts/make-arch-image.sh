@@ -53,7 +53,8 @@ rm -f "$OUT/linux.img" "$OUT/esp.img"
 truncate -s "$ROOT_SIZE" "$OUT/linux.img"
 mkfs.ext4 -q -L linux "$OUT/linux.img"
 truncate -s "$ESP_SIZE" "$OUT/esp.img"
-mkfs.fat -q -F 32 -n ESP "$OUT/esp.img"
+# UFS has 4096-byte sectors: FAT has to use them too
+mkfs.fat -F 32 -S 4096 -n ESP "$OUT/esp.img" >/dev/null
 mkdir -p "$M"
 mount -o loop "$OUT/linux.img" "$M"
 mkdir -p "$M/boot"
