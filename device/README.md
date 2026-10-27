@@ -22,14 +22,9 @@ local changes.
 | `nx809j-reboot-linux` (+ "Reboot to Linux" launcher) | Dual boot: arms the Canoe boot manager's boot-once record for Linux in `misc`, then reboots (see `uefi/README.md`); needs passwordless sudo when run as a user |
 | `80-nx809j.preset` | Which of these services (and rmtfs, tqftpserv, ModemManager) systemd enables |
 
-`android/reboot-linux/` is the Android side: a KernelSU module whose Action
-button does the same from Android (`cd android/reboot-linux && zip -X
-reboot-linux.zip module.prop action.sh`, install with KernelSU).
-`android/reboot-linux-lsposed/` adds **Linux** (with Tux) after Bootloader
-in EvolutionX's advanced restart menu: an LSPosed/Vector module for System
-UI plus a receiver that runs that module's `action.sh arm` as root and then
-reboots normally. Build with its `build.sh` (uses an AOSP tree's prebuilt
-JDK and SDK tools), enable it for System UI, grant the app root in KernelSU.
+The Android side (KernelSU module with an Action button, LSPosed item
+**Linux** in the power menu's restart options) is
+[android-reboot-to-linux](https://github.com/Reixo0/android-reboot-to-linux).
 
 ## Packages
 

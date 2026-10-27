@@ -1,6 +1,0 @@
-id=nx809j_reboot_linux
-name=Reboot to Linux
-version=3
-versionCode=3
-author=Reixo
-description=NX809J dual boot: the Action button reboots straight to Linux (Canoe boot-once record in misc).
