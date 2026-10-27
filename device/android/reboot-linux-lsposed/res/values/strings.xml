@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reboot to Linux</string>
+    <string name="description">NX809J dual boot: adds Linux to the advanced restart menu (needs the Reboot to Linux KernelSU module and root for this app)</string>
+    <string-array name="scope">
+        <item>com.android.systemui</item>
+    </string-array>
+</resources>

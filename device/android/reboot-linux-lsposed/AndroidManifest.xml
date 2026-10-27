@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.nx809j.rebootlinux"
+    android:versionCode="6"
+    android:versionName="6">
+
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36" />
+
+    <application android:label="@string/app_name" android:hasCode="true">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription" android:value="@string/description" />
+        <meta-data android:name="xposedminversion" android:value="93" />
+        <meta-data android:name="xposedscope" android:resource="@array/scope" />
+
+        <!-- Only System UI (STATUS_BAR_SERVICE, a signature permission; the
+             Pixel-based SystemUI has no REBOOT) may ask for a reboot. -->
+        <receiver android:name=".RebootReceiver"
+            android:exported="true"
+            android:permission="android.permission.STATUS_BAR_SERVICE">
+            <intent-filter>
+                <action android:name="org.nx809j.rebootlinux.REBOOT_LINUX" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

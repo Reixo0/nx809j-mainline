@@ -3,7 +3,8 @@
 # (Mu-Silicium -> systemd-boot -> Linux) in the bootloader control block's
 # command field (first 32 bytes of misc), then reboots. Canoe clears it
 # before launching. A stale "bootonce-bootloader" is replaced, any other
-# pending command is left alone.
+# pending command is left alone. "action.sh arm" only writes the record (the
+# LSPosed power menu item reboots through Android afterwards).
 misc=/dev/block/by-name/misc
 cmd=$(head -c 32 $misc | tr -d '\000')
 case $cmd in
@@ -16,6 +17,7 @@ if [ "$(head -c 32 $misc | tr -d '\000')" != canoe-once:linux ]; then
 	echo "writing the boot-once record failed"
 	exit 1
 fi
+[ "${1:-}" = arm ] && exit 0
 echo "Rebooting to Linux."
 sleep 1
 /system/bin/reboot

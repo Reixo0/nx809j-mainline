@@ -25,6 +25,11 @@ local changes.
 `android/reboot-linux/` is the Android side: a KernelSU module whose Action
 button does the same from Android (`cd android/reboot-linux && zip -X
 reboot-linux.zip module.prop action.sh`, install with KernelSU).
+`android/reboot-linux-lsposed/` adds **Linux** (with Tux) after Bootloader
+in EvolutionX's advanced restart menu: an LSPosed/Vector module for System
+UI plus a receiver that runs that module's `action.sh arm` as root and then
+reboots normally. Build with its `build.sh` (uses an AOSP tree's prebuilt
+JDK and SDK tools), enable it for System UI, grant the app root in KernelSU.
 
 ## Packages
 
