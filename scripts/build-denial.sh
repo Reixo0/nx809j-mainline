@@ -68,6 +68,7 @@ assemble() {  # application directory, output
 }
 assemble dart_shell "$OUT/shell-assembly"
 assemble settings_app "$OUT/settings-assembly"
+assemble polkit_app "$OUT/polkit-assembly"
 
 # Rust: clang and lld stand in for an aarch64 gcc
 printf '#!/bin/sh\nexec clang --target=aarch64-linux-gnu --sysroot=%s -fuse-ld=lld "$@"\n' "$S" > "$CC_DIR/aarch64-linux-gnu-gcc"
@@ -91,6 +92,7 @@ export CARGO_TARGET_DIR=$OUT/rust
 D=$CARGO_TARGET_DIR/$TARGET/release
 cross "$W/denial/compositor" --features flutter,ui-development --bin deniald --bin denialctl --bin denial-ui
 cross "$W/denial/compositor" -p denial-portal
+cross "$W/denial/compositor" -p denial-polkit-agent
 cross "$W/denial/native_app" --bin denial-app
 export CARGO_TARGET_DIR=$OUT/pw-rust
 PW=$CARGO_TARGET_DIR/$TARGET/release
@@ -108,12 +110,15 @@ bundle() {  # assembly, destination
   install -m644 "$ARM_OUT/icudtl.dat" "$2/data/"
 }
 n=$ST/denial; mkdir -p "$n/native"
-install -m755 "$D"/{deniald,denialctl,denial-ui,denial-portal} "$n/native/"
+install -m755 "$D"/{deniald,denialctl,denial-ui,denial-portal,denial-polkit-agent} "$n/native/"
 bundle "$OUT/shell-assembly" "$n/shell"
 bundle "$OUT/settings-assembly" "$n/settings"
 install -m755 "$D/denial-app" "$n/settings/denial-settings"
+bundle "$OUT/polkit-assembly" "$n/polkit"
+install -m755 "$D/denial-app" "$n/polkit/denial-app"
 git -C "$W/denial" rev-parse HEAD > "$n/source-commit"
 mkdir -p "$n/portal"
+install -m644 "$W/denial/packaging/denial-polkit-agent.service" "$n/portal/"
 for f in denial-portal.service denial-portals.conf denial.portal xdg-desktop-portal-wlr-Denial \
     org.freedesktop.impl.portal.desktop.denial.service; do
   install -m644 "$W/denial/packaging/arch/$f" "$n/portal/"

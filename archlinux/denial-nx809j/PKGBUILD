@@ -22,10 +22,12 @@ sha256sums=(SKIP SKIP SKIP SKIP SKIP SKIP)
 
 package() {
   install -d "$pkgdir/usr/lib/denial" "$pkgdir/usr/bin"
-  cp -a native shell settings source-commit "$pkgdir/usr/lib/denial/"
+  cp -a native shell settings polkit source-commit "$pkgdir/usr/lib/denial/"
   ln -s ../lib/denial/settings/denial-settings "$pkgdir/usr/bin/denial-settings"
   ln -s ../lib/denial/native/denialctl "$pkgdir/usr/bin/denialctl"
   ln -s ../lib/denial/native/denial-portal "$pkgdir/usr/bin/denial-portal"
+  ln -s ../lib/denial/native/denial-polkit-agent "$pkgdir/usr/bin/denial-polkit-agent"
+  install -Dm644 portal/denial-polkit-agent.service "$pkgdir/usr/lib/systemd/user/denial-polkit-agent.service"
   install -Dm644 portal/denial-portal.service "$pkgdir/usr/lib/systemd/user/denial-portal.service"
   install -Dm644 portal/denial-portals.conf "$pkgdir/usr/share/xdg-desktop-portal/denial-portals.conf"
   install -Dm644 portal/denial.portal "$pkgdir/usr/share/xdg-desktop-portal/portals/denial.portal"
