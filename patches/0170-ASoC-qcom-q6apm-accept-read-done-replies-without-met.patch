@@ -1,0 +1,34 @@
+From fcabe5fd25c7a5d3f2fd52f6db8e4aa842abbd93 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 17:29:36 +0100
+Subject: [PATCH 170/178] ASoC: qcom: q6apm: accept read-done replies without
+ metadata
+
+The size check added with the hostless voice code asked for the whole
+read-done struct, metadata fields included. The Kaanapali ADSP leaves them
+out, so every reply was dropped without a message and capture never moved.
+Ask only for the fields the handler reads.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm.c b/sound/soc/qcom/qdsp6/q6apm.c
+index ebd85d66a606..be6f0a821c21 100644
+--- a/sound/soc/qcom/qdsp6/q6apm.c
++++ b/sound/soc/qcom/qdsp6/q6apm.c
+@@ -665,8 +665,9 @@ static int graph_callback(const struct gpr_resp_pkt *data, void *priv, int op)
+ 
+ 		break;
+ 	case DATA_CMD_RSP_RD_SH_MEM_EP_DATA_BUFFER_V2:
++		/* Not every ADSP sends the trailing metadata fields. */
+ 		if (!graph->ar_graph || !data->payload ||
+-		    data->payload_size < (int)sizeof(*rd_done))
++		    data->payload_size < (int)offsetofend(typeof(*rd_done), buf_addr_msw))
+ 			break;
+ 		client_event = APM_CLIENT_EVENT_DATA_READ_DONE;
+ 		mutex_lock(&graph->lock);
+-- 
+2.56.0
+

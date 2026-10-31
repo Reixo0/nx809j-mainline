@@ -1,0 +1,38 @@
+From 71a9028f412cc14103b3ede0ce1aa592308c24ae Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 17:21:44 +0100
+Subject: [PATCH 169/178] ASoC: qcom: q6apm-voice: add the Nubia NX809J
+
+Modem calls play on the AW88461 amplifiers on primary MI2S and record from
+decimator 0 of TX codec DMA 3, the bottom microphone. The profile is built
+from the phone's stock ACDB.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm-voice-backend.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+index 5bfd7855b061..ef6aa6ae7a7e 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
++++ b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+@@ -35,6 +35,16 @@ static const struct q6apm_voice_board q6apm_voice_boards[] = {
+ 		.tx_decimators = 0x1,
+ 		.volume_levels = 6,
+ 	},
++	{
++		.compatible = "nubia,nx809j",
++		.firmware = "qcom/kaanapali/nubia/nx809j/voice.bin",
++		.rx_port = PRIMARY_MI2S_RX,
++		.tx_port = TX_CODEC_DMA_TX_3,
++		.rx_rate = 48000,
++		.rx_format = SNDRV_PCM_FORMAT_S16_LE,
++		.tx_decimators = 0x1,
++		.volume_levels = 6,
++	},
+ };
+ 
+ static inline const struct q6apm_voice_board *q6apm_voice_board(void)
+-- 
+2.56.0
+

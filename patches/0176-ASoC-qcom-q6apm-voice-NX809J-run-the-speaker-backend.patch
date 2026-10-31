@@ -1,0 +1,30 @@
+From 3abf9dfd724eba1ae1e7909e46a61f9dd7131b58 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:43:55 +0100
+Subject: [PATCH 176/178] ASoC: qcom: q6apm-voice: NX809J: run the speaker
+ backend at 32 bit
+
+The stock graph for this endpoint is 32 bit. At 16 the amplifiers see clocks
+but no data during calls.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm-voice-backend.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+index c5739c6bb61d..b9fc9c5f05bf 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
++++ b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+@@ -41,7 +41,7 @@ static const struct q6apm_voice_board q6apm_voice_boards[] = {
+ 		.rx_port = PRIMARY_MI2S_RX,
+ 		.tx_port = TX_CODEC_DMA_TX_3,
+ 		.rx_rate = 48000,
+-		.rx_format = SNDRV_PCM_FORMAT_S16_LE,
++		.rx_format = SNDRV_PCM_FORMAT_S32_LE,
+ 		.tx_decimators = 0x1,
+ 		.volume_levels = 6,
+ 	},
+-- 
+2.56.0
+

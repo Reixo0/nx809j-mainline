@@ -1,0 +1,87 @@
+From d0f4e26f2fdb549fa1b734daa66da28e8f5eb320 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 17:42:31 +0100
+Subject: [PATCH 171/178] ASoC: qcom: q6apm-voice: trigger the backend codecs
+
+The voice backends stop at PREPARE: the DSP moves the audio, so the PCM is
+never started. The AW88461 powers up from its trigger, as its I2S clocks may
+not run before that, and so stayed off through calls. Trigger the RX codecs
+once the voice graphs have started, and stop them before the backends close.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm-voice-backend.c | 19 +++++++++++++++++++
+ sound/soc/qcom/qdsp6/q6apm-voice-backend.h |  1 +
+ sound/soc/qcom/qdsp6/q6apm-voice.c         |  6 +++++-
+ 3 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice-backend.c b/sound/soc/qcom/qdsp6/q6apm-voice-backend.c
+index 42feae1bab90..55d2c968f81c 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice-backend.c
++++ b/sound/soc/qcom/qdsp6/q6apm-voice-backend.c
+@@ -18,6 +18,25 @@ static void q6apm_voice_interval(struct snd_pcm_hw_params *params, int key, unsi
+ 	*interval = (struct snd_interval) { .min = value, .max = value, .integer = 1 };
+ }
+ 
++/*
++ * The DSP moves the call audio, so the backends are never started as PCMs. A
++ * codec that powers up from its trigger, like the AW88461, still has to see one.
++ */
++void q6apm_voice_backend_trigger(struct snd_pcm_substream *substream, int cmd)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *dai;
++	int i, ret;
++
++	for_each_rtd_codec_dais(rtd, i, dai) {
++		if (!dai->driver->ops || !dai->driver->ops->trigger)
++			continue;
++		ret = dai->driver->ops->trigger(substream, cmd, dai);
++		if (ret)
++			dev_err(dai->dev, "voice backend trigger %d: %d\n", cmd, ret);
++	}
++}
++
+ void q6apm_voice_backend_close(struct snd_pcm_substream **stream)
+ {
+ 	struct snd_pcm_substream *substream = *stream;
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+index ef6aa6ae7a7e..c5739c6bb61d 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
++++ b/sound/soc/qcom/qdsp6/q6apm-voice-backend.h
+@@ -65,6 +65,7 @@ static inline bool q6apm_voice_backend_link(const struct snd_soc_pcm_runtime *rt
+ 
+ int q6apm_voice_backend_open(struct snd_soc_component *component, unsigned int graph,
+ 			     struct snd_pcm_substream **stream);
++void q6apm_voice_backend_trigger(struct snd_pcm_substream *substream, int cmd);
+ void q6apm_voice_backend_close(struct snd_pcm_substream **stream);
+ 
+ #endif
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice.c b/sound/soc/qcom/qdsp6/q6apm-voice.c
+index ed83a7428006..ac28f59e9adb 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice.c
++++ b/sound/soc/qcom/qdsp6/q6apm-voice.c
+@@ -649,6 +649,8 @@ static int q6apm_voice_call_cleanup(struct q6apm_voice *voice)
+ 	}
+ 	if (ret)
+ 		return ret;
++	if (voice->backends[0])
++		q6apm_voice_backend_trigger(voice->backends[0], SNDRV_PCM_TRIGGER_STOP);
+ 	/* Keep physical clocks/ports alive until both DSP STOP replies are known. */
+ 	for (i = 1; i >= 0; i--)
+ 		q6apm_voice_backend_close(&voice->backends[i]);
+@@ -710,8 +712,10 @@ static int q6apm_voice_call_put(struct q6apm_voice *voice, bool requested)
+ 		goto out;
+ 	scoped_guard(mutex, &voice->lock) {
+ 		ret = q6apm_voice_run_session(voice);
+-		if (!ret)
++		if (!ret) {
+ 			voice->call_active = true;
++			q6apm_voice_backend_trigger(voice->backends[0], SNDRV_PCM_TRIGGER_START);
++		}
+ 	}
+ 	if (!ret)
+ 		return 1;
+-- 
+2.56.0
+

@@ -1,0 +1,38 @@
+From 5df7290b897420c4341987de0241f045faddcb73 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sun, 18 Oct 2026 02:58:59 +0200
+Subject: [PATCH 167/178] drm/msm/dsi: use the DSC model's range_max_qp[0] at
+ 10 bpc, 8 bpp
+
+VESA DSC 1.1 Table E-5 gives 4, but the DSC model's pre-SCR
+configuration, which panel decoders and the downstream driver follow,
+gives 8. With 4, the CSOT NT37706 decodes busy content followed by flat
+areas as streaks that run to the end of the slice row.
+
+(cherry picked from commit 05ba9e9d212c4d639d2b674849d16418c4339997)
+---
+ drivers/gpu/drm/msm/dsi/dsi_host.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
+index ceba004a295c..aa1333747559 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_host.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
+@@ -1933,6 +1933,14 @@ static int dsi_populate_dsc_params(struct msm_dsi_host *msm_host, struct drm_dsc
+ 		return ret;
+ 	}
+ 
++	/*
++	 * The helper follows VESA DSC 1.1 Table E-5 (range_max_qp[0] = 4 at
++	 * 10 bpc, 8 bpp); the DSC model's pre-SCR configuration, which panel
++	 * decoders and the downstream driver follow, uses 8.
++	 */
++	if (dsc->bits_per_component == 10 && drm_dsc_get_bpp_int(dsc) == 8)
++		dsc->rc_range_params[0].range_max_qp = 8;
++
+ 	dsc->initial_scale_value = drm_dsc_initial_scale_value(dsc);
+ 	dsc->line_buf_depth = dsc->bits_per_component + 1;
+ 
+-- 
+2.56.0
+

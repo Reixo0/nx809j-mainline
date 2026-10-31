@@ -1,0 +1,41 @@
+From 52bc10e738e40311aa3fd4e8fa6419ddc45d1d72 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:31:40 +0100
+Subject: [PATCH 175/178] ASoC: qcom: q6apm-voice: keep PipeWire off the
+ session switch
+
+"Voice Call Switch" and "Voice Call Volume" are one simple mixer element, and
+the voice verb names the volume for callaudio. PipeWire then unmutes the switch
+when it probes the card, which starts the call graphs at boot. The HiFi PCMs
+answer EBUSY and PipeWire drops the HiFi profile. Rename the switch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm-voice.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice.c b/sound/soc/qcom/qdsp6/q6apm-voice.c
+index 24572387ee9b..cf2d5b88a11f 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice.c
++++ b/sound/soc/qcom/qdsp6/q6apm-voice.c
+@@ -723,7 +723,7 @@ static int q6apm_voice_call_put(struct q6apm_voice *voice, bool requested)
+ 	cleanup = q6apm_voice_call_cleanup(voice);
+ 	if (cleanup)
+ 		dev_err(component->dev, "voice call cleanup: %d; retry %s=0\n", cleanup,
+-			voice->ucm_pinned ? "Voice Call UCM Switch" : "Voice Call Switch");
++			voice->ucm_pinned ? "Voice Call UCM Switch" : "Voice Session Switch");
+ 	return ret ? ret : cleanup;
+ }
+ 
+@@ -863,7 +863,7 @@ struct q6apm_voice *q6apm_voice_create(struct snd_soc_component *component)
+ {
+ 	struct snd_kcontrol_new controls[3] = { {
+ 		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+-		.name = "Voice Call Switch",
++		.name = "Voice Session Switch",
+ 		.info = snd_ctl_boolean_mono_info,
+ 		.get = q6apm_voice_get,
+ 		.put = q6apm_voice_put,
+-- 
+2.56.0
+

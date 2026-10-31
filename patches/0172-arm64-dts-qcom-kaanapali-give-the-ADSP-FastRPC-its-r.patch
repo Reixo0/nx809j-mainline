@@ -1,0 +1,48 @@
+From 02a88c7aca4f0a5fb2736844642fd8e6ee672a42 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 17:58:46 +0100
+Subject: [PATCH 172/178] arm64: dts: qcom: kaanapali: give the ADSP FastRPC
+ its remote heap
+
+The audio PD is a static PD and takes its heap from this region. It loads the
+voice modules that the ADSP image leaves out, such as Fluence. Stock has 12 MB
+and grows it at run time with remote heap maps, which the kernel does not
+serve: start with 64 MB instead.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index 8a901e4fc77e..c81432858817 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -337,6 +337,14 @@ reserved-memory {
+ 		#size-cells = <2>;
+ 		ranges;
+ 
++		adsp_rpc_remote_heap_mem: adsp-rpc-remote-heap {
++			compatible = "shared-dma-pool";
++			alloc-ranges = <0x0 0x0 0x0 0xffffffff>;
++			alignment = <0x0 0x400000>;
++			size = <0x0 0x4000000>;
++			no-map;
++		};
++
+ 		pdp_mem: pdp@81300000 {
+ 			reg = <0x0 0x81300000 0x0 0x100000>;
+ 			no-map;
+@@ -3181,6 +3189,9 @@ fastrpc {
+ 					compatible = "qcom,kaanapali-fastrpc";
+ 					qcom,glink-channels = "fastrpcglink-apps-dsp";
+ 					label = "adsp";
++					memory-region = <&adsp_rpc_remote_heap_mem>;
++					qcom,vmids = <QCOM_SCM_VMID_LPASS
++						      QCOM_SCM_VMID_ADSP_HEAP>;
+ 					#address-cells = <1>;
+ 					#size-cells = <0>;
+ 
+-- 
+2.56.0
+
