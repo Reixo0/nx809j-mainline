@@ -1,0 +1,114 @@
+From 090211961680020fcec85f86894df07fb3be6712 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 21:57:08 +0100
+Subject: [PATCH] ASoC: qcom: q6apm-voice: finer volume control positions
+
+PipeWire reads a volume back after setting it. With six levels, the volume keys'
+5% steps rounded back to the level they left, so they never changed anything.
+The control now has 20 positions onto the same levels.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/qcom/qdsp6/q6apm-voice.c | 33 +++++++++++++++++++++++-------
+ 1 file changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6apm-voice.c b/sound/soc/qcom/qdsp6/q6apm-voice.c
+index cf2d5b88a11f..5b5ceba094af 100644
+--- a/sound/soc/qcom/qdsp6/q6apm-voice.c
++++ b/sound/soc/qcom/qdsp6/q6apm-voice.c
+@@ -68,6 +68,8 @@ struct q6apm_voice {
+ 	u8 *keys;
+ 	size_t volume_offset;
+ 	u32 volume;
++	/* The control's position, of VOICE_VOLUME_POSITIONS; volume is its level. */
++	u32 volume_position;
+ 	bool pinned;
+ 	bool card_pinned;
+ 	bool call_active;
+@@ -356,6 +358,13 @@ static int q6apm_voice_validate_cal(const struct q6apm_voice_graph *graph,
+ 	return -EINVAL;
+ }
+ 
++/*
++ * The audio server reads a volume back after setting it. With only the board's
++ * few levels, a small step would round back to where it was and volume keys
++ * would never leave a level, so the control has finer positions.
++ */
++#define VOICE_VOLUME_POSITIONS	20
++
+ static void q6apm_voice_patch_volume(struct q6apm_voice *voice)
+ {
+ 	if (voice->keys)
+@@ -814,7 +823,7 @@ static int q6apm_voice_volume_info(struct snd_kcontrol *control,
+ 	info->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+ 	info->count = 1;
+ 	info->value.integer.min = 0;
+-	info->value.integer.max = q6apm_voice_board()->volume_levels - 1;
++	info->value.integer.max = VOICE_VOLUME_POSITIONS;
+ 	return 0;
+ }
+ 
+@@ -824,7 +833,7 @@ static int q6apm_voice_volume_get(struct snd_kcontrol *control,
+ 	struct q6apm_voice *voice = (void *)control->private_value;
+ 
+ 	guard(mutex)(&voice->lock);
+-	value->value.integer.value[0] = voice->volume;
++	value->value.integer.value[0] = voice->volume_position;
+ 	return 0;
+ }
+ 
+@@ -833,22 +842,30 @@ static int q6apm_voice_volume_put(struct snd_kcontrol *control,
+ 				  struct snd_ctl_elem_value *value)
+ {
+ 	struct q6apm_voice *voice = (void *)control->private_value;
+-	long level = value->value.integer.value[0];
++	long position = value->value.integer.value[0];
+ 	const struct q6apm_voice_command *command;
+-	u32 previous;
++	u32 previous, level;
+ 	int ret;
+ 
+-	if (level < 0 || level >= q6apm_voice_board()->volume_levels)
++	if (position < 0 || position > VOICE_VOLUME_POSITIONS)
+ 		return -EINVAL;
++	level = DIV_ROUND_CLOSEST(position * (q6apm_voice_board()->volume_levels - 1),
++				  VOICE_VOLUME_POSITIONS);
+ 	guard(mutex)(&voice->lock);
+-	if (level == voice->volume)
++	if (position == voice->volume_position)
+ 		return 0;
++	if (level == voice->volume) {
++		voice->volume_position = position;
++		return 1;
++	}
+ 	previous = voice->volume;
+ 	voice->volume = level;
+ 	q6apm_voice_patch_volume(voice);
+ 	command = voice->keys_command;
+-	if (!voice->call_active || !command)
++	if (!voice->call_active || !command) {
++		voice->volume_position = position;
+ 		return 1;
++	}
+ 	ret = q6apm_hostless_set_payload(voice->graphs[command->graph].session,
+ 					 command->destination, command->data, command->size);
+ 	if (ret) {
+@@ -856,6 +873,7 @@ static int q6apm_voice_volume_put(struct snd_kcontrol *control,
+ 		q6apm_voice_patch_volume(voice);
+ 		return ret;
+ 	}
++	voice->volume_position = position;
+ 	return 1;
+ }
+ 
+@@ -895,6 +913,7 @@ struct q6apm_voice *q6apm_voice_create(struct snd_soc_component *component)
+ 	mutex_init(&voice->ucm_lock);
+ 	INIT_DELAYED_WORK(&voice->ucm_work, q6apm_voice_ucm_work);
+ 	voice->volume = q6apm_voice_board()->volume_levels - 1;
++	voice->volume_position = VOICE_VOLUME_POSITIONS;
+ 	for (i = 0; i < ARRAY_SIZE(voice->controls); i++) {
+ 		voice->controls[i].voice = voice;
+ 		voice->controls[i].ucm = i == 1;
+-- 
+2.56.0
+
