@@ -1,0 +1,14 @@
+#!/bin/sh
+# Internet through the PC, only while the USB cable is connected: a default
+# route on the dead link would keep winning over the modem's after an unplug.
+update() {
+	if [ "$(cat /sys/class/net/usb0/carrier 2>/dev/null)" = 1 ]; then
+		ip route replace default via 172.16.42.2 dev usb0 metric 1000
+		resolvectl dns usb0 $DNS
+		resolvectl domain usb0 '~.'
+	else
+		ip route del default via 172.16.42.2 dev usb0 metric 1000 2>/dev/null
+	fi
+}
+
+{ echo; exec ip monitor link dev usb0; } | while read -r _; do update; done
