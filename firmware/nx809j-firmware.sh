@@ -10,8 +10,8 @@
 #   a directory       files installed under DIR/usr/lib/firmware
 #   FILE.tar          an archive with usr/lib/firmware/... inside
 #
-# The source directories can be overridden (FW_IMAGE, FW_BT, FW_VENDOR, and
-# SOCCP) to run it on a copy of these files.
+# The source directories can be overridden (FW_IMAGE, FW_BT, FW_VENDOR, SOCCP,
+# VENDOR_ETC and SENSOR_REGISTRY) to run it on a copy of these files.
 set -eu
 
 FW_IMAGE=${FW_IMAGE:-/vendor/firmware_mnt/image}
@@ -106,6 +106,15 @@ done
 
 # Bluetooth (Brahma): rampatch and board NVM files
 cp "$FW_BT/brhbtfw20.mbn" "$FW_BT"/brhbtnv20.* "$STAGE/qca/"
+
+# The ADSP's sensor configuration, served to it by hexagonrpcd. The registry
+# is this phone's own calibration; persist is only read.
+SENSORS=$WORK/stage/usr/share/qcom/kaanapali/Nubia/NX809J
+SENSOR_REGISTRY=${SENSOR_REGISTRY:-/mnt/vendor/persist/sensors/registry/registry}
+mkdir -p "$SENSORS/sensors" "$SENSORS/dsp"
+cp -R "${VENDOR_ETC:-/vendor/etc}/sensors/config" "$SENSORS/sensors/config"
+cp "${VENDOR_ETC:-/vendor/etc}/sensors/sns_reg_config" "$SENSORS/sensors/sns_reg.conf"
+cp -R "$SENSOR_REGISTRY" "$SENSORS/sensors/registry"
 
 # Where these came from, for when Android is updated
 {
