@@ -29,7 +29,7 @@ ESP_SIZE=1G # the esp partition
 PACKAGES=(base archlinuxarm-keyring sudo nano nx809j-device
   # Denial, its services and apps
   denial-nx809j phonewave-nx809j denial-apps-nx809j
-  xdg-user-dirs foot firefox mobile-config-firefox
+  xdg-user-dirs konsole firefox mobile-config-firefox
   # Hardware
   mesa vulkan-freedreno pipewire pipewire-pulse wireplumber alsa-utils
   bluez power-profiles-daemon dosfstools openssh)
