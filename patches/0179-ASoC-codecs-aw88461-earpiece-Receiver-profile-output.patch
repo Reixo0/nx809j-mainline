@@ -1,0 +1,282 @@
+From 991242d302434bf228882a2fd4772fcd67f76c37 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 21:40:11 +0100
+Subject: [PATCH] ASoC: codecs: aw88461: earpiece: Receiver profile, output
+ switch
+
+The stock handset path keeps one amplifier on, on the tuning file's Receiver
+profile, and turns the other off. Add a control for each. A PLL that does not
+lock is no fault of the amplifier when the clocks go during a change of use
+case: power down and let the next trigger start it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/codecs/aw88461.c | 197 ++++++++++++++++++++++++++++---------
+ 1 file changed, 150 insertions(+), 47 deletions(-)
+
+diff --git a/sound/soc/codecs/aw88461.c b/sound/soc/codecs/aw88461.c
+index 73f37c253963..2f558feab6a6 100644
+--- a/sound/soc/codecs/aw88461.c
++++ b/sound/soc/codecs/aw88461.c
+@@ -49,6 +49,11 @@ struct aw88461 {
+ 	unsigned int volume;
+ 	unsigned int profile_volume;
+ 	unsigned int profile_txen;
++	/* Register sets of the tuning file's Music and Receiver profiles. */
++	struct aw_sec_data_desc *music;
++	struct aw_sec_data_desc *receiver;
++	bool earpiece;
++	bool output;
+ 	bool enabled;
+ 	bool running;
+ 	bool powered;
+@@ -131,7 +136,8 @@ static int aw88461_stop(struct aw88461 *amp)
+ 
+ static bool aw88461_active(struct aw88461 *amp)
+ {
+-	return READ_ONCE(amp->enabled) && READ_ONCE(amp->running);
++	return READ_ONCE(amp->output) && READ_ONCE(amp->enabled) &&
++	       READ_ONCE(amp->running);
+ }
+ 
+ static int aw88461_start(struct aw88461 *amp)
+@@ -154,8 +160,13 @@ static int aw88461_start(struct aw88461 *amp)
+ 				       !aw88461_active(amp),
+ 				       2000, 100000);
+ 	if (ret) {
+-		dev_err(amp->aw_dev.dev, "PLL lock failed: %d, status %#x\n", ret, status);
+-		goto stop;
++		/*
++		 * The clocks can go while the stream is being torn down, as on a
++		 * switch of use case. That is no fault of the amplifier: power it
++		 * down, and the next trigger starts it again.
++		 */
++		dev_warn(amp->aw_dev.dev, "PLL lock failed: %d, status %#x\n", ret, status);
++		return aw88461_stop(amp);
+ 	}
+ 	if (!aw88461_active(amp))
+ 		return aw88461_stop(amp);
+@@ -199,14 +210,70 @@ static int aw88461_start(struct aw88461 *amp)
+ 	return aw88461_fault(amp, ret);
+ }
+ 
++static bool aw88461_regs_valid(const struct aw_sec_data_desc *regs)
++{
++	unsigned int i, address, value;
++
++	if (!regs || !regs->len || regs->len % 4)
++		return false;
++	for (i = 0; i < regs->len; i += 4) {
++		address = get_unaligned_le16(regs->data + i);
++		value = get_unaligned_le16(regs->data + i + 2);
++		if (address == 0xff && !value)
++			continue;
++		if (!((address >= 3 && address <= 0x1f) ||
++		      (address >= 0x30 && address <= 0x38) ||
++		      (address >= 0x3a && address <= 0x3f) ||
++		      (address >= 0x50 && address <= 0x6d)))
++			return false;
++	}
++	return true;
++}
++
++/* Puts the powered down amplifier on a profile. */
++static int aw88461_write_regs(struct aw88461 *amp,
++			      const struct aw_sec_data_desc *regs)
++{
++	struct regmap *map = amp->aw_dev.regmap;
++	unsigned int i, address, value;
++	int ret;
++
++	ret = regmap_write(map, AW88461_ID, AW88461_SOFT_RESET);
++	if (ret)
++		return ret;
++	usleep_range(1000, 1200);
++	for (i = 0; i < regs->len; i += 4) {
++		address = get_unaligned_le16(regs->data + i);
++		value = get_unaligned_le16(regs->data + i + 2);
++		/* PID 2308 has no software VCALB register; ff is its sentinel. */
++		if (address == 0xff)
++			continue;
++		if (address == AW88461_SYSINTM)
++			value = 0xffff;
++		if (address == AW88461_SYSCTRL) {
++			amp->profile_txen = value & AW88461_TXEN;
++			value |= AW88461_PWDN | AW88461_AMPPD |
++				 AW88461_HMUTE | AW88461_ULS_HMUTE;
++			value &= ~AW88461_TXEN;
++		}
++		if (address == AW88461_SYSCTRL2) {
++			amp->profile_volume = value & AW88461_VOLUME;
++			value |= AW88461_VOLUME;
++		}
++		ret = regmap_write(map, address, value);
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
+ static int aw88461_load_profile(struct aw88461 *amp)
+ {
+ 	struct aw_device *aw_dev = &amp->aw_dev;
+ 	const struct firmware *fw;
+ 	struct aw_container *cfg;
+-	struct aw_sec_data_desc *regs = NULL;
+ 	const char *name;
+-	unsigned int i, address, value;
++	unsigned int i;
+ 	int ret;
+ 
+ 	ret = device_property_read_string(aw_dev->dev, "firmware-name", &name);
+@@ -239,52 +306,18 @@ static int aw88461_load_profile(struct aw88461 *amp)
+ 	for (i = 0; i < aw_dev->prof_info.count; i++) {
+ 		struct aw_prof_desc *profile = &aw_dev->prof_info.prof_desc[i];
+ 
+-		if (profile->id == AW88395_PROFILE_MUSIC) {
+-			regs = &profile->sec_desc[AW88395_DATA_TYPE_REG];
+-			break;
+-		}
++		if (profile->id == AW88395_PROFILE_MUSIC)
++			amp->music = &profile->sec_desc[AW88395_DATA_TYPE_REG];
++		else if (profile->id == AW88395_PROFILE_RECEIVER)
++			amp->receiver = &profile->sec_desc[AW88395_DATA_TYPE_REG];
+ 	}
+ 	ret = -EINVAL;
+-	if (!regs || !regs->len || regs->len % 4)
+-		goto release;
+ 	/* Validate the entire section before writing any of its registers. */
+-	for (i = 0; i < regs->len; i += 4) {
+-		address = get_unaligned_le16(regs->data + i);
+-		value = get_unaligned_le16(regs->data + i + 2);
+-		if (address == 0xff && !value)
+-			continue;
+-		if (!((address >= 3 && address <= 0x1f) ||
+-		      (address >= 0x30 && address <= 0x38) ||
+-		      (address >= 0x3a && address <= 0x3f) ||
+-		      (address >= 0x50 && address <= 0x6d)))
+-			goto release;
+-	}
+-	ret = regmap_write(aw_dev->regmap, AW88461_ID, AW88461_SOFT_RESET);
+-	if (ret)
++	if (!aw88461_regs_valid(amp->music))
+ 		goto release;
+-	usleep_range(1000, 1200);
+-	for (i = 0; i < regs->len; i += 4) {
+-		address = get_unaligned_le16(regs->data + i);
+-		value = get_unaligned_le16(regs->data + i + 2);
+-		/* PID 2308 has no software VCALB register; ff is its sentinel. */
+-		if (address == 0xff)
+-			continue;
+-		if (address == AW88461_SYSINTM)
+-			value = 0xffff;
+-		if (address == AW88461_SYSCTRL) {
+-			amp->profile_txen = value & AW88461_TXEN;
+-			value |= AW88461_PWDN | AW88461_AMPPD |
+-				 AW88461_HMUTE | AW88461_ULS_HMUTE;
+-			value &= ~AW88461_TXEN;
+-		}
+-		if (address == AW88461_SYSCTRL2) {
+-			amp->profile_volume = value & AW88461_VOLUME;
+-			value |= AW88461_VOLUME;
+-		}
+-		ret = regmap_write(aw_dev->regmap, address, value);
+-		if (ret)
+-			goto release;
+-	}
++	if (!aw88461_regs_valid(amp->receiver))
++		amp->receiver = NULL;
++	ret = aw88461_write_regs(amp, amp->music);
+ release:
+ 	release_firmware(fw);
+ 	return ret;
+@@ -409,9 +442,78 @@ static int aw88461_volume_put(struct snd_kcontrol *kcontrol,
+ 	return 1;
+ }
+ 
++static int aw88461_receiver_get(struct snd_kcontrol *kcontrol,
++				struct snd_ctl_elem_value *value)
++{
++	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
++	struct aw88461 *amp = snd_soc_component_get_drvdata(component);
++
++	guard(mutex)(&amp->lock);
++	value->value.integer.value[0] = amp->earpiece;
++	return 0;
++}
++
++/*
++ * The Receiver profile is the speaker's tuning for use as an earpiece. Going
++ * through a stop keeps a playing amplifier from ever running on half a profile.
++ */
++static int aw88461_receiver_put(struct snd_kcontrol *kcontrol,
++				struct snd_ctl_elem_value *value)
++{
++	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
++	struct aw88461 *amp = snd_soc_component_get_drvdata(component);
++	bool earpiece = value->value.integer.value[0];
++	int ret;
++
++	if (earpiece && !amp->receiver)
++		return -ENODEV;
++	guard(mutex)(&amp->lock);
++	if (amp->faulted)
++		return -EIO;
++	if (amp->earpiece == earpiece)
++		return 0;
++	ret = aw88461_stop(amp);
++	if (ret)
++		return ret;
++	ret = aw88461_write_regs(amp, earpiece ? amp->receiver : amp->music);
++	if (ret)
++		return aw88461_fault(amp, ret);
++	amp->earpiece = earpiece;
++	schedule_work(&amp->start_work);
++	return 1;
++}
++
++static int aw88461_output_get(struct snd_kcontrol *kcontrol,
++			      struct snd_ctl_elem_value *value)
++{
++	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
++	struct aw88461 *amp = snd_soc_component_get_drvdata(component);
++
++	value->value.integer.value[0] = READ_ONCE(amp->output);
++	return 0;
++}
++
++static int aw88461_output_put(struct snd_kcontrol *kcontrol,
++			      struct snd_ctl_elem_value *value)
++{
++	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
++	struct aw88461 *amp = snd_soc_component_get_drvdata(component);
++	bool output = value->value.integer.value[0];
++
++	if (READ_ONCE(amp->output) == output)
++		return 0;
++	WRITE_ONCE(amp->output, output);
++	schedule_work(&amp->start_work);
++	return 1;
++}
++
+ static const struct snd_kcontrol_new aw88461_controls[] = {
+ 	SOC_SINGLE_EXT("Playback Volume", SND_SOC_NOPM, 0, 1023, 0,
+ 		       aw88461_volume_get, aw88461_volume_put),
++	SOC_SINGLE_BOOL_EXT("Receiver Switch", 0,
++			    aw88461_receiver_get, aw88461_receiver_put),
++	SOC_SINGLE_BOOL_EXT("Output Switch", 0,
++			    aw88461_output_get, aw88461_output_put),
+ };
+ 
+ static int aw88461_event(struct snd_soc_dapm_widget *w,
+@@ -489,6 +591,7 @@ static int aw88461_probe(struct i2c_client *client)
+ 	if (ret && device_property_present(&client->dev, "awinic,audio-channel"))
+ 		return ret;
+ 	mutex_init(&amp->lock);
++	amp->output = true;
+ 	INIT_WORK(&amp->start_work, aw88461_start_work);
+ 	i2c_set_clientdata(client, amp);
+ 	amp->aw_dev.regmap = devm_regmap_init_i2c(client, &aw88461_regmap_config);
+-- 
+2.56.0
+
