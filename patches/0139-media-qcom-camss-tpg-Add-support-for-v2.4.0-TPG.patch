@@ -1,7 +1,7 @@
 From 7d39aedd6a01fea28a7f2e38932a67faa4474e87 Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:29 -0700
-Subject: [PATCH 139/162] media: qcom: camss: tpg: Add support for v2.4.0 TPG
+Subject: [PATCH 139/165] media: qcom: camss: tpg: Add support for v2.4.0 TPG
 
 Add support for the TPG found on Kaanapali. This TPG uses hardware
 version 2.4.0, which drives test-enable and reset through the

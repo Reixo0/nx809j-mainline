@@ -1,7 +1,7 @@
 From 6380726e442142fd7cb41f9999ab4be7066ad934 Mon Sep 17 00:00:00 2001
 From: Elson Serrao <elson.serrao@oss.qualcomm.com>
 Date: Mon, 19 Oct 2026 23:18:11 -0700
-Subject: [PATCH 054/162] phy: qualcomm: m31-eusb2: Add register XCFGI_159_152
+Subject: [PATCH 054/165] phy: qualcomm: m31-eusb2: Add register XCFGI_159_152
  for SE0 recovery
 
 This patch introduces support for the XCFGI_159_152 register to enable a

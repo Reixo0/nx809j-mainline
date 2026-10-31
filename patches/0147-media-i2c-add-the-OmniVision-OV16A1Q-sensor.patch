@@ -1,7 +1,7 @@
 From 6511dd4b5a1a13b9a71aca7bc6a2a6f5a7a5cb82 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 16:15:27 +0100
-Subject: [PATCH 147/162] media: i2c: add the OmniVision OV16A1Q sensor
+Subject: [PATCH 147/165] media: i2c: add the OmniVision OV16A1Q sensor
 
 The OV16A1Q is the front camera of the Nubia RedMagic 11 Pro
 (nx809j). The driver carries the stock module's global init and its

@@ -1,7 +1,7 @@
 From 3aad08a1774a75a9b523a8c5848a0d279d2eca52 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 18:45:48 +0100
-Subject: [PATCH 098/162] arm64: dts: qcom: kaanapali-nubia-nx809j: HPH PCM
+Subject: [PATCH 098/165] arm64: dts: qcom: kaanapali-nubia-nx809j: HPH PCM
  ports
 
 The headphones get PCM on swr1 port 9 as on stock, which also sets the

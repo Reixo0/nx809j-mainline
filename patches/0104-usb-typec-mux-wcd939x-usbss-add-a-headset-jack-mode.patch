@@ -1,7 +1,7 @@
 From 4621c558d3eae7d7ff181f76093e97b3dada6211 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 104/162] usb: typec: mux: wcd939x-usbss: add a headset jack
+Subject: [PATCH 104/165] usb: typec: mux: wcd939x-usbss: add a headset jack
  mode
 
 Some boards, like the Nubia RedMagic 11 Pro, wire a 3.5 mm jack's mic and

@@ -1,7 +1,7 @@
 From 42d2ce1de58f121731180b52ede86766c193e193 Mon Sep 17 00:00:00 2001
 From: Shawn Guo <shengchao.guo@oss.qualcomm.com>
 Date: Fri, 16 Oct 2026 22:11:53 +0800
-Subject: [PATCH 085/162] ASoC: qcom: q6apm: Unmap DSP buffers before removing
+Subject: [PATCH 085/165] ASoC: qcom: q6apm: Unmap DSP buffers before removing
  the topology
 
 Since buffers are mapped once in pcm_new() and unmapped in pcm_free(),

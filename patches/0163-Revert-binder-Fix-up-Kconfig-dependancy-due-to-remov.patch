@@ -1,0 +1,99 @@
+From d22d0c711e0c50ac83074e892df1f1f6760eaf9c Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 13:17:37 +0100
+Subject: [PATCH 163/165] Revert "binder: Fix up Kconfig dependancy due to
+ removal of .c code"
+
+This reverts commit 315860c4f912990c75ef228775ea8871fc5bcc9a.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/android/Kconfig                                      | 4 ++--
+ drivers/android/Makefile                                     | 2 +-
+ drivers/android/binder/Makefile                              | 2 +-
+ rust/bindings/bindings_helper.h                              | 2 +-
+ tools/testing/selftests/filesystems/binderfs/binderfs_test.c | 2 +-
+ tools/testing/selftests/filesystems/binderfs/config          | 2 +-
+ 6 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/android/Kconfig b/drivers/android/Kconfig
+index c920d52c0221..403e5f3eab5a 100644
+--- a/drivers/android/Kconfig
++++ b/drivers/android/Kconfig
+@@ -1,7 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0
+ menu "Android"
+ 
+-config ANDROID_BINDER_IPC_RUST
++config ANDROID_BINDER_IPC
+ 	bool "Android Binder IPC Driver"
+ 	depends on MMU
+ 	depends on NET
+@@ -17,7 +17,7 @@ config ANDROID_BINDER_IPC_RUST
+ 
+ config ANDROID_BINDER_DEVICES
+ 	string "Android Binder devices"
+-	depends on ANDROID_BINDER_IPC_RUST
++	depends on ANDROID_BINDER_IPC
+ 	default "binder,hwbinder,vndbinder"
+ 	help
+ 	  Default value for the binder.devices parameter.
+diff --git a/drivers/android/Makefile b/drivers/android/Makefile
+index f83d39d16f6e..dc19d21037af 100644
+--- a/drivers/android/Makefile
++++ b/drivers/android/Makefile
+@@ -1,4 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ ccflags-y += -I$(src)			# needed for trace events
+ 
+-obj-$(CONFIG_ANDROID_BINDER_IPC_RUST)	+= binder/
++obj-$(CONFIG_ANDROID_BINDER_IPC)	+= binder/
+diff --git a/drivers/android/binder/Makefile b/drivers/android/binder/Makefile
+index fe474628a94e..661f5cca8918 100644
+--- a/drivers/android/binder/Makefile
++++ b/drivers/android/binder/Makefile
+@@ -1,7 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ ccflags-y += -I$(src)	# needed for trace events
+ 
+-obj-$(CONFIG_ANDROID_BINDER_IPC_RUST) += binder.o
++obj-$(CONFIG_ANDROID_BINDER_IPC) += binder.o
+ binder-y := \
+ 	rust_binder_main.o	\
+ 	rust_binderfs.o		\
+diff --git a/rust/bindings/bindings_helper.h b/rust/bindings/bindings_helper.h
+index 3791af0aadc7..f0a2f93ad115 100644
+--- a/rust/bindings/bindings_helper.h
++++ b/rust/bindings/bindings_helper.h
+@@ -167,7 +167,7 @@ const unsigned long RUST_CONST_HELPER_GPU_BUDDY_CLEARED = GPU_BUDDY_CLEARED;
+ const unsigned long RUST_CONST_HELPER_GPU_BUDDY_TRIM_DISABLE = GPU_BUDDY_TRIM_DISABLE;
+ #endif
+ 
+-#if IS_ENABLED(CONFIG_ANDROID_BINDER_IPC_RUST)
++#if IS_ENABLED(CONFIG_ANDROID_BINDER_IPC)
+ #include "../../drivers/android/binder/rust_binder.h"
+ #include "../../drivers/android/binder/rust_binder_events.h"
+ #endif
+diff --git a/tools/testing/selftests/filesystems/binderfs/binderfs_test.c b/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
+index cd82c89f558f..7310622098ff 100644
+--- a/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
++++ b/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
+@@ -414,7 +414,7 @@ TEST(binderfs_stress)
+ 
+ 		ret = mount(NULL, binderfs_mntpt, "binder", 0, 0);
+ 		ASSERT_EQ(ret, 0) {
+-			TH_LOG("%s - Failed to mount binderfs, check if CONFIG_ANDROID_BINDER_IPC_RUST is enabled in the running kernel",
++			TH_LOG("%s - Failed to mount binderfs, check if CONFIG_ANDROID_BINDER_IPC is enabled in the running kernel",
+ 				strerror(errno));
+ 		}
+ 
+diff --git a/tools/testing/selftests/filesystems/binderfs/config b/tools/testing/selftests/filesystems/binderfs/config
+index 80e4221c2d82..e0c1958a3675 100644
+--- a/tools/testing/selftests/filesystems/binderfs/config
++++ b/tools/testing/selftests/filesystems/binderfs/config
+@@ -1 +1 @@
+-CONFIG_ANDROID_BINDER_IPC_RUST=y
++CONFIG_ANDROID_BINDER_IPC=y
+-- 
+2.56.0
+

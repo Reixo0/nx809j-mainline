@@ -1,7 +1,7 @@
 From 1db90fcf30641980928f8027df330d72ef5a1c63 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sun, 27 Sep 2026 15:42:22 +0000
-Subject: [PATCH 039/162] clk: qcom: gdsc: drop the controller reference only
+Subject: [PATCH 039/165] clk: qcom: gdsc: drop the controller reference only
  if it was taken
 
 Since "keep the clock controller active while a GDSC is on" (0046), a

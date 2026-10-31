@@ -1,7 +1,7 @@
 From a9b78ae8adda2c7f15894b80db7b614a1bc98709 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Mon, 19 Oct 2026 06:40:14 +0300
-Subject: [PATCH 046/162] phy: qcom: qmp-combo: apply a Type-C mode switch
+Subject: [PATCH 046/165] phy: qcom: qmp-combo: apply a Type-C mode switch
  deferred by the DP link
 
 qmp_combo_typec_mux_set() does not switch the PHY mode while the DP PHY

@@ -1,7 +1,7 @@
 From 89dd1b7e2d1fd8c6b4f4b2c5c06b215b359802ee Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 15:42:39 +0100
-Subject: [PATCH 088/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+Subject: [PATCH 088/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
  WCD9395 codec
 
 The WCD9395 sits on SoundWire like on the MTP (RX on swr1, TX on swr2),

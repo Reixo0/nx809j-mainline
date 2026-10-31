@@ -1,7 +1,7 @@
 From 709276d3a05414709d142b316436da50a9de386e Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 15:34:17 +0100
-Subject: [PATCH 144/162] arm64: dts: qcom: nx809j: add the ultrawide camera
+Subject: [PATCH 144/165] arm64: dts: qcom: nx809j: add the ultrawide camera
 
 Describe the OV50D40 ultrawide as the stock tree does: CCI0 master 0,
 CSIPHY1 with four D-PHY lanes, CAM_BIST MCLK1 at 24 MHz on GPIO 90,

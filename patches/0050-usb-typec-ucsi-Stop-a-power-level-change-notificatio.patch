@@ -1,7 +1,7 @@
 From 7c3a13ff6b390801b45127a0ba3cd35416ff4413 Mon Sep 17 00:00:00 2001
 From: David Vornholt <david@vornholt.online>
 Date: Sat, 10 Oct 2026 20:39:17 +0200
-Subject: [PATCH 050/162] usb: typec: ucsi: Stop a power level change
+Subject: [PATCH 050/165] usb: typec: ucsi: Stop a power level change
  notification storm
 
 On a Lenovo ThinkPad X1 Carbon Gen 13 (BIOS N4BET78W 1.48, EC N4BHT61W

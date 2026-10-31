@@ -1,7 +1,7 @@
 From 85e3db690052ce5153440553f18d03fc001214f1 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:08:56 +0100
-Subject: [PATCH 156/162] arm64: dts: qcom: nx809j: add the main camera
+Subject: [PATCH 156/165] arm64: dts: qcom: nx809j: add the main camera
 
 The OV50E40 sits on CCI0 bus 1 at 0x36, with MCLK2, reset on TLMM 3,
 analogue power from a PMH0101 GPIO 16 switch, DVDD from L1M and the

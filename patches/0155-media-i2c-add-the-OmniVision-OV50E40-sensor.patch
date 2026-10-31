@@ -1,7 +1,7 @@
 From b06852c930d95d7d7e224b6d78ad2d2e1cf190a3 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:08:55 +0100
-Subject: [PATCH 155/162] media: i2c: add the OmniVision OV50E40 sensor
+Subject: [PATCH 155/165] media: i2c: add the OmniVision OV50E40 sensor
 
 The OV50E40 is the main rear camera of the Nubia RedMagic 11 Pro
 (nx809j). The driver carries the stock module global init and its

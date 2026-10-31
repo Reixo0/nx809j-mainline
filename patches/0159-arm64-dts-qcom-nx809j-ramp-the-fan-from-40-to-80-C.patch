@@ -1,7 +1,7 @@
 From 271f599336cb5da1740f6ce3fc9fa0b1858f4249 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 18:30:56 +0100
-Subject: [PATCH 159/162] arm64: dts: qcom: nx809j: ramp the fan from 40 to 80
+Subject: [PATCH 159/165] arm64: dts: qcom: nx809j: ramp the fan from 40 to 80
  C
 
 The fan's speed follows its PWM duty almost linearly, from about

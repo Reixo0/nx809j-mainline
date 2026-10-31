@@ -1,7 +1,7 @@
 From 8e35150e69ffe079e91330f50d65bbec9a3940e8 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 01:07:17 -0700
-Subject: [PATCH 062/162] drm/msm/dpu: fix DSC 1.2 encoder configuration for 10
+Subject: [PATCH 062/165] drm/msm/dpu: fix DSC 1.2 encoder configuration for 10
  bpc command mode
 
 Set full ICH precision above 8 bpc and don't set DSC_CFG bit 17 for

@@ -1,7 +1,7 @@
 From 4578dce67a980a8cd29ca6a7c509ad758142388c Mon Sep 17 00:00:00 2001
 From: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
 Date: Tue, 13 Oct 2026 18:29:37 +0800
-Subject: [PATCH 072/162] ASoC: codecs: aw88461: add Awinic AW88461 smart
+Subject: [PATCH 072/165] ASoC: codecs: aw88461: add Awinic AW88461 smart
  amplifier driver
 
 Add support for the Awinic AW88461 (chip ID 0x2308), an I2S input smart

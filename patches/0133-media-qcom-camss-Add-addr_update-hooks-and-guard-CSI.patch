@@ -1,7 +1,7 @@
 From bb9c2b7c9dfe51085eb4bc4d47a75eee79373a1e Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:23 -0700
-Subject: [PATCH 133/162] media: qcom: camss: Add addr_update hooks and guard
+Subject: [PATCH 133/165] media: qcom: camss: Add addr_update hooks and guard
  CSID reg_update
 
 From CSID 680 on, CAMIF was moved into the CSID and the CSID became

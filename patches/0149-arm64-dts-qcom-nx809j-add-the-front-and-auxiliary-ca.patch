@@ -1,7 +1,7 @@
 From 5b1293a6c407c6a7745a4e2cef9bda93eaa73247 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 16:15:27 +0100
-Subject: [PATCH 149/162] arm64: dts: qcom: nx809j: add the front and auxiliary
+Subject: [PATCH 149/165] arm64: dts: qcom: nx809j: add the front and auxiliary
  cameras
 
 Both sit on CCI1 bus 0 and share PM8010 L5M (1.8 V I/O) and the

@@ -1,7 +1,7 @@
 From 407708684b3f18f13e923910375ace9d5f9a1624 Mon Sep 17 00:00:00 2001
 From: Rahul Pon <theflyingrahul@gmail.com>
 Date: Wed, 30 Sep 2026 16:46:56 +0530
-Subject: [PATCH 048/162] soc: qcom: pmic_glink_altmode: acknowledge
+Subject: [PATCH 048/165] soc: qcom: pmic_glink_altmode: acknowledge
  notifications on undescribed ports
 
 The driver enables port notifications from the firmware (ALTMODE_PAN_EN)

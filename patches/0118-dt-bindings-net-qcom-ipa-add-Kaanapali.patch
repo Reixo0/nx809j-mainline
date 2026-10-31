@@ -1,7 +1,7 @@
 From ea0cf2afa4d68fa0a2ba0e3900dd3fe5cdc37653 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:33 +0100
-Subject: [PATCH 118/162] dt-bindings: net: qcom,ipa: add Kaanapali
+Subject: [PATCH 118/165] dt-bindings: net: qcom,ipa: add Kaanapali
 
 Kaanapali has IPA v5.5, compatible with SM8550.
 

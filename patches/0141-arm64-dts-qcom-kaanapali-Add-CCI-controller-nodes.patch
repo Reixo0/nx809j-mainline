@@ -1,7 +1,7 @@
 From 08708f8cd17df4da448d0a37b3a6e8292ad571d7 Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:31 -0700
-Subject: [PATCH 141/162] arm64: dts: qcom: kaanapali: Add CCI controller nodes
+Subject: [PATCH 141/165] arm64: dts: qcom: kaanapali: Add CCI controller nodes
 
 Add the three Camera Control Interface (CCI) controllers present on the
 Kaanapali SoC. Each controller provides two I2C hosts used for camera

@@ -1,7 +1,7 @@
 From c1307b9325632282510e67b809624a77360312c9 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:06:06 +0100
-Subject: [PATCH 058/162] arm64: dts: qcom: kaanapali: Feed the USB3 PHY pipe
+Subject: [PATCH 058/165] arm64: dts: qcom: kaanapali: Feed the USB3 PHY pipe
  clock to GCC
 
 The last GCC clock input, DT_USB3_PHY_WRAPPER_GCC_USB30_PIPE_CLK, was

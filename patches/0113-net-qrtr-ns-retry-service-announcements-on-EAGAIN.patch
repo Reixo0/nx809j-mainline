@@ -1,7 +1,7 @@
 From 7eb598fdb745e8b3b9ebbf3be1b197b8f959b6ae Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Fri, 16 Oct 2026 21:45:59 +0900
-Subject: [PATCH 113/162] net: qrtr: ns: retry service announcements on -EAGAIN
+Subject: [PATCH 113/165] net: qrtr: ns: retry service announcements on -EAGAIN
 
 Since commit 544d85de4dc2 ("net: qrtr: Send HELLO message on endpoint
 register"), qrtr_node_enqueue() returns -EAGAIN for every packet but

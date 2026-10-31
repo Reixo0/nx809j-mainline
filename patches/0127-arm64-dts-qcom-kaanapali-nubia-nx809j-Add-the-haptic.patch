@@ -1,7 +1,7 @@
 From 07d7aa8c0dfe6463313a67396d2b856f2e52e523 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Tue, 27 Oct 2026 21:51:38 +0100
-Subject: [PATCH 127/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+Subject: [PATCH 127/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
  haptics driver
 
 The AW86938 sits at 0x5a on hub I2C 4, interrupt on gpio88 and reset on

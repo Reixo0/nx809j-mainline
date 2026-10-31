@@ -1,7 +1,7 @@
 From 5d53a05ea88ff9b57d8b924952d42f5dd433dca9 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 08:19:21 +0100
-Subject: [PATCH 162/162] media: i2c: nx809j sensors: take the subdev client
+Subject: [PATCH 162/165] media: i2c: nx809j sensors: take the subdev client
  info
 
 linux-next passes struct v4l2_subdev_client_info to the set_fmt and

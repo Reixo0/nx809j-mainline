@@ -1,7 +1,7 @@
 From 4b083ef67a5999564d7947ed4900058a9eb85807 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 102/162] ASoC: codecs: wcd-clsh-v2: don't leave IQ forced for
+Subject: [PATCH 102/165] ASoC: codecs: wcd-clsh-v2: don't leave IQ forced for
  the second HPH channel
 
 Force IQ is released when the flyback and buck are turned on, which only

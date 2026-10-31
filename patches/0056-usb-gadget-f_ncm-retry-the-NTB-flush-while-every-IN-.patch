@@ -1,7 +1,7 @@
 From dc7241149accacf5508ee32ff70859080ce1ca1f Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Fri, 2 Oct 2026 18:48:11 +0300
-Subject: [PATCH 056/162] usb: gadget: f_ncm: retry the NTB flush while every
+Subject: [PATCH 056/165] usb: gadget: f_ncm: retry the NTB flush while every
  IN request is busy
 
 ncm_tx_timeout() flushes a partially filled NTB by calling eth_start_xmit()

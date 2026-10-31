@@ -1,7 +1,7 @@
 From 6eb4de79e6ba6c12fa7dd0312ae5fdbc8d75d1fa Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Tue, 27 Oct 2026 21:51:38 +0100
-Subject: [PATCH 126/162] Input: aw86927 - take the AW86938 boost voltage from
+Subject: [PATCH 126/165] Input: aw86927 - take the AW86938 boost voltage from
  the device tree
 
 The driver writes 0x11 to the AW86938 boost setting, which Awinic's own

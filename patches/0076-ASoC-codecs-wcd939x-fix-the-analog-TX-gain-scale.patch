@@ -1,7 +1,7 @@
 From a7cf284b4fc0b271099fed2ebbbd31ed90d2e1d4 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Tue, 29 Sep 2026 14:45:54 +0000
-Subject: [PATCH 076/162] ASoC: codecs: wcd939x: fix the analog TX gain scale
+Subject: [PATCH 076/165] ASoC: codecs: wcd939x: fix the analog TX gain scale
 
 The ADC1-ADC4 Volume controls (0-20) declared a 0.25 dB step and a mute
 at 0. Measured on the OnePlus Pad 4 (1 kHz reference through both analog

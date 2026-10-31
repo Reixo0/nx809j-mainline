@@ -1,7 +1,7 @@
 From a54ca28d8234802232bbea11540b87b151b88678 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 101/162] ASoC: codecs: wcd939x: set the stock bandgap fine
+Subject: [PATCH 101/165] ASoC: codecs: wcd939x: set the stock bandgap fine
  adjust
 
 The stock driver writes 0xa5 to BIAS_VBG_FINE_ADJ at init (reset value

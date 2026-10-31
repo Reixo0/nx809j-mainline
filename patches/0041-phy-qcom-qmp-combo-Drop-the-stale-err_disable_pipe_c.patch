@@ -1,7 +1,7 @@
 From b6c62c1e86cbcdf45a6e3e569cf57c5e49da4703 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:00:27 -0700
-Subject: [PATCH 041/162] phy: qcom: qmp-combo: Drop the stale
+Subject: [PATCH 041/165] phy: qcom: qmp-combo: Drop the stale
  err_disable_pipe_clk teardown
 
 pipe_clk is no longer enabled in qmp_combo_usb_power_on(), so its error

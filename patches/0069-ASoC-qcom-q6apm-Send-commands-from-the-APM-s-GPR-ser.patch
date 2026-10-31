@@ -1,7 +1,7 @@
 From 195d048f6e415c8f3bd7a0cc0251dfae9f56fa32 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 23 Sep 2026 02:50:17 -0700
-Subject: [PATCH 069/162] ASoC: qcom: q6apm: Send commands from the APM's GPR
+Subject: [PATCH 069/165] ASoC: qcom: q6apm: Send commands from the APM's GPR
  service
 
 The Kaanapali ADSP firmware only answers packets from the port the

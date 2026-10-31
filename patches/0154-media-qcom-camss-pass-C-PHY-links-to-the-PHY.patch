@@ -1,7 +1,7 @@
 From c4b48d5b75de8154dbf86f797bd83f71cf4c659c Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:08:40 +0100
-Subject: [PATCH 154/162] media: qcom: camss: pass C-PHY links to the PHY
+Subject: [PATCH 154/165] media: qcom: camss: pass C-PHY links to the PHY
 
 For a C-PHY endpoint the CSIPHY now asks for the C-PHY mode and
 hands the PHY the symbol rate, twice the link frequency, and the trio

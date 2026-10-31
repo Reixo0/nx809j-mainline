@@ -1,7 +1,7 @@
 From 61bfd84c0fedff370c758b942522e3c9f211869f Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:24:48 -0700
-Subject: [PATCH 023/162] Bluetooth: qca: Add WCN7860 support
+Subject: [PATCH 023/165] Bluetooth: qca: Add WCN7860 support
 
 WCN7860 uses an ELF rampatch and board NVM files, and needs a vendor
 command before it switches its UART to the operating speed.

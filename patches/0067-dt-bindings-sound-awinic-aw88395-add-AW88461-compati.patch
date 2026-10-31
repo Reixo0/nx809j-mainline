@@ -1,7 +1,7 @@
 From f072e8d6b60d2e4a482b6b01d29d01b68900cee8 Mon Sep 17 00:00:00 2001
 From: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
 Date: Tue, 13 Oct 2026 18:29:37 +0800
-Subject: [PATCH 067/162] dt-bindings: sound: awinic,aw88395: add AW88461
+Subject: [PATCH 067/165] dt-bindings: sound: awinic,aw88395: add AW88461
  compatible
 
 The Awinic AW88461 is an I2S smart audio amplifier of the same family

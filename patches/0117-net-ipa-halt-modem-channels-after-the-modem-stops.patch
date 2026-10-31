@@ -1,7 +1,7 @@
 From 8fc0cde0b15cba9d0c4d1db5f5720acca15c9b0d Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:32 +0100
-Subject: [PATCH 117/162] net: ipa: halt modem channels after the modem stops
+Subject: [PATCH 117/165] net: ipa: halt modem channels after the modem stops
 
 The downstream driver halts the GSI channels of every modem endpoint
 once the modem has shut down (IPA v4.0 and later), so they are idle

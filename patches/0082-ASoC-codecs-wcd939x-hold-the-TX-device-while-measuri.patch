@@ -1,7 +1,7 @@
 From 529ff67f9b12508ab00b2fb99a61344622949efc Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 10 Oct 2026 04:19:13 +0300
-Subject: [PATCH 082/162] ASoC: codecs: wcd939x: hold the TX device while
+Subject: [PATCH 082/165] ASoC: codecs: wcd939x: hold the TX device while
  measuring impedance
 
 The headset impedance measurement polls volatile result registers

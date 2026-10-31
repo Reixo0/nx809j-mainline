@@ -1,7 +1,7 @@
 From 7a1a4ea56472a20248506f5372c62a167380b4c6 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 15:56:18 +0100
-Subject: [PATCH 146/162] arm64: dts: qcom: nx809j: rotate the ultrawide frame
+Subject: [PATCH 146/165] arm64: dts: qcom: nx809j: rotate the ultrawide frame
 
 The ultrawide is mounted a quarter turn from the phone: a portrait
 frame is upright once turned 90 degrees clockwise, a 270 degree

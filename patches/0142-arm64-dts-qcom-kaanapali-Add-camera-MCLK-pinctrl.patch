@@ -1,7 +1,7 @@
 From 3e693ba1c6654f446f4c0bcf6f62fc6d2e320302 Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:32 -0700
-Subject: [PATCH 142/162] arm64: dts: qcom: kaanapali: Add camera MCLK pinctrl
+Subject: [PATCH 142/165] arm64: dts: qcom: kaanapali: Add camera MCLK pinctrl
 
 Add TLMM pinctrl states for the camera master clock GPIOs on Kaanapali so
 camera sensor nodes can select the proper MCLK pin functions when enabled.

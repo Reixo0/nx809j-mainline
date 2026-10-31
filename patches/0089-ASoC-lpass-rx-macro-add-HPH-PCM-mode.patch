@@ -1,7 +1,7 @@
 From 6d3590b7789707567ed7b7201599f9e6c09ce8d3 Mon Sep 17 00:00:00 2001
 From: KONKR Pocket FIT Elite port <unknown-email@domain.tld>
 Date: Sat, 29 Aug 2026 11:27:39 +0200
-Subject: [PATCH 089/162] ASoC: lpass-rx-macro: add HPH PCM mode
+Subject: [PATCH 089/165] ASoC: lpass-rx-macro: add HPH PCM mode
 
 > X-Git-Archeology: > recovered message: > Bring over the patches ROCKNIX still carries on top of the set imported
 > X-Git-Archeology: > recovered message: > in the bringup: the integrated-jack USBSS routing with the HPH PCM HiFi

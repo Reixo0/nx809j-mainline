@@ -1,7 +1,7 @@
 From aa300c99588d87be6a7f47a69eff3d2f9859c4b2 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:36 +0100
-Subject: [PATCH 121/162] arm64: dts: qcom: kaanapali-nubia-nx809j: enable the
+Subject: [PATCH 121/165] arm64: dts: qcom: kaanapali-nubia-nx809j: enable the
  modem and IPA
 
 Enable the modem with the phone's own firmware and IPA with its GSI

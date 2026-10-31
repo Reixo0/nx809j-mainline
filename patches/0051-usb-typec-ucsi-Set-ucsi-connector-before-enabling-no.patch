@@ -1,7 +1,7 @@
 From 12ae6257b6d553ef20b9f62009504c05a5c9e5fd Mon Sep 17 00:00:00 2001
 From: Uttkarsh Aggarwal <uttkarsh.aggarwal@oss.qualcomm.com>
 Date: Tue, 29 Sep 2026 14:59:39 +0530
-Subject: [PATCH 051/162] usb: typec: ucsi: Set ucsi->connector before enabling
+Subject: [PATCH 051/165] usb: typec: ucsi: Set ucsi->connector before enabling
  notifications
 
 In ucsi_init(), ucsi->connector is assigned only after the

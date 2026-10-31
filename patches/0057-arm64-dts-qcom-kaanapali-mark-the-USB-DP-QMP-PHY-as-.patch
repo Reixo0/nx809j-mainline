@@ -1,7 +1,7 @@
 From 8d1fb09fcc0b88d6b770c58ebe9ed285937e2839 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sun, 18 Oct 2026 20:00:00 +0300
-Subject: [PATCH 057/162] arm64: dts: qcom: kaanapali: mark the USB/DP QMP PHY
+Subject: [PATCH 057/165] arm64: dts: qcom: kaanapali: mark the USB/DP QMP PHY
  as a mode switch
 
 The USB3/DP combo PHY sits in the Type-C graph (pmic_glink connector ->

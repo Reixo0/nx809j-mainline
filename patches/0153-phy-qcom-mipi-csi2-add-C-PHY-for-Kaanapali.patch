@@ -1,7 +1,7 @@
 From 2d4f53e3fd72d82325cb0fbdf7d5c582cbf46bbb Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:08:40 +0100
-Subject: [PATCH 153/162] phy: qcom: mipi-csi2: add C-PHY for Kaanapali
+Subject: [PATCH 153/165] phy: qcom: mipi-csi2: add C-PHY for Kaanapali
 
 The endpoint bus-type now picks the mode: C-PHY endpoints take up
 to three trios, and set_mode only accepts the mode the endpoint gave.

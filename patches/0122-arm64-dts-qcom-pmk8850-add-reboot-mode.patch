@@ -1,7 +1,7 @@
 From 9b880d33c73965d6b29cb6d06b826652f4eb956b Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 22:02:30 +0100
-Subject: [PATCH 122/162] arm64: dts: qcom: pmk8850: add reboot-mode
+Subject: [PATCH 122/165] arm64: dts: qcom: pmk8850: add reboot-mode
 
 Expose the PMIC SDAM restart reason through nvmem-reboot-mode, as on
 pmk8550, so that "reboot recovery" and "reboot bootloader" reach the

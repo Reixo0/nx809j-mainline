@@ -1,7 +1,7 @@
 From 6ff6b72f4fead668a03da64987ed34416d4481b3 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 23:13:58 +0200
-Subject: [PATCH 007/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable
+Subject: [PATCH 007/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable
  display
 
 Enable MDSS, DSI0 and its PHY with the RM692H5 panel: supplies and reset

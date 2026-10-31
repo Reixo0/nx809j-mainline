@@ -1,7 +1,7 @@
 From 6812ddbb0bf43c46c31aef1454df143198d8c91b Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 20:18:38 +0100
-Subject: [PATCH 160/162] media: qcom: camss: drop interconnect votes with
+Subject: [PATCH 160/165] media: qcom: camss: drop interconnect votes with
  TITAN_TOP
 
 The CCI shares the TITAN_TOP domain and keeps it powered for a second

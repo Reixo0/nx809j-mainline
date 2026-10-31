@@ -1,7 +1,7 @@
 From 08ccfd84c84453dd32479a099241b6a6301aa4a0 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:06:06 +0100
-Subject: [PATCH 059/162] arm64: dts: qcom: kaanapali-nubia-nx809j: USB role
+Subject: [PATCH 059/165] arm64: dts: qcom: kaanapali-nubia-nx809j: USB role
  switch and port select
 
 Let pmic-glink (UCSI) pick the data role instead of forcing peripheral

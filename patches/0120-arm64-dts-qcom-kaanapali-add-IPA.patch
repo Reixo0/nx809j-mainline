@@ -1,7 +1,7 @@
 From 7dacced0b6b158638f8a2ad024e2b950edec18f2 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:35 +0100
-Subject: [PATCH 120/162] arm64: dts: qcom: kaanapali: add IPA
+Subject: [PATCH 120/165] arm64: dts: qcom: kaanapali: add IPA
 
 Add the IPA node, disabled by default. The microcontroller firmware is
 loaded by the AP (qcom,gsi-loader = "self") into ipa_gsi_mem.

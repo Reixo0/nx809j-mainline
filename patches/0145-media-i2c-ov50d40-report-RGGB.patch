@@ -1,7 +1,7 @@
 From 1dda50b3b01a0f5ff2c507f5bd97d40ee519e984 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 15:49:46 +0100
-Subject: [PATCH 145/162] media: i2c: ov50d40: report RGGB
+Subject: [PATCH 145/165] media: i2c: ov50d40: report RGGB
 
 A frame of an SMPTE colour-bar chart on devices143 has the bars in
 their colours when read as RGGB; read as BGGR, red and blue and

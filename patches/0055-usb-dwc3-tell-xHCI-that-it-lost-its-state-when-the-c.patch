@@ -1,7 +1,7 @@
 From c8f85fe189237c5bf6e42d44664c8829925065df Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sun, 27 Sep 2026 16:43:25 +0000
-Subject: [PATCH 055/162] usb: dwc3: tell xHCI that it lost its state when the
+Subject: [PATCH 055/165] usb: dwc3: tell xHCI that it lost its state when the
  core is powered off
 
 In host mode, dwc3_suspend_common() powers the core off for system

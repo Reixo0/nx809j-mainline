@@ -1,7 +1,7 @@
 From cf08199c0c4a7eb3522254db5636dbadfdabd0a4 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:24:50 -0700
-Subject: [PATCH 074/162] usb: typec: mux: wcd939x-usbss: Keep DP AUX and USB
+Subject: [PATCH 074/165] usb: typec: mux: wcd939x-usbss: Keep DP AUX and USB
  2.0 up in DP modes
 
 Ignore TYPEC_STATE_USB while in DP alt mode, it would cut AUX. USB 2.0

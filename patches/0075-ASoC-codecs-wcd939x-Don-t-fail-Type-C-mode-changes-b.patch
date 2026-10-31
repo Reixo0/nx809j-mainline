@@ -1,7 +1,7 @@
 From ea449ae08652be5bbc210d1fea7e798096144828 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 23 Sep 2026 08:37:55 -0700
-Subject: [PATCH 075/162] ASoC: codecs: wcd939x: Don't fail Type-C mode changes
+Subject: [PATCH 075/165] ASoC: codecs: wcd939x: Don't fail Type-C mode changes
  before MBHC init
 
 The mux is registered long before MBHC exists, and the error aborted the

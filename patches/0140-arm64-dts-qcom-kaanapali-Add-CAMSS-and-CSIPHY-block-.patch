@@ -1,7 +1,7 @@
 From e0711ae6e68894d90d87825a7e8e823483abcdf7 Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:30 -0700
-Subject: [PATCH 140/162] arm64: dts: qcom: kaanapali: Add CAMSS and CSIPHY
+Subject: [PATCH 140/165] arm64: dts: qcom: kaanapali: Add CAMSS and CSIPHY
  block definitions
 
 Describe the CAMSS and CSIPHY blocks on Kaanapali so that camera pipelines

@@ -1,7 +1,7 @@
 From bef87c7a5976f0768b7ae11dae00ff385a119ad4 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Tue, 27 Oct 2026 23:04:36 +0100
-Subject: [PATCH 128/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Run the
+Subject: [PATCH 128/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Run the
  fingerprint supply at 3.296 V
 
 Stock asks L7M for exactly 3.3 V, which this 8 mV-step LDO cannot

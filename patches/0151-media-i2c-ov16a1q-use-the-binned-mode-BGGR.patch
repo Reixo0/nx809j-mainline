@@ -1,7 +1,7 @@
 From 236563c95a8a5b948288cc77b95f32697fdb9ba0 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 16:29:19 +0100
-Subject: [PATCH 151/162] media: i2c: ov16a1q: use the binned mode, BGGR
+Subject: [PATCH 151/165] media: i2c: ov16a1q: use the binned mode, BGGR
 
 The OV16A1Q is a Quad Bayer sensor. A full-resolution frame of an
 SMPTE chart (devices145) has each colour in 2x2 blocks, greens on the

@@ -1,7 +1,7 @@
 From 5d148881a85f4849963b8b56326469398963bd04 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 01:15:09 -0700
-Subject: [PATCH 022/162] dt-bindings: net: bluetooth: qcom,wcn7850-bt: Add
+Subject: [PATCH 022/165] dt-bindings: net: bluetooth: qcom,wcn7850-bt: Add
  WCN7860
 
 It has the same supplies as WCN7850.

@@ -1,7 +1,7 @@
 From 853825661506fa7d69d2211db0bc08ff970636a4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:29:32 +0100
-Subject: [PATCH 065/162] drm/msm/dsi: size the DSC link by the DSI format in
+Subject: [PATCH 065/165] drm/msm/dsi: size the DSC link by the DSI format in
  command mode
 
 dsi_adjust_pclk_for_compression() scales hdisplay by

@@ -1,7 +1,7 @@
 From 0387cb50fff0d7d576c36344c364b2bd9f4888bd Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 3 Oct 2026 11:44:32 +0300
-Subject: [PATCH 081/162] ASoC: codecs: wcd939x: skip impedance when the codec
+Subject: [PATCH 081/165] ASoC: codecs: wcd939x: skip impedance when the codec
  is unreadable
 
 The impedance measurement polls the volatile MBHC result registers. When

@@ -1,7 +1,7 @@
 From 69249f290d436a6514b68b280e509bc6c2c9ca6e Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 08:31:25 +0000
-Subject: [PATCH 049/162] usb: typec: ucsi: run connector change handling on
+Subject: [PATCH 049/165] usb: typec: ucsi: run connector change handling on
  the freezable workqueue
 
 The same unplug-during-s2idle also raises a UCSI connector change, and

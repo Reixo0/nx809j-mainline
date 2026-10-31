@@ -1,7 +1,7 @@
 From a3d7ce9364da30ff0be0b2e0d29a87913d8162b5 Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:25 -0700
-Subject: [PATCH 135/162] media: qcom: camss: Add Kaanapali compatible
+Subject: [PATCH 135/165] media: qcom: camss: Add Kaanapali compatible
 
 Add CAMSS_KAANAPALI enum, Kaanapali compatible and Kaanapali CAMSS driver
 private data. The private data currently includes only basic information.

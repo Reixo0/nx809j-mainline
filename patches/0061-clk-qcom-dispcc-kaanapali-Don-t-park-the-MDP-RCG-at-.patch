@@ -1,7 +1,7 @@
 From 9d9bbdf452ed1f7d8b6ecb35318f5ef48b9f7b1b Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:24:52 -0700
-Subject: [PATCH 061/162] clk: qcom: dispcc-kaanapali: Don't park the MDP RCG
+Subject: [PATCH 061/165] clk: qcom: dispcc-kaanapali: Don't park the MDP RCG
  at registration
 
 Parking it breaks the bootloader's running display, so use

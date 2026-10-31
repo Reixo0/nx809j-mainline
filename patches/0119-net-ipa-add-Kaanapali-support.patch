@@ -1,7 +1,7 @@
 From 13dafd7a63e8b12a3d22ac28d40d2644544af9f0 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:34 +0100
-Subject: [PATCH 119/162] net: ipa: add Kaanapali support
+Subject: [PATCH 119/165] net: ipa: add Kaanapali support
 
 Kaanapali has IPA v5.5 like SM8550, but its configuration differs, as
 seen in the downstream driver:

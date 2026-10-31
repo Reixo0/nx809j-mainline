@@ -1,7 +1,7 @@
 From 3e75ccb118b2decf4b4422dd8b6878cf569095de Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:26 -0700
-Subject: [PATCH 136/162] media: qcom: camss: csiphy: Add support for v2.4.0
+Subject: [PATCH 136/165] media: qcom: camss: csiphy: Add support for v2.4.0
  two-phase CSIPHY
 
 Add support for the v2.4.0 two-phase CSIPHY found on Kaanapali, where

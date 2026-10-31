@@ -1,7 +1,7 @@
 From 2c55759ca0efd76017067b281550976ca837e469 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Fri, 25 Sep 2026 02:45:00 -0700
-Subject: [PATCH 110/162] dt-bindings: remoteproc: qcom,sm8550-pas: Add the
+Subject: [PATCH 110/165] dt-bindings: remoteproc: qcom,sm8550-pas: Add the
  Kaanapali modem
 
 It is compatible with SM8750.

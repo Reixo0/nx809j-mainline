@@ -1,7 +1,7 @@
 From 912f3ad1b7b800fe1c92825ed93877ceb4a8a499 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:40:32 +0200
-Subject: [PATCH 021/162] wifi: ath12k: peach: Use 32-bit TLVs (QCC2072 HAL)
+Subject: [PATCH 021/165] wifi: ath12k: peach: Use 32-bit TLVs (QCC2072 HAL)
 
 Peach is built with word-based (32-bit) TLVs, like QCC2072: its REO
 command and status descriptors lack WCN7850's tlv64 padding, and all

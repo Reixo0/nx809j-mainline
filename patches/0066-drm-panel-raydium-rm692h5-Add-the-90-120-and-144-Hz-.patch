@@ -1,7 +1,7 @@
 From 664546a42b1463b79de2635ba2e7fb6e7e22be95 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:29:32 +0100
-Subject: [PATCH 066/162] drm/panel: raydium-rm692h5: Add the 90, 120 and 144
+Subject: [PATCH 066/165] drm/panel: raydium-rm692h5: Add the 90, 120 and 144
  Hz modes
 
 The downstream panel has four timings. They differ in the porches,

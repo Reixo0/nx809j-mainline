@@ -1,7 +1,7 @@
 From cb52a126226de930a051e6277161e5ac08ea88c2 Mon Sep 17 00:00:00 2001
 From: map220v <map220v300@gmail.com>
 Date: Thu, 11 Jun 2026 07:56:25 +0000
-Subject: [PATCH 028/162] SM8850: Fix GMU address
+Subject: [PATCH 028/165] SM8850: Fix GMU address
 
 (cherry picked from commit 50a7944c836935cc951c1672bdd52301acbbe5f3)
 ---

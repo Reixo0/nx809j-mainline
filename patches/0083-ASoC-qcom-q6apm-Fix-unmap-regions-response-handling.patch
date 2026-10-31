@@ -1,7 +1,7 @@
 From f952c31c52c5a8111d58e6fd8c6f6dd55fef28bf Mon Sep 17 00:00:00 2001
 From: Shawn Guo <shengchao.guo@oss.qualcomm.com>
 Date: Fri, 16 Oct 2026 22:11:51 +0800
-Subject: [PATCH 083/162] ASoC: qcom: q6apm: Fix unmap regions response
+Subject: [PATCH 083/165] ASoC: qcom: q6apm: Fix unmap regions response
  handling
 
 The DSP acknowledges APM_CMD_SHARED_MEM_UNMAP_REGIONS with a

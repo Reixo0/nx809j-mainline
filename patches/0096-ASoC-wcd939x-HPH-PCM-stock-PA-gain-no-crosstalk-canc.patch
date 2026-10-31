@@ -1,7 +1,7 @@
 From 6d52ca27062c001030f67d228ac025e570b7d9e4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 18:45:48 +0100
-Subject: [PATCH 096/162] ASoC: wcd939x: HPH PCM: stock PA gain, no crosstalk
+Subject: [PATCH 096/165] ASoC: wcd939x: HPH PCM: stock PA gain, no crosstalk
  cancellation
 
 Match what the stock driver programs for HPH PCM playback on Kaanapali

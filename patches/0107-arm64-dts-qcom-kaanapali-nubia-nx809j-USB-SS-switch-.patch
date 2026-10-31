@@ -1,7 +1,7 @@
 From b90ce7a3aec566d5b3413ac49099d2776d303afe Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 107/162] arm64: dts: qcom: kaanapali-nubia-nx809j: USB-SS
+Subject: [PATCH 107/165] arm64: dts: qcom: kaanapali-nubia-nx809j: USB-SS
  switch and headset jack
 
 The WCD9395 USB-SS switch (i2c3 at 0x0e, as stock) carries the 3.5 mm

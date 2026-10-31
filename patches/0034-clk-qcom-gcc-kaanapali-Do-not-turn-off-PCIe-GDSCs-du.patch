@@ -1,7 +1,7 @@
 From 620f5394b18010cf2000d5c6a28962c5e30387b2 Mon Sep 17 00:00:00 2001
 From: Krishna Chaitanya Chundru <krishna.chundru@oss.qualcomm.com>
 Date: Fri, 2 Jan 2026 15:13:07 +0530
-Subject: [PATCH 034/162] clk: qcom: gcc-kaanapali: Do not turn off PCIe GDSCs
+Subject: [PATCH 034/165] clk: qcom: gcc-kaanapali: Do not turn off PCIe GDSCs
  during gdsc_disable()
 
 With PWRSTS_OFF_ON, PCIe GDSCs are turned off during gdsc_disable(). This

@@ -1,7 +1,7 @@
 From f15a5199cf4e355014a6f6b6deadb5e9ddd11024 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:08:40 +0100
-Subject: [PATCH 152/162] phy: add a MIPI C-PHY mode and configuration set
+Subject: [PATCH 152/165] phy: add a MIPI C-PHY mode and configuration set
 
 A C-PHY receiver needs the symbol rate per trio and the number of
 trios. Add PHY_MODE_MIPI_CPHY and phy_configure_opts_mipi_cphy for

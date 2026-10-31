@@ -1,7 +1,7 @@
 From 66c03eeb17bc91ca66f347c7cb1c791626f4dd7c Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Fri, 25 Sep 2026 02:45:01 -0700
-Subject: [PATCH 111/162] arm64: dts: qcom: kaanapali: Add the modem
+Subject: [PATCH 111/165] arm64: dts: qcom: kaanapali: Add the modem
 
 Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
 ---

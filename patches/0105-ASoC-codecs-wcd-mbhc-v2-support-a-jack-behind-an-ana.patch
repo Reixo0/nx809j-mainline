@@ -1,7 +1,7 @@
 From f0c920dda635991ea73aad53efb3d40100463992 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 105/162] ASoC: codecs: wcd-mbhc-v2: support a jack behind an
+Subject: [PATCH 105/165] ASoC: codecs: wcd-mbhc-v2: support a jack behind an
  analog switch
 
 With a jack's mic and ground behind an analog switch (hsj_switch), MBHC

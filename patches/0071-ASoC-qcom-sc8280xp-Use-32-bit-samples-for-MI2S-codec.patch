@@ -1,7 +1,7 @@
 From d774a80f3c1710afd86f31970b7649f0594210d8 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Thu, 24 Sep 2026 19:13:41 -0700
-Subject: [PATCH 071/162] ASoC: qcom: sc8280xp: Use 32-bit samples for MI2S
+Subject: [PATCH 071/165] ASoC: qcom: sc8280xp: Use 32-bit samples for MI2S
  codecs without S16
 
 Signed-off-by: Victor Fuentes <victor@vlinkz.dev>

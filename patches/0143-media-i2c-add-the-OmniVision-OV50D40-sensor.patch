@@ -1,7 +1,7 @@
 From 5b2eafce565612bbd9930771e9dc663a71d7a51f Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 15:32:31 +0100
-Subject: [PATCH 143/162] media: i2c: add the OmniVision OV50D40 sensor
+Subject: [PATCH 143/165] media: i2c: add the OmniVision OV50D40 sensor
 
 The OV50D40 is the ultrawide camera of the Nubia RedMagic 11 Pro
 (nx809j). The driver carries the stock module's global init and its

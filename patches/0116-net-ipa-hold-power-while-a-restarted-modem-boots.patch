@@ -1,7 +1,7 @@
 From a5c7b3bb47d5f93ec2f2281c24ea1befe0cc6d0e Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:32 +0100
-Subject: [PATCH 116/162] net: ipa: hold power while a restarted modem boots
+Subject: [PATCH 116/165] net: ipa: hold power while a restarted modem boots
 
 The modem accesses IPA while it boots. On the first boot the driver
 holds a proxy power reference until the microcontroller reports that

@@ -1,7 +1,7 @@
 From fec2b28445eb1dd395c9237970031990879b9b90 Mon Sep 17 00:00:00 2001
 From: KONKR Pocket FIT Elite port <unknown-email@domain.tld>
 Date: Sun, 25 Oct 2026 16:06:55 +0100
-Subject: [PATCH 092/162] soundwire: qcom: PCM data port format enable
+Subject: [PATCH 092/165] soundwire: qcom: PCM data port format enable
 
 Ports carrying PCM samples (the WCD939x HIFI_PCM headphone port) also
 need the controller's per-port PCM format enable

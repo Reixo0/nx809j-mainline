@@ -1,7 +1,7 @@
 From 66b13558ebe0d64de3cce641d138e76ef76aabdb Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Tue, 27 Oct 2026 20:49:37 +0100
-Subject: [PATCH 125/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Pull up the
+Subject: [PATCH 125/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Pull up the
  touchscreen pins
 
 The touchscreen's interrupt and reset lines had no pin state, so the

@@ -1,7 +1,7 @@
 From 04f601f87ab022e8f9d6f72416fd9be0ac4434cb Mon Sep 17 00:00:00 2001
 From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
 Date: Sat, 24 Oct 2026 20:17:28 -0700
-Subject: [PATCH 138/162] media: qcom: camss: vfe: Add support for VFE 1080
+Subject: [PATCH 138/165] media: qcom: camss: vfe: Add support for VFE 1080
 
 Add support for the VFE (Video Front End) 1080 found on Kaanapali SoC.
 

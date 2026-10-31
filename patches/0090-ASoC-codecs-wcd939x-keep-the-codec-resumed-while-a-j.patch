@@ -1,7 +1,7 @@
 From 16b9cf8928b3e5e3e68d231c3095b3ea880595bf Mon Sep 17 00:00:00 2001
 From: Anze <aanzdev@gmail.com>
 Date: Sat, 29 Aug 2026 11:27:39 +0200
-Subject: [PATCH 090/162] ASoC: codecs: wcd939x: keep the codec resumed while a
+Subject: [PATCH 090/165] ASoC: codecs: wcd939x: keep the codec resumed while a
  jack is set
 
 > X-Git-Archeology: > recovered message: > Bring over the patches ROCKNIX still carries on top of the set imported

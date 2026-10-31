@@ -1,7 +1,7 @@
 From b457c69d31957407619b3d5ea7bf419f64c0c2c0 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 21:24:40 +0200
-Subject: [PATCH 040/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Keep the
+Subject: [PATCH 040/165] arm64: dts: qcom: kaanapali-nubia-nx809j: Keep the
  RTC offset in SDAM2
 
 The PMIC RTC counter belongs to the secure world and refuses writes, so

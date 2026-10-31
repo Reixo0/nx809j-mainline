@@ -1,7 +1,7 @@
 From edf915462e0d567d963b3f7b25f5e2f3f7b82e4d Mon Sep 17 00:00:00 2001
 From: KONKR Pocket FIT Elite port <unknown-email@domain.tld>
 Date: Sun, 25 Oct 2026 16:06:55 +0100
-Subject: [PATCH 093/162] ASoC: wcd939x: add HPH PCM (HiFi) mode
+Subject: [PATCH 093/165] ASoC: wcd939x: add HPH PCM (HiFi) mode
 
 In HPH PCM mode the headphone stream arrives as PCM samples on the
 HIFI_PCM SoundWire port and the codec runs its own interpolator, DC

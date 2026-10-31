@@ -1,7 +1,7 @@
 From a990b2b1c49b9368feedce536075a6f0a129d9b6 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:48:02 +0100
-Subject: [PATCH 158/162] arm64: dts: qcom: nx809j: drive the main camera focus
+Subject: [PATCH 158/165] arm64: dts: qcom: nx809j: drive the main camera focus
 
 The main camera DW9785 answers at 0x24 on CCI0 bus 1 once its
 supplies are on: the camera I/O rail, L3M at 2.8 V for the actuator,

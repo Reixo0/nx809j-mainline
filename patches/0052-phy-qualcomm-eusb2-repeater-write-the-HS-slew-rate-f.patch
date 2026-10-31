@@ -1,7 +1,7 @@
 From 898c383330ed63e94520e7d54de8653a01035131 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Fri, 2 Oct 2026 11:57:42 +0300
-Subject: [PATCH 052/162] phy: qualcomm: eusb2-repeater: write the HS slew rate
+Subject: [PATCH 052/165] phy: qualcomm: eusb2-repeater: write the HS slew rate
  from the device tree
 
 Write TUNE_USB2_SLEW from "qcom,tune-usb2-slew" when the property is

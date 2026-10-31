@@ -1,7 +1,7 @@
 From 4f0f77b69a87d90a2944df145b2c9810b480b2fd Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 17:48:01 +0100
-Subject: [PATCH 157/162] media: i2c: add the Dongwoon DW9785 lens focus driver
+Subject: [PATCH 157/165] media: i2c: add the Dongwoon DW9785 lens focus driver
 
 The DW9785 drives the focus and the optical image stabilisation of a
 camera module from its own DSP. This driver drives the focus only, as
