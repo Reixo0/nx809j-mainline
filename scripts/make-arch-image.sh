@@ -2,7 +2,7 @@
 # Build the Arch Linux ARM release images for the NX809J on an aarch64 Arch
 # Linux ARM host (the phone itself works), as root:
 #
-#   linux.img   root file system for the `linux` partition: Plasma Mobile,
+#   linux.img   root file system for the `linux` partition: Denial, its apps,
 #               our [nx809j] packages; grows to the partition on first boot
 #   esp.img     the `esp` partition: systemd-boot, kernel and DTB, the
 #               dispatcher (EFI/BOOT/BOOTAA64.EFI) and Mu-Silicium (MU.fd)
@@ -27,15 +27,13 @@ ROOT_SIZE=${ROOT_SIZE:-12G}
 ESP_SIZE=1G # the esp partition
 
 PACKAGES=(base archlinuxarm-keyring sudo nano nx809j-device
-  # Plasma Mobile and its apps
-  plasma-mobile sddm plasma-keyboard xdg-desktop-portal-kde xdg-user-dirs
-  breeze-gtk kde-gtk-config kinfocenter bluedevil discover flatpak
-  qmlkonsole dolphin kclock kweather krecorder plasma-camera kdeconnect
-  firefox mobile-config-firefox noto-fonts noto-fonts-emoji
+  # Denial, its services and apps
+  denial-nx809j phonewave-nx809j denial-apps-nx809j xdg-desktop-portal-gtk
+  xdg-user-dirs foot firefox mobile-config-firefox
   # Hardware
   mesa vulkan-freedreno pipewire pipewire-pulse wireplumber alsa-utils
   bluez power-profiles-daemon dosfstools openssh)
-SERVICES=(NetworkManager bluetooth sddm power-profiles-daemon
+SERVICES=(NetworkManager bluetooth nx809j-denial power-profiles-daemon
   systemd-resolved systemd-timesyncd)
 
 [[ $(uname -m) == aarch64 && $(id -u) == 0 ]] || { echo "run as root on aarch64" >&2; exit 1; }
@@ -86,21 +84,11 @@ echo LANG=en_US.UTF-8 > "$M/etc/locale.conf"
 ln -sf /usr/share/zoneinfo/UTC "$M/etc/localtime"
 ln -sf /run/systemd/resolve/stub-resolv.conf "$M/etc/resolv.conf"
 
-# The user, autologin into Plasma Mobile (the lock screen asks for the
-# password), sudo for wheel; "Reboot to Linux" works without a password
-mkdir -p "$M/etc/sddm.conf.d" "$M/etc/sudoers.d"
-cat > "$M/etc/sddm.conf.d/10-nx809j.conf" <<EOF
-[Autologin]
-User=$USERNAME
-Session=plasma-mobile
-
-[General]
-DisplayServer=wayland
-GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
-
-[Wayland]
-CompositorCommand=kwin_wayland --drm --no-lockscreen --no-global-shortcuts --locale1
-EOF
+# The user, who Denial runs as; sudo for wheel; "Reboot to Linux" works
+# without a password
+mkdir -p "$M/etc/sudoers.d" "$M/etc/systemd/system/nx809j-denial.service.d"
+printf '[Service]\nUser=%s\nGroup=%s\n' "$USERNAME" "$USERNAME" \
+  > "$M/etc/systemd/system/nx809j-denial.service.d/10-user.conf"
 cat > "$M/etc/sudoers.d/10-nx809j" <<'EOF'
 %wheel ALL=(ALL:ALL) ALL
 %wheel ALL=(root) NOPASSWD: /usr/bin/nx809j-reboot-linux
