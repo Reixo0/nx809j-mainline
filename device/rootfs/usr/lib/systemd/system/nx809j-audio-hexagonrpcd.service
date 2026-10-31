@@ -1,0 +1,24 @@
+[Unit]
+Description=RedMagic 11 Pro audio PD modules for the ADSP (hexagonrpcd)
+# Copied from the stock vendor partition, vendor/dsp/adsp
+ConditionPathExists=/usr/share/qcom/kaanapali/Nubia/NX809J-audio/dsp
+
+[Service]
+Type=exec
+# The ADSP loads Fluence and other voice modules from here when a graph opens.
+ExecStart=/usr/bin/hexagonrpcd -f /dev/fastrpc-adsp-secure -d adsp -a -R /usr/share/qcom/kaanapali/Nubia/NX809J-audio
+Restart=always
+RestartSec=1
+PrivateDevices=yes
+DevicePolicy=closed
+DeviceAllow=/dev/fastrpc-adsp-secure rw
+BindPaths=/dev/fastrpc-adsp-secure
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

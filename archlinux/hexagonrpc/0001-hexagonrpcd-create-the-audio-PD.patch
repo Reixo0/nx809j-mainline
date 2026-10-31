@@ -1,0 +1,428 @@
+diff --git a/hexagonrpcd/apps_mem.c b/hexagonrpcd/apps_mem.c
+index 1477f0b..f988abb 100644
+--- a/hexagonrpcd/apps_mem.c
++++ b/hexagonrpcd/apps_mem.c
+@@ -60,10 +60,12 @@ static uint32_t apps_mem_request_map64(void *data,
+ 	struct fastrpc_req_mmap mmap;
+ 	int ret;
+ 
+-	if (!(first_in->rflags & ADSP_MMAP_ADD_PAGES)) {
+-		fprintf(stderr, "Unsupported mmap operation: DMA buffer request\n");
++	fprintf(stderr, "mmap: heap %u lflags %x rflags %x vin %llx len %llu\n",
++		first_in->heap_id, first_in->lflags, first_in->rflags,
++		(unsigned long long)first_in->vin, (unsigned long long)first_in->len);
++
++	if (!(first_in->rflags & (ADSP_MMAP_ADD_PAGES | ADSP_MMAP_REMOTE_HEAP_ADDR)))
+ 		return AEE_EUNSUPPORTED;
+-	}
+ 
+ 	mmap.fd = -1;
+ 	mmap.flags = first_in->rflags;
+@@ -92,6 +94,27 @@ static uint32_t apps_mem_request_map64(void *data,
+ 	return 0;
+ }
+ 
++static uint32_t apps_mem_request_unmap64(void *data,
++					 const struct fastrpc_io_buffer *inbufs,
++					 struct fastrpc_io_buffer *outbufs)
++{
++	struct apps_mem_ctx *ctx = data;
++	const struct {
++		uint64_t vadsp;
++		uint64_t len;
++	} *first_in = inbufs[0].p;
++	struct fastrpc_req_munmap munmap = {
++		.vaddrout = first_in->vadsp,
++		.size = first_in->len,
++	};
++	int ret;
++
++	ret = ioctl(ctx->fd, FASTRPC_IOCTL_MUNMAP, &munmap);
++	if (ret)
++		fprintf(stderr, "Memory unmap failed: %s\n", hexagonrpc_strerror(ret));
++	return ret;
++}
++
+ struct fastrpc_interface *fastrpc_apps_mem_init(int fd)
+ {
+ 	struct fastrpc_interface *iface;
+@@ -129,7 +152,7 @@ static const struct fastrpc_function_impl apps_mem_procs[] = {
+ 	{ .def = NULL, .impl = NULL, },
+ 	{ .def = NULL, .impl = NULL, },
+ 	{ .def = &apps_mem_request_map64_def, .impl = apps_mem_request_map64, },
+-	{ .def = NULL, .impl = NULL, },
++	{ .def = &apps_mem_request_unmap64_def, .impl = apps_mem_request_unmap64, },
+ 	{ .def = NULL, .impl = NULL, },
+ 	{ .def = NULL, .impl = NULL, },
+ };
+diff --git a/hexagonrpcd/apps_std.c b/hexagonrpcd/apps_std.c
+index 7172bf0..e8a7d27 100644
+--- a/hexagonrpcd/apps_std.c
++++ b/hexagonrpcd/apps_std.c
+@@ -24,6 +24,9 @@
+ #include <stdio.h>
+ #include <stdint.h>
+ #include <string.h>
++#include <misc/fastrpc.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
+ 
+@@ -32,7 +35,19 @@
+ #include "iobuffer.h"
+ #include "listener.h"
+ 
++#define APPS_STD_MAX_MAPPED 16
++
++/* A file the DSP reads through a buffer mapped on its side */
++struct apps_std_mapped {
++	int fd;
++	uint64_t vaddr;
++	uint64_t len;
++	void *buf;
++};
++
+ struct apps_std_ctx {
++	int rpcfd;
++	struct apps_std_mapped mapped[APPS_STD_MAX_MAPPED];
+ 	int rootfd;
+ 	int adsp_avs_cfg_dirfd;
+ 	int adsp_library_dirfd;
+@@ -351,7 +366,131 @@ static uint32_t apps_std_stat(void *data,
+ 	return 0;
+ }
+ 
+-struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root)
++static uint32_t apps_std_fclose_fd(void *data,
++				   const struct fastrpc_io_buffer *inbufs,
++				   struct fastrpc_io_buffer *outbufs)
++{
++	struct apps_std_ctx *ctx = data;
++	int fd = *(const uint32_t *) ((const char *) inbufs[0].p +
++				      (inbufs[0].s - sizeof(uint32_t)));
++	struct apps_std_mapped *m;
++	struct fastrpc_mem_unmap unmap = { 0 };
++	int i, ret;
++
++	for (i = 0; i < APPS_STD_MAX_MAPPED; i++) {
++		m = &ctx->mapped[i];
++		if (m->buf == NULL || m->fd != fd)
++			continue;
++
++		unmap.fd = m->fd;
++		unmap.vaddr = m->vaddr;
++		unmap.length = m->len;
++		ret = ioctl(ctx->rpcfd, FASTRPC_IOCTL_MEM_UNMAP, &unmap);
++		if (ret)
++			perror("Could not unmap file buffer");
++		munmap(m->buf, m->len);
++		ioctl(ctx->rpcfd, FASTRPC_IOCTL_FREE_DMA_BUFF, &m->fd);
++		m->buf = NULL;
++		return 0;
++	}
++
++	fprintf(stderr, "fclose_fd: unknown fd %d\n", fd);
++	return AEE_EBADPARM;
++}
++
++/* Reads a file into a buffer, maps that on the DSP and answers with its fd. */
++static uint32_t apps_std_fopen_with_env_fd(void *data,
++					   const struct fastrpc_io_buffer *inbufs,
++					   struct fastrpc_io_buffer *outbufs)
++{
++	struct apps_std_ctx *ctx = data;
++	struct {
++		uint32_t fd;
++		uint32_t len;
++	} *out = outbufs[0].p;
++	const char *env = inbufs[1].p, *name = inbufs[3].p;
++	struct fastrpc_alloc_dma_buf dmabuf = { 0 };
++	struct fastrpc_mem_map map = { 0 };
++	struct apps_std_mapped *m = NULL;
++	struct stat stats;
++	size_t done = 0;
++	long page_size = sysconf(_SC_PAGE_SIZE);
++	int i, dirfd, file;
++	void *buf;
++
++	if (strcmp(env, "ADSP_LIBRARY_PATH")) {
++		fprintf(stderr, "Unknown search directory %s\n", env);
++		return AEE_EBADPARM;
++	}
++	dirfd = ctx->adsp_library_dirfd;
++	if (dirfd < 0)
++		return AEE_EFAILED;
++	if (!strncmp(name, "./", 2))
++		name += 2;
++
++	for (i = 0; i < APPS_STD_MAX_MAPPED; i++)
++		if (ctx->mapped[i].buf == NULL) {
++			m = &ctx->mapped[i];
++			break;
++		}
++	if (m == NULL)
++		return AEE_ENOMEMORY;
++
++	file = hexagonfs_openat(ctx->fds, ctx->rootfd, dirfd, name);
++	if (file < 0) {
++		fprintf(stderr, "Could not open %s: %s\n", name, strerror(-file));
++		return AEE_EFAILED;
++	}
++	if (hexagonfs_fstat(ctx->fds, file, &stats) < 0)
++		goto err_close;
++
++	dmabuf.size = (stats.st_size + page_size - 1) & ~(page_size - 1);
++	if (ioctl(ctx->rpcfd, FASTRPC_IOCTL_ALLOC_DMA_BUFF, &dmabuf)) {
++		perror("Could not allocate file buffer");
++		goto err_close;
++	}
++	buf = mmap(NULL, dmabuf.size, PROT_READ | PROT_WRITE, MAP_SHARED, dmabuf.fd, 0);
++	if (buf == MAP_FAILED)
++		goto err_free;
++
++	while (done < (size_t) stats.st_size) {
++		ssize_t got = hexagonfs_read(ctx->fds, file, stats.st_size - done,
++					     (char *) buf + done);
++
++		if (got <= 0)
++			goto err_unmap;
++		done += got;
++	}
++
++	map.fd = dmabuf.fd;
++	map.flags = FASTRPC_MAP_FD;
++	map.vaddrin = (uint64_t) (uintptr_t) buf;
++	map.length = dmabuf.size;
++	if (ioctl(ctx->rpcfd, FASTRPC_IOCTL_MEM_MAP, &map)) {
++		perror("Could not map file buffer");
++		goto err_unmap;
++	}
++
++	hexagonfs_close(ctx->fds, file);
++	m->fd = dmabuf.fd;
++	m->vaddr = map.vaddrout;
++	m->len = dmabuf.size;
++	m->buf = buf;
++	out->fd = dmabuf.fd;
++	out->len = stats.st_size;
++	fprintf(stderr, "fopen_fd(%s) -> fd %d, %zu bytes\n", name, m->fd, done);
++	return 0;
++
++err_unmap:
++	munmap(buf, dmabuf.size);
++err_free:
++	ioctl(ctx->rpcfd, FASTRPC_IOCTL_FREE_DMA_BUFF, &dmabuf.fd);
++err_close:
++	hexagonfs_close(ctx->fds, file);
++	return AEE_EFAILED;
++}
++
++struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root, int rpcfd)
+ {
+ 	struct fastrpc_interface *iface;
+ 	struct apps_std_ctx *ctx;
+@@ -366,6 +505,7 @@ struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root)
+ 
+ 	memcpy(iface, &apps_std_interface, sizeof(struct fastrpc_interface));
+ 
++	ctx->rpcfd = rpcfd;
+ 	ctx->rootfd = hexagonfs_open_root(ctx->fds, root);
+ 	if (ctx->rootfd < 0)
+ 		goto err_free_ctx;
+@@ -465,10 +605,21 @@ static const struct fastrpc_function_impl apps_std_procs[] = {
+ 		.def = &apps_std_stat_def,
+ 		.impl = apps_std_stat,
+ 	},
++	{ .def = NULL, .impl = NULL, },
++	{ .def = NULL, .impl = NULL, },
++	{ .def = NULL, .impl = NULL, },
++	{
++		.def = &apps_std_fclose_fd_def,
++		.impl = apps_std_fclose_fd,
++	},
++	{
++		.def = &apps_std_fopen_with_env_fd_def,
++		.impl = apps_std_fopen_with_env_fd,
++	},
+ };
+ 
+ const struct fastrpc_interface apps_std_interface = {
+ 	.name = "apps_std",
+-	.n_procs = 32,
++	.n_procs = 37,
+ 	.procs = apps_std_procs,
+ };
+diff --git a/hexagonrpcd/apps_std.h b/hexagonrpcd/apps_std.h
+index 364e946..3878ade 100644
+--- a/hexagonrpcd/apps_std.h
++++ b/hexagonrpcd/apps_std.h
+@@ -25,7 +25,7 @@
+ #include "hexagonfs.h"
+ #include "listener.h"
+ 
+-struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root);
++struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root, int rpcfd);
+ void fastrpc_apps_std_deinit(struct fastrpc_interface *iface);
+ 
+ #endif
+diff --git a/hexagonrpcd/interface/apps_mem.c b/hexagonrpcd/interface/apps_mem.c
+index 018043f..bdacb37 100644
+--- a/hexagonrpcd/interface/apps_mem.c
++++ b/hexagonrpcd/interface/apps_mem.c
+@@ -40,3 +40,16 @@ const struct hrpc_method_def_interp4 apps_mem_request_map64_def = {
+ 	.n_inner_types = 0,
+ 	.inner_types = NULL,
+ };
++
++static struct hrpc_arg_def_interp4 apps_mem_request_unmap64_args[] = {
++	{ HRPC_ARG_WORD, sizeof(uint64_t) },
++	{ HRPC_ARG_WORD, sizeof(uint64_t) },
++};
++
++const struct hrpc_method_def_interp4 apps_mem_request_unmap64_def = {
++	.msg_id = 3,
++	.n_args = HRPC_ARRAY_SIZE(apps_mem_request_unmap64_args),
++	.args = apps_mem_request_unmap64_args,
++	.n_inner_types = 0,
++	.inner_types = NULL,
++};
+diff --git a/hexagonrpcd/interface/apps_mem.h b/hexagonrpcd/interface/apps_mem.h
+index 6e7da96..b0cf668 100644
+--- a/hexagonrpcd/interface/apps_mem.h
++++ b/hexagonrpcd/interface/apps_mem.h
+@@ -25,5 +25,6 @@
+ #include <libhexagonrpc/hexagonrpc.h>
+ 
+ extern struct hrpc_method_def_interp4 apps_mem_request_map64_def;
++extern struct hrpc_method_def_interp4 apps_mem_request_unmap64_def;
+ 
+ #endif /* INTERFACE_APPS_MEM_H */
+diff --git a/hexagonrpcd/interface/apps_std.c b/hexagonrpcd/interface/apps_std.c
+index 67b3ace..2df7745 100644
+--- a/hexagonrpcd/interface/apps_std.c
++++ b/hexagonrpcd/interface/apps_std.c
+@@ -182,3 +182,31 @@ const struct hrpc_method_def_interp4 apps_std_stat_def = {
+ 	.n_inner_types = 0,
+ 	.inner_types = NULL,
+ };
++
++static struct hrpc_arg_def_interp4 apps_std_fclose_fd_args[] = {
++	{ HRPC_ARG_WORD, sizeof(uint32_t) },
++};
++
++const struct hrpc_method_def_interp4 apps_std_fclose_fd_def = {
++	.msg_id = 35,
++	.n_args = HRPC_ARRAY_SIZE(apps_std_fclose_fd_args),
++	.args = apps_std_fclose_fd_args,
++	.n_inner_types = 0,
++	.inner_types = NULL,
++};
++
++static struct hrpc_arg_def_interp4 apps_std_fopen_with_env_fd_args[] = {
++	{ HRPC_ARG_BLOB_SEQ, sizeof(char) },
++	{ HRPC_ARG_BLOB_SEQ, sizeof(char) },
++	{ HRPC_ARG_BLOB_SEQ, sizeof(char) },
++	{ HRPC_ARG_BLOB_SEQ, sizeof(char) },
++	{ HRPC_ARG_OUT_BLOB, 2 * sizeof(uint32_t) },
++};
++
++const struct hrpc_method_def_interp4 apps_std_fopen_with_env_fd_def = {
++	.msg_id = 36,
++	.n_args = HRPC_ARRAY_SIZE(apps_std_fopen_with_env_fd_args),
++	.args = apps_std_fopen_with_env_fd_args,
++	.n_inner_types = 0,
++	.inner_types = NULL,
++};
+diff --git a/hexagonrpcd/interface/apps_std.h b/hexagonrpcd/interface/apps_std.h
+index b80a1ca..ac0a340 100644
+--- a/hexagonrpcd/interface/apps_std.h
++++ b/hexagonrpcd/interface/apps_std.h
+@@ -30,6 +30,8 @@ extern struct hrpc_method_def_interp4 apps_std_fclose_def;
+ extern struct hrpc_method_def_interp4 apps_std_fread_def;
+ extern struct hrpc_method_def_interp4 apps_std_fseek_def;
+ extern struct hrpc_method_def_interp4 apps_std_fopen_with_env_def;
++extern struct hrpc_method_def_interp4 apps_std_fclose_fd_def;
++extern struct hrpc_method_def_interp4 apps_std_fopen_with_env_fd_def;
+ extern struct hrpc_method_def_interp4 apps_std_opendir_def;
+ extern struct hrpc_method_def_interp4 apps_std_closedir_def;
+ extern struct hrpc_method_def_interp4 apps_std_readdir_def;
+diff --git a/hexagonrpcd/listener.c b/hexagonrpcd/listener.c
+index 3414974..14c3f4b 100644
+--- a/hexagonrpcd/listener.c
++++ b/hexagonrpcd/listener.c
+@@ -527,6 +527,9 @@ static int invoke_requested_procedure(size_t n_ifaces,
+ 
+ 	if (method >= ifaces[handle]->n_procs) {
+ 		fprintf(stderr, "Unsupported method: %u (%08x)\n", method, sc);
++		for (uint32_t i = 1; i < REMOTE_SCALARS_INBUFS(sc); i++)
++			fprintf(stderr, "  in[%u]: %.*s\n", i, (int)decoded[i].s,
++				(const char *)decoded[i].p);
+ 		*result = AEE_EUNSUPPORTED;
+ 		return 1;
+ 	}
+diff --git a/hexagonrpcd/rpcd.c b/hexagonrpcd/rpcd.c
+index 600237b..8f6e32c 100644
+--- a/hexagonrpcd/rpcd.c
++++ b/hexagonrpcd/rpcd.c
+@@ -77,6 +77,7 @@ static void print_usage(const char *argv0)
+ 	       "\t-f DEVICE\tFastRPC device node to attach to\n"
+ 	       "\t-p PROGRAM\tRun client program with shared file descriptor\n"
+ 	       "\t-R DIR\t\tRoot directory of served files (default: /usr/share/qcom/)\n"
++	       "\t-a\t\tCreate the static audio PD\n"
+ 	       "\t-s\t\tAttach to sensorspd\n"
+ 	       "\t-h\t\tPrint help and exit\n");
+ }
+@@ -209,7 +210,7 @@ static void *start_reverse_tunnel(int fd, const char *device_dir, const char *ds
+ 	ifaces[REMOTECTL] = fastrpc_localctl_init(n_ifaces, ifaces);
+ 
+ 	// Dynamic interfaces with no hardcoded handle
+-	ifaces[1] = fastrpc_apps_std_init(root_dir);
++	ifaces[1] = fastrpc_apps_std_init(root_dir, fd);
+ 	ifaces[2] = fastrpc_apps_mem_init(fd);
+ 
+ 	ret = register_fastrpc_listener(fd);
+@@ -356,6 +357,7 @@ int main(int argc, char* argv[])
+ 	size_t n_progs = 0;
+ 	int fd, ret, opt;
+ 	bool attach_sns = false;
++	bool attach_audio = false;
+ 
+ 	progs = malloc(sizeof(const char *) * argc);
+ 	if (progs == NULL) {
+@@ -369,12 +371,17 @@ int main(int argc, char* argv[])
+ 		goto err_free_progs;
+ 	}
+ 
++	setvbuf(stdout, NULL, _IOLBF, 0);
++
+ 	guessed_device_dir = guess_device_directory_from_compatible();
+ 	if (guessed_device_dir != NULL)
+ 		device_dir = guessed_device_dir;
+ 
+-	while ((opt = getopt(argc, argv, "c:d:f:p:R:sh")) != -1) {
++	while ((opt = getopt(argc, argv, "ac:d:f:p:R:sh")) != -1) {
+ 		switch (opt) {
++			case 'a':
++				attach_audio = true;
++				break;
+ 			case 'c':
+ 				create_shell = optarg;
+ 				break;
+@@ -417,7 +424,15 @@ int main(int argc, char* argv[])
+ 		goto err_free_pids;
+ 	}
+ 
+-	if (attach_sns)
++	if (attach_audio) {
++		static const char name[] = "audiopd";
++		struct fastrpc_init_create_static audio = {
++			.namelen = sizeof(name),
++			.name = (__u64)(uintptr_t)name,
++		};
++
++		ret = ioctl(fd, FASTRPC_IOCTL_INIT_CREATE_STATIC, &audio);
++	} else if (attach_sns)
+ 		ret = ioctl(fd, FASTRPC_IOCTL_INIT_ATTACH_SNS, NULL);
+ 	else if (create_shell != NULL)
+ 		ret = create_shell_pd(fd, create_shell);

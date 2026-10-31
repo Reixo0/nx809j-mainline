@@ -10,8 +10,13 @@ license=(GPL-3.0-or-later)
 depends=(glibc)
 makedepends=(git meson ninja)
 _commit=da7a374
-source=("git+$url.git#commit=$_commit")
-sha256sums=(SKIP)
+source=("git+$url.git#commit=$_commit"
+        0001-hexagonrpcd-create-the-audio-PD.patch)
+sha256sums=(SKIP SKIP)
+
+prepare() {
+  git -C hexagonrpc apply "$srcdir/0001-hexagonrpcd-create-the-audio-PD.patch"
+}
 
 build() {
   arch-meson hexagonrpc build
