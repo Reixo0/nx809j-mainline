@@ -3,7 +3,7 @@
 # device-files.tar.gz by scripts/arch-pkgs.sh. The phone's own firmware is
 # not here: firmware/nx809j-firmware.sh copies it from Android.
 pkgname=nx809j-device
-pkgver=20261027.1805
+pkgver=20261031.1023
 pkgrel=1
 pkgdesc='Device support files for the Nubia RedMagic 11 Pro (NX809J)'
 arch=(any)
