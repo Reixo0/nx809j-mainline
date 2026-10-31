@@ -1,0 +1,50 @@
+# The NX809J's voice call profile, qcom/kaanapali/nubia/nx809j/voice.bin: what
+# phonewave's services/audio/voicegen asks of the stock ACDB, and the host-side
+# settings it adds. The kernel's q6apm voice session runs the result.
+#
+#   voiceprofile.py device/audio/voice.toml dump/vendor-audio/nx809j-voice.bin --vault dump
+#
+# The ACDB comes from the phone's vendor_a and the profile is built from it:
+# both are vendor data and stay in dump/, out of git.
+
+# The stock card is canoe-mtp-wsa884x, whatever the amplifiers really are
+acdb = "vendor-audio/acdbdata/canoe_mtp_wsa884x/MTP_canoe_wsa884x_acdb_cal.acdb"
+firmware = "qcom/kaanapali/nubia/nx809j/voice.bin"
+vsid = 0x11C05000  # VOICEMMODE1
+
+[rx]
+keys = [
+  [0xA1000000, 0xA1000010],  # STREAMRX: VOICE_CALL_RX
+  [0xA2000000, 0xA2000001],  # DEVICERX: SPEAKER
+  [0xAC000000, 0xAC000005],  # DEVICEPP_RX: VOICE_DEFAULT
+  [0xAF000000, 0xAF000001],  # STREAMPP_RX: DEFAULT
+  [0xB3000000, 0xB3000001],  # VSID: DEFAULT
+]
+# Awinic SKTune speaker protection (0x10013d01, 0x10013d02) wants the amplifiers'
+# feedback, which the kernel does not start: the voice path goes around it.
+drop = [0x4026, 0x4a71]
+join = [0x4023, 1, 0x418e, 2]  # output instance and port, input instance and port
+# Media format converters set to what the endpoint plays
+converters = [0x448d, 0x41cb]
+# Primary MI2S, both amplifiers: 48 kHz, 32 bit as on stock, two channels, as
+# the kernel's backend link runs it. LPAIF, primary interface, data line SD1, word select
+# from the DSP.
+endpoint = 0x43b1
+format = [48000, 32, 2]
+i2s = [0, 0, 2, 1]
+
+[tx]
+keys = [
+  [0xB1000000, 0xB1000007],  # STREAMTX: VOICE_CALL_TX
+  [0xA3000000, 0xA3000004],  # DEVICETX: HANDSETMIC
+  # DEVICEPP_TX: VOICE_FLUENCE_SMECNS, single microphone. Its module is a
+  # library the ADSP loads through hexagonrpcd -a, from vendor/dsp/adsp.
+  [0xAD000000, 0xAD000008],
+  [0xB3000000, 0xB3000001],  # VSID: DEFAULT
+]
+# TX_CODEC_DMA_TX_3, the WCD9395 microphones: LPAIF_RXTX, TX3. Rate and width
+# as the backend link; channels as the ACDB gives the endpoint, read from
+# decimator 0 upwards.
+endpoint = 0x43af
+format = [48000, 16]
+codec_dma = [1, 4]

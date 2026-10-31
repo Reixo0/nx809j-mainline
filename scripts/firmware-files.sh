@@ -47,3 +47,8 @@ done
 "$ROOT"/scripts/build-topology.sh >/dev/null 2>&1
 echo "qcom/kaanapali/Nubia-NX809J-tplg.bin:$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin"
 echo "$DEV/aw88461_acf.bin:$ROOT/dump/firmware/vendor_firmware/aw882xx_acf.bin"
+
+# Voice calls: the profile built from the phone's ACDB (device/audio/voice.toml).
+# Vendor data, only on machines that generated it.
+[ -f "$ROOT/dump/vendor-audio/nx809j-voice.bin" ] &&
+  echo "$DEV/voice.bin:$ROOT/dump/vendor-audio/nx809j-voice.bin"
