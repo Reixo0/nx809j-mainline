@@ -238,6 +238,13 @@ Notes:
 
 ## Credits
 
+- Doctor Logix's [linux-perpetua](https://github.com/denialwm/linux-perpetua)
+  for the cameras, fan ramp and haptics, and
+  [Denial](https://github.com/denialwm/denial),
+  [Phonewave](https://github.com/denialwm/phonewave) and
+  [denial-apps](https://github.com/denialwm/denial-apps) for the shell, device
+  services and apps. denial-apps is under the Sustainable Use License: free,
+  non-commercial distribution only.
 - Bluetooth (patches 0022-0025): WCN7860 support by Victor Fuentes from the OnePlus 15
   "infiniti" mainline series, and fixes by Joonhoe Kim and mzak, as carried in
   [iceland-linux](https://github.com/mzakamin-hub/iceland-linux) (OnePlus Pad 4 mainline,
