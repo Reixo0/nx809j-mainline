@@ -1,0 +1,31 @@
+# Denial, cross-built by scripts/build-denial.sh from
+# https://github.com/denialwm/denial (dev) and packed into denial.tar.gz by
+# scripts/arch-pkgs.sh, which also sets pkgver. The session runs on tty1 from
+# nx809j-denial.service, adapted from Phonewave (devices/nx809j, MIT).
+pkgname=denial-nx809j
+pkgver=r267.g9cb17f858
+pkgrel=1
+pkgdesc='Denial, a Wayland compositor and mobile shell, for the NX809J'
+arch=(aarch64)
+url='https://github.com/denialwm/denial'
+license=(GPL-3.0-or-later)
+depends=(nx809j-device seatd libinput wayland xorg-xwayland polkit mesa libdrm
+         libxkbcommon xkeyboard-config gtk3 zenity rtkit ddcutil
+         noto-fonts noto-fonts-emoji noto-fonts-cjk ttf-dejavu ttf-liberation)
+provides=(denial)
+options=(!strip !debug)
+source=(denial.tar.gz nx809j-denial.service nx809j-denial.tmpfiles outputs.conf
+        denial-session.target dev.denial.Settings.desktop)
+sha256sums=(SKIP SKIP SKIP SKIP SKIP SKIP)
+
+package() {
+  install -d "$pkgdir/usr/lib/denial" "$pkgdir/usr/bin"
+  cp -a native shell settings source-commit "$pkgdir/usr/lib/denial/"
+  ln -s ../lib/denial/settings/denial-settings "$pkgdir/usr/bin/denial-settings"
+  ln -s ../lib/denial/native/denialctl "$pkgdir/usr/bin/denialctl"
+  install -Dm644 nx809j-denial.service "$pkgdir/usr/lib/systemd/system/nx809j-denial.service"
+  install -Dm644 nx809j-denial.tmpfiles "$pkgdir/usr/lib/tmpfiles.d/nx809j-denial.conf"
+  install -Dm644 outputs.conf "$pkgdir/usr/share/nx809j/outputs.conf"
+  install -Dm644 denial-session.target "$pkgdir/usr/lib/systemd/user/denial-session.target"
+  install -Dm644 dev.denial.Settings.desktop "$pkgdir/usr/share/applications/dev.denial.Settings.desktop"
+}

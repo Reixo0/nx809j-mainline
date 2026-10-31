@@ -3,7 +3,8 @@
 #
 #   linux-nx809j    <- out/kernel, out/modules (scripts/build.sh)
 #   nx809j-device   <- device/rootfs + our audio topology
-#   + every *.pkg.tar.* in PKGS_FROM (qrtr, rmtfs, tqftpserv, qbootctl,
+#   denial-nx809j, phonewave-nx809j, denial-apps-nx809j <- scripts/build-denial.sh
+#   + every *.pkg.tar.* in PKGS_FROM (qrtr, rmtfs, tqftpserv, qbootctl, hexagonrpc,
 #     mobile-config-firefox: built natively with makepkg on an aarch64 host)
 #
 # Output: out/arch/repo/ with nx809j.db, uploaded as a GitHub release.
@@ -18,8 +19,8 @@ REPO=$ROOT/out/arch/repo
 rm -rf "$REPO"
 mkdir -p "$REPO"
 
-# Packages hold no compiled code of their own, so the host's makepkg can
-# build them for aarch64
+# Packages compile nothing here, so the host's makepkg can build them for
+# aarch64
 conf=$ROOT/out/arch/makepkg.conf
 cat > "$conf" <<'EOF'
 source /etc/makepkg.conf
@@ -59,6 +60,23 @@ install -Dm644 "$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin" \
 tar -C "$st" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$A/nx809j-device/device-files.tar.gz" .
 setver "$A/nx809j-device" "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y%m%d.%H%M -- device audio)"
 build "$A/nx809j-device"
+
+# Denial, Phonewave's services and the apps <- scripts/build-denial.sh.
+# pkgver: the number of commits and the commit of each one's source
+DENIAL_BUILD=$(realpath "${DENIAL_BUILD:-$HOME/denial-build}")
+gitver() { echo "r$(git -C "$1" rev-list --count HEAD).g$(git -C "$1" rev-parse --short=9 HEAD)"; }
+pack() {  # package, tarball, staged directory, source repository
+  tar -C "$DENIAL_BUILD/stage/$3" --owner=0 --group=0 --sort=name --mtime=@0 -czf "$A/$1/$2" .
+  setver "$A/$1" "$(gitver "$DENIAL_BUILD/$4")"
+  build "$A/$1"
+}
+if [[ -d $DENIAL_BUILD/stage ]]; then
+  pack denial-nx809j denial.tar.gz denial denial
+  pack phonewave-nx809j phonewave.tar.gz phonewave phonewave
+  pack denial-apps-nx809j apps.tar.gz apps denial-apps
+else
+  echo "no $DENIAL_BUILD/stage: leaving out Denial (scripts/build-denial.sh)" >&2
+fi
 
 if [[ -n ${PKGS_FROM:-} ]]; then
   cp "$PKGS_FROM"/*.pkg.tar.* "$REPO/"

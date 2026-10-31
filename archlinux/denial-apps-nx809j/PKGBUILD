@@ -1,0 +1,19 @@
+# Denial's phone apps, cross-built by scripts/build-denial.sh from
+# https://github.com/denialwm/denial-apps and packed into apps.tar.gz by
+# scripts/arch-pkgs.sh. Named denial-* in /usr/bin: "settings" and "camera"
+# are too generic for a system path.
+pkgname=denial-apps-nx809j
+pkgver=r30.gb5d3a8605
+pkgrel=1
+pkgdesc="Denial's Camera, Sensors and Phone Settings apps"
+arch=(aarch64)
+url='https://github.com/denialwm/denial-apps'
+license=(LicenseRef-Sustainable-Use-1.0 CC-BY-SA-4.0)
+depends=(phonewave-nx809j denial-nx809j vulkan-freedreno)
+options=(!strip !debug)
+source=(apps.tar.gz)
+sha256sums=(SKIP)
+
+package() {
+  cp -a usr "$pkgdir/"
+}

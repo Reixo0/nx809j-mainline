@@ -1,0 +1,23 @@
+# Serves the ADSP's sensor configuration. Built natively with makepkg on an
+# aarch64 host, then given to scripts/arch-pkgs.sh through PKGS_FROM.
+pkgname=hexagonrpc
+pkgver=0.5.r0.da7a374
+pkgrel=1
+pkgdesc='FastRPC client libraries and reverse tunnel daemon for Hexagon DSPs'
+arch=(aarch64)
+url='https://github.com/linux-msm/hexagonrpc'
+license=(GPL-3.0-or-later)
+depends=(glibc)
+makedepends=(git meson ninja)
+_commit=da7a374
+source=("git+$url.git#commit=$_commit")
+sha256sums=(SKIP)
+
+build() {
+  arch-meson hexagonrpc build
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+}

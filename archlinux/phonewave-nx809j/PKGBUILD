@@ -1,0 +1,28 @@
+# Phonewave's device services the NX809J uses: hapticd (vibration), steinerd
+# (sensors) and braun (cameras), cross-built by scripts/build-denial.sh from
+# https://github.com/denialwm/phonewave and packed into phonewave.tar.gz by
+# scripts/arch-pkgs.sh. Its fingerprint stack is left out: that writes to
+# persist and RPMB.
+pkgname=phonewave-nx809j
+pkgver=r78.gc35741226
+pkgrel=1
+pkgdesc='Vibration, sensor and camera services for the NX809J'
+arch=(aarch64)
+url='https://github.com/denialwm/phonewave'
+license=(MIT)
+depends=(hexagonrpc)
+backup=(etc/hapticd/config.json)
+options=(!strip !debug)
+source=(phonewave.tar.gz nx809j-sensors-hexagonrpcd.service)
+sha256sums=(SKIP SKIP)
+
+package() {
+  cp -a usr etc "$pkgdir/"
+  install -Dm644 nx809j-sensors-hexagonrpcd.service \
+    "$pkgdir/usr/lib/systemd/system/nx809j-sensors-hexagonrpcd.service"
+  local wants="$pkgdir/usr/lib/systemd/system/multi-user.target.wants" u
+  install -d "$wants"
+  for u in hapticd steinerd braun nx809j-sensors-hexagonrpcd; do
+    ln -s "../$u.service" "$wants/$u.service"
+  done
+}
