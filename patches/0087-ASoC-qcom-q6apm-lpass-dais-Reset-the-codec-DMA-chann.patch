@@ -1,7 +1,7 @@
 From 4ff40a5b948246ef82c8d6c419b240cff968bc6f Mon Sep 17 00:00:00 2001
 From: Birk Skyum <birk.skyum@pm.me>
 Date: Sun, 18 Oct 2026 22:10:41 +0000
-Subject: [PATCH 87/88] ASoC: qcom: q6apm-lpass-dais: Reset the codec DMA
+Subject: [PATCH 087/162] ASoC: qcom: q6apm-lpass-dais: Reset the codec DMA
  channel map in hw_params
 
 Since commit c663014e452d ("ASoC: qcom: audioreach: compute active
@@ -29,7 +29,7 @@ Signed-off-by: Birk Skyum <birk.skyum@pm.me>
  1 file changed, 5 insertions(+)
 
 diff --git a/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c b/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c
-index 83f2711bc..9f6d17f80 100644
+index 83f2711bceea..9f6d17f80de3 100644
 --- a/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c
 +++ b/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c
 @@ -173,11 +173,16 @@ static int q6dma_hw_params(struct snd_pcm_substream *substream,

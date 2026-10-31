@@ -1,7 +1,7 @@
 From f072e8d6b60d2e4a482b6b01d29d01b68900cee8 Mon Sep 17 00:00:00 2001
 From: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
 Date: Tue, 13 Oct 2026 18:29:37 +0800
-Subject: [PATCH 67/73] dt-bindings: sound: awinic,aw88395: add AW88461
+Subject: [PATCH 067/162] dt-bindings: sound: awinic,aw88395: add AW88461
  compatible
 
 The Awinic AW88461 is an I2S smart audio amplifier of the same family
@@ -16,7 +16,7 @@ Signed-off-by: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
  1 file changed, 1 insertion(+)
 
 diff --git a/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml b/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
-index b9abb1094..e51270367 100644
+index b9abb10942ba..e512703676bc 100644
 --- a/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
 +++ b/Documentation/devicetree/bindings/sound/awinic,aw88395.yaml
 @@ -23,6 +23,7 @@ properties:

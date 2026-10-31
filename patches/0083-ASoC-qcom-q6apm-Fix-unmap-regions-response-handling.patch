@@ -1,7 +1,8 @@
 From f952c31c52c5a8111d58e6fd8c6f6dd55fef28bf Mon Sep 17 00:00:00 2001
 From: Shawn Guo <shengchao.guo@oss.qualcomm.com>
 Date: Fri, 16 Oct 2026 22:11:51 +0800
-Subject: [PATCH 83/88] ASoC: qcom: q6apm: Fix unmap regions response handling
+Subject: [PATCH 083/162] ASoC: qcom: q6apm: Fix unmap regions response
+ handling
 
 The DSP acknowledges APM_CMD_SHARED_MEM_UNMAP_REGIONS with a
 GPR_BASIC_RSP_RESULT packet whose payload carries the acknowledged
@@ -34,7 +35,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 6 insertions(+), 7 deletions(-)
 
 diff --git a/sound/soc/qcom/qdsp6/q6apm.c b/sound/soc/qcom/qdsp6/q6apm.c
-index 1e07c42e3..9f3656f68 100644
+index 1e07c42e3d72..9f3656f68c40 100644
 --- a/sound/soc/qcom/qdsp6/q6apm.c
 +++ b/sound/soc/qcom/qdsp6/q6apm.c
 @@ -961,16 +961,15 @@ static int apm_callback(const struct gpr_resp_pkt *data, void *priv, int op)

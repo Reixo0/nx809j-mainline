@@ -1,0 +1,48 @@
+From 1dda50b3b01a0f5ff2c507f5bd97d40ee519e984 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 15:49:46 +0100
+Subject: [PATCH 145/162] media: i2c: ov50d40: report RGGB
+
+A frame of an SMPTE colour-bar chart on devices143 has the bars in
+their colours when read as RGGB; read as BGGR, red and blue and
+yellow and cyan trade places. The stock mode's readout is RGGB.
+
+(cherry picked from commit c6768c75776e290c12aabeee4112a0d23e63688f)
+---
+ drivers/media/i2c/ov50d40.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/i2c/ov50d40.c b/drivers/media/i2c/ov50d40.c
+index b9e3af224dd5..099dc0878d56 100644
+--- a/drivers/media/i2c/ov50d40.c
++++ b/drivers/media/i2c/ov50d40.c
+@@ -2072,7 +2072,7 @@ static int ov50d40_disable_streams(struct v4l2_subdev *sd,
+ static void ov50d40_update_pad_format(const struct ov50d40_mode *mode,
+ 				      struct v4l2_mbus_framefmt *fmt)
+ {
+-	fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10;
++	fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+ 	fmt->width = mode->width;
+ 	fmt->height = mode->height;
+ 	fmt->field = V4L2_FIELD_NONE;
+@@ -2132,7 +2132,7 @@ static int ov50d40_enum_mbus_code(struct v4l2_subdev *sd,
+ 	if (code->index > 0)
+ 		return -EINVAL;
+ 
+-	code->code = MEDIA_BUS_FMT_SBGGR10_1X10;
++	code->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+ 
+ 	return 0;
+ }
+@@ -2144,7 +2144,7 @@ static int ov50d40_enum_frame_size(struct v4l2_subdev *sd,
+ 	if (fse->index >= ARRAY_SIZE(ov50d40_supported_modes))
+ 		return -EINVAL;
+ 
+-	if (fse->code != MEDIA_BUS_FMT_SBGGR10_1X10)
++	if (fse->code != MEDIA_BUS_FMT_SRGGB10_1X10)
+ 		return -EINVAL;
+ 
+ 	fse->min_width = ov50d40_supported_modes[fse->index].width;
+-- 
+2.56.0
+

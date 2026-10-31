@@ -1,7 +1,7 @@
 From 8c4daff9fad2c9f938169e36327d50ef6de0a5fd Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 01:07:25 -0700
-Subject: [PATCH 68/73] ASoC: qcom: q6apm-dai: Accept S32_LE playback
+Subject: [PATCH 068/162] ASoC: qcom: q6apm-dai: Accept S32_LE playback
 
 For codecs that only take 32-bit slots.
 
@@ -11,7 +11,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/sound/soc/qcom/qdsp6/q6apm-dai.c b/sound/soc/qcom/qdsp6/q6apm-dai.c
-index 58beaf906..e01d82ca7 100644
+index 58beaf906b9f..e01d82ca718b 100644
 --- a/sound/soc/qcom/qdsp6/q6apm-dai.c
 +++ b/sound/soc/qcom/qdsp6/q6apm-dai.c
 @@ -222,7 +222,8 @@ static const struct snd_pcm_hardware q6apm_dai_hardware_playback = {

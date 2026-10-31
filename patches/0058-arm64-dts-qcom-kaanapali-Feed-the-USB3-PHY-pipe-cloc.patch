@@ -1,7 +1,7 @@
 From c1307b9325632282510e67b809624a77360312c9 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:06:06 +0100
-Subject: [PATCH 58/59] arm64: dts: qcom: kaanapali: Feed the USB3 PHY pipe
+Subject: [PATCH 058/162] arm64: dts: qcom: kaanapali: Feed the USB3 PHY pipe
  clock to GCC
 
 The last GCC clock input, DT_USB3_PHY_WRAPPER_GCC_USB30_PIPE_CLK, was
@@ -15,7 +15,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
-index 21380d32f..ac54c6259 100644
+index 21380d32fe0f..ac54c625926a 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 +++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 @@ -551,7 +551,7 @@ gcc: clock-controller@100000 {

@@ -1,8 +1,8 @@
 From 7bfb2c5ef430b1edb72633716e9514987e492c0b Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 04/40] power: supply: qcom_battmgr: Report charge capacity on
- SM8350-style firmware
+Subject: [PATCH 004/162] power: supply: qcom_battmgr: Report charge capacity
+ on SM8350-style firmware
 
 Only the SC8280XP-style battery info message carries the capacity unit,
 so on the SM8350-style protocol (also used by SM8550 and Kaanapali)
@@ -22,7 +22,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 9 insertions(+)
 
 diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
-index 636d6f6ac..676b9a98d 100644
+index 636d6f6acecc..676b9a98d783 100644
 --- a/drivers/power/supply/qcom_battmgr.c
 +++ b/drivers/power/supply/qcom_battmgr.c
 @@ -1685,6 +1685,15 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,

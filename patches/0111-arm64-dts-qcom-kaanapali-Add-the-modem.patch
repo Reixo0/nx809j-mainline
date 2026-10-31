@@ -1,7 +1,7 @@
 From 66c03eeb17bc91ca66f347c7cb1c791626f4dd7c Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Fri, 25 Sep 2026 02:45:01 -0700
-Subject: [PATCH 111/121] arm64: dts: qcom: kaanapali: Add the modem
+Subject: [PATCH 111/162] arm64: dts: qcom: kaanapali: Add the modem
 
 Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
 ---
@@ -9,7 +9,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 90 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
-index c95792173..300c8d503 100644
+index c95792173a7f..300c8d503589 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 +++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 @@ -506,6 +506,43 @@ smp2p_cdsp_in: slave-kernel {

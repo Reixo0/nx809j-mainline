@@ -1,0 +1,87 @@
+From 3e693ba1c6654f446f4c0bcf6f62fc6d2e320302 Mon Sep 17 00:00:00 2001
+From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Date: Sat, 24 Oct 2026 20:17:32 -0700
+Subject: [PATCH 142/162] arm64: dts: qcom: kaanapali: Add camera MCLK pinctrl
+
+Add TLMM pinctrl states for the camera master clock GPIOs on Kaanapali so
+camera sensor nodes can select the proper MCLK pin functions when enabled.
+
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+Reviewed-by: Vladimir Zapolskiy <vladimir.zapolskiy@linaro.org>
+Signed-off-by: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Link: https://patchwork.kernel.org/series/1192881/ (v22)
+(cherry picked from commit 659c3ff4faaf28e82bb485f6c49c854391d2b354)
+---
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi | 56 +++++++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index b75addd8fbd7..8a901e4fc77e 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -4788,6 +4788,62 @@ tlmm: pinctrl@f100000 {
+ 			#interrupt-cells = <2>;
+ 			wakeup-parent = <&pdc>;
+ 
++			cam_mclk0_default: cam-mclk0-default-state {
++				pins = "gpio89";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk1_default: cam-mclk1-default-state {
++				pins = "gpio90";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk2_default: cam-mclk2-default-state {
++				pins = "gpio91";
++				function = "cam_asc_mclk2";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk3_default: cam-mclk3-default-state {
++				pins = "gpio92";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk4_default: cam-mclk4-default-state {
++				pins = "gpio93";
++				function = "cam_asc_mclk4";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk5_default: cam-mclk5-default-state {
++				pins = "gpio94";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk6_default: cam-mclk6-default-state {
++				pins = "gpio95";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
++			cam_mclk7_default: cam-mclk7-default-state {
++				pins = "gpio96";
++				function = "cam_mclk";
++				drive-strength = <2>;
++				bias-disable;
++			};
++
+ 			cci0_i2c0_default: cci0-i2c0-default-state {
+ 				scl-pins {
+ 					pins = "gpio110";
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 From b90ce7a3aec566d5b3413ac49099d2776d303afe Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 107/107] arm64: dts: qcom: kaanapali-nubia-nx809j: USB-SS
+Subject: [PATCH 107/162] arm64: dts: qcom: kaanapali-nubia-nx809j: USB-SS
  switch and headset jack
 
 The WCD9395 USB-SS switch (i2c3 at 0x0e, as stock) carries the 3.5 mm
@@ -13,7 +13,7 @@ to it. MBHC detects on the 2.7 V mic bias, so the 1.7 V headset limit
  1 file changed, 44 insertions(+), 2 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index 51515e662..edda5fd64 100644
+index 51515e66265b..edda5fd64f64 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -41,8 +41,11 @@ wcd939x: audio-codec {

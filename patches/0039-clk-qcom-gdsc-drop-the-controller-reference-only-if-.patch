@@ -1,8 +1,8 @@
 From 1db90fcf30641980928f8027df330d72ef5a1c63 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sun, 27 Sep 2026 15:42:22 +0000
-Subject: [PATCH 39/40] clk: qcom: gdsc: drop the controller reference only if
- it was taken
+Subject: [PATCH 039/162] clk: qcom: gdsc: drop the controller reference only
+ if it was taken
 
 Since "keep the clock controller active while a GDSC is on" (0046), a
 GDSC takes a runtime PM reference on its clock controller when it is
@@ -32,7 +32,7 @@ Signed-off-by: mzak <mzak.amin@gmail.com>
  2 files changed, 12 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/clk/qcom/gdsc.c b/drivers/clk/qcom/gdsc.c
-index 72b70739c..20a9e6152 100644
+index 72b70739c109..20a9e6152027 100644
 --- a/drivers/clk/qcom/gdsc.c
 +++ b/drivers/clk/qcom/gdsc.c
 @@ -398,15 +398,18 @@ static int gdsc_enable(struct generic_pm_domain *domain)
@@ -81,7 +81,7 @@ index 72b70739c..20a9e6152 100644
  		data->domains[i] = &scs[i]->pd;
  	}
 diff --git a/drivers/clk/qcom/gdsc.h b/drivers/clk/qcom/gdsc.h
-index fc167fbf7..80756498f 100644
+index fc167fbf7234..80756498f1d6 100644
 --- a/drivers/clk/qcom/gdsc.h
 +++ b/drivers/clk/qcom/gdsc.h
 @@ -78,6 +78,7 @@ struct gdsc {

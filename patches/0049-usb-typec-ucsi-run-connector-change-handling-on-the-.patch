@@ -1,8 +1,8 @@
 From 69249f290d436a6514b68b280e509bc6c2c9ca6e Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 08:31:25 +0000
-Subject: [PATCH 49/59] usb: typec: ucsi: run connector change handling on the
- freezable workqueue
+Subject: [PATCH 049/162] usb: typec: ucsi: run connector change handling on
+ the freezable workqueue
 
 The same unplug-during-s2idle also raises a UCSI connector change, and
 ucsi_handle_connector_change() runs on system_wq while devices are
@@ -26,7 +26,7 @@ Signed-off-by: mzak <mzak.amin@gmail.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/usb/typec/ucsi/ucsi.c b/drivers/usb/typec/ucsi/ucsi.c
-index 5aab8ab9f..3368bd59d 100644
+index 5aab8ab9f013..3368bd59da58 100644
 --- a/drivers/usb/typec/ucsi/ucsi.c
 +++ b/drivers/usb/typec/ucsi/ucsi.c
 @@ -1576,7 +1576,7 @@ void ucsi_connector_change(struct ucsi *ucsi, u8 num)

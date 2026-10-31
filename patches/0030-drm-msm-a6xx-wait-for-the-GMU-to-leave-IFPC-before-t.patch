@@ -1,7 +1,7 @@
 From ee7858c4cc4f798d6b6e259ce0f22e18c77a4c1e Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 17 Oct 2026 12:00:00 +0300
-Subject: [PATCH 30/40] drm/msm/a6xx: wait for the GMU to leave IFPC before
+Subject: [PATCH 030/162] drm/msm/a6xx: wait for the GMU to leave IFPC before
  triggering preemption
 
 With IFPC, the first fenced register write of a preemption trigger is
@@ -56,7 +56,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  7 files changed, 108 insertions(+), 21 deletions(-)
 
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
-index 662f09bec..d4cc9892b 100644
+index 662f09bec9d5..d4cc9892be09 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
 @@ -301,6 +301,38 @@ int a6xx_gmu_wait_for_idle(struct a6xx_gmu *gmu)
@@ -99,7 +99,7 @@ index 662f09bec..d4cc9892b 100644
  {
  	struct a6xx_gpu *a6xx_gpu = container_of(gmu, struct a6xx_gpu, gmu);
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.h b/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
-index d3f6cd8b9..1a2f82df6 100644
+index d3f6cd8b9741..1a2f82df6642 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.h
 @@ -60,6 +60,13 @@ struct a6xx_bcm {
@@ -117,7 +117,7 @@ index d3f6cd8b9..1a2f82df6 100644
  	struct device *dev;
  
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
-index 92e8c8abb..f7273914f 100644
+index 92e8c8abb86d..f7273914f28f 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
 @@ -84,12 +84,14 @@ static int fenced_write(struct a6xx_gpu *a6xx_gpu, u32 offset, u32 value, u32 ma
@@ -141,7 +141,7 @@ index 92e8c8abb..f7273914f 100644
  	}
  
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.h b/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
-index 79912a33e..809110639 100644
+index 79912a33e17c..8091106390f4 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.h
 @@ -289,6 +289,7 @@ int a6xx_gmu_resume(struct a6xx_gpu *gpu);
@@ -153,7 +153,7 @@ index 79912a33e..809110639 100644
  bool a6xx_gmu_isidle(struct a6xx_gmu *gmu);
  
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_preempt.c b/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
-index 1e599d4dd..e2669fee6 100644
+index 1e599d4ddea1..e2669fee65a0 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_preempt.c
 @@ -170,6 +170,7 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
@@ -206,7 +206,7 @@ index 1e599d4dd..e2669fee6 100644
  
  static int preempt_init_ring(struct a6xx_gpu *a6xx_gpu,
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_preempt.h b/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
-index df36c945b..84c8e466c 100644
+index df36c945b836..84c8e466c9b4 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_preempt.h
 @@ -80,3 +80,24 @@ static inline struct msm_ringbuffer *get_next_ring(struct msm_gpu *gpu)
@@ -235,7 +235,7 @@ index df36c945b..84c8e466c 100644
 +	kthread_queue_work(gpu->worker, &gpu->recover_work);
 +}
 diff --git a/drivers/gpu/drm/msm/adreno/a8xx_preempt.c b/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
-index 6cb53a071..91e095dfe 100644
+index 6cb53a071801..91e095dfef52 100644
 --- a/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
 +++ b/drivers/gpu/drm/msm/adreno/a8xx_preempt.c
 @@ -151,6 +151,7 @@ void a8xx_preempt_trigger(struct msm_gpu *gpu)

@@ -1,7 +1,7 @@
 From 6b3595539ca7c9d5068890c400282bd7046cc596 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 01/40] dt-bindings: vendor-prefixes: Add Nubia
+Subject: [PATCH 001/162] dt-bindings: vendor-prefixes: Add Nubia
 
 Add a vendor prefix for Nubia Technology Co., Ltd., a ZTE subsidiary
 making the RedMagic phones.
@@ -12,7 +12,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 2 insertions(+)
 
 diff --git a/Documentation/devicetree/bindings/vendor-prefixes.yaml b/Documentation/devicetree/bindings/vendor-prefixes.yaml
-index c981a1337..e00dfcda1 100644
+index c981a133753e..e00dfcda1f31 100644
 --- a/Documentation/devicetree/bindings/vendor-prefixes.yaml
 +++ b/Documentation/devicetree/bindings/vendor-prefixes.yaml
 @@ -1230,6 +1230,8 @@ patternProperties:

@@ -1,7 +1,7 @@
 From e4be3d6cb7d6fbf756f3279942732d0ec2e43d6e Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 106/107] ASoC: codecs: wcd939x: 3.5 mm jack mic and ground
+Subject: [PATCH 106/162] ASoC: codecs: wcd939x: 3.5 mm jack mic and ground
  through the USBSS
 
 With "qcom,usbss-headset-jack" and a graph link to the USBSS, only the
@@ -13,7 +13,7 @@ through the USBSS orientation switch.
  1 file changed, 32 insertions(+), 3 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
-index 21d7e6120..efb9d5379 100644
+index 21d7e61203da..efb9d5379fc6 100644
 --- a/sound/soc/codecs/wcd939x.c
 +++ b/sound/soc/codecs/wcd939x.c
 @@ -183,6 +183,8 @@ struct wcd939x_priv {

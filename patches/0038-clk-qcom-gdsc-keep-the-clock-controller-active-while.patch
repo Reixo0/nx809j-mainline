@@ -1,8 +1,8 @@
 From aea0adca8ce9eac19b2ef5201bb88b4eff130dd7 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 01:30:48 +0000
-Subject: [PATCH 38/40] clk: qcom: gdsc: keep the clock controller active while
- a GDSC is on
+Subject: [PATCH 038/162] clk: qcom: gdsc: keep the clock controller active
+ while a GDSC is on
 
 A GDSC whose parents are the controller's own power domains (pd_list,
 e.g. camcc: MMCX + MXC) needs those rails at the required-opps level to
@@ -18,7 +18,7 @@ Signed-off-by: mzak <mzak.amin@gmail.com>
  2 files changed, 48 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/clk/qcom/gdsc.c b/drivers/clk/qcom/gdsc.c
-index b99d70149..72b70739c 100644
+index b99d70149af3..72b70739c109 100644
 --- a/drivers/clk/qcom/gdsc.c
 +++ b/drivers/clk/qcom/gdsc.c
 @@ -12,6 +12,7 @@
@@ -108,7 +108,7 @@ index b99d70149..72b70739c 100644
  	}
  
 diff --git a/drivers/clk/qcom/gdsc.h b/drivers/clk/qcom/gdsc.h
-index 2f9665b66..fc167fbf7 100644
+index 2f9665b664e6..fc167fbf7234 100644
 --- a/drivers/clk/qcom/gdsc.h
 +++ b/drivers/clk/qcom/gdsc.h
 @@ -76,6 +76,9 @@ struct gdsc {

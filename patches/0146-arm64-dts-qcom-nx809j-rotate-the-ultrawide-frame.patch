@@ -1,0 +1,29 @@
+From 7a1a4ea56472a20248506f5372c62a167380b4c6 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 15:56:18 +0100
+Subject: [PATCH 146/162] arm64: dts: qcom: nx809j: rotate the ultrawide frame
+
+The ultrawide is mounted a quarter turn from the phone: a portrait
+frame is upright once turned 90 degrees clockwise, a 270 degree
+counter-clockwise correction. Stock calls it a 90 degree roll.
+
+(cherry picked from commit 72dd413732d9e7e87d33ea80db71ecea39dae505)
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 661e890c32d4..53848d370d4f 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1128,6 +1128,7 @@ camera@22 {
+ 		dovdd-supply = <&vreg_cam_vio>;
+ 
+ 		orientation = <1>;
++		rotation = <270>;
+ 
+ 		pinctrl-0 = <&cam_mclk1_default>, <&cam_uw_reset_default>;
+ 		pinctrl-names = "default";
+-- 
+2.56.0
+

@@ -1,0 +1,306 @@
+From 5b1293a6c407c6a7745a4e2cef9bda93eaa73247 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 16:15:27 +0100
+Subject: [PATCH 149/162] arm64: dts: qcom: nx809j: add the front and auxiliary
+ cameras
+
+Both sit on CCI1 bus 0 and share PM8010 L5M (1.8 V I/O) and the
+19.2 MHz RPMh divider clock, which PMK8850 GPIO 2 (front) and 8
+(auxiliary) carry out as func2, as stock routes them.
+
+The front OV16A1Q is at 0x10 on CSIPHY3, four lanes: AVDD on L4M,
+now held at the 2.8 V stock asks, DVDD switched by PMH0101 GPIO 15,
+reset on TLMM 7. The auxiliary OV02F10 is at 0x3d on CSIPHY0, one
+lane: AVDD on L6M, reset on TLMM 105. Stock pulls the CCI1 lines up,
+as it does CCI0's.
+
+Rotations follow the stock roll: 270 for the front, 90 for the
+auxiliary, V4L2 corrections of 90 and 270.
+
+(cherry picked from commit 088cc20e93077552859623023a97af7b6787932a)
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 208 +++++++++++++++++-
+ 1 file changed, 205 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 53848d370d4f..c7d559980ae1 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -333,6 +333,16 @@ vreg_cam_uw_vana: regulator-cam-uw-vana {
+ 		pinctrl-names = "default";
+ 	};
+ 
++	vreg_cam_front_vdig: regulator-cam-front-vdig {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_front_vdig";
++		gpio = <&pmh0101_gpios 15 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++
++		pinctrl-0 = <&cam_front_vdig_en_default>;
++		pinctrl-names = "default";
++	};
++
+ 	sound {
+ 		compatible = "qcom,kaanapali-sndcard", "qcom,sm8450-sndcard";
+ 		model = "Nubia-NX809J";
+@@ -1004,13 +1014,22 @@ vreg_l3m_2p8: ldo3 {
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+-		vreg_l4m_2p2: ldo4 {
+-			regulator-name = "vreg_l4m_2p2";
+-			regulator-min-microvolt = <2200000>;
++		/* Front camera AVDD, the only user in stock */
++		vreg_l4m_2p8: ldo4 {
++			regulator-name = "vreg_l4m_2p8";
++			regulator-min-microvolt = <2800000>;
+ 			regulator-max-microvolt = <2800000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
++		/* Front and auxiliary camera I/O */
++		vreg_l5m_1p8: ldo5 {
++			regulator-name = "vreg_l5m_1p8";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1800000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++
+ 		vreg_l6m_2p8: ldo6 {
+ 			regulator-name = "vreg_l6m_2p8";
+ 			regulator-min-microvolt = <2800000>;
+@@ -1100,6 +1119,13 @@ &camss {
+ 	status = "okay";
+ };
+ 
++&camss_csiphy0_in_port {
++	camss_csiphy0_inep: endpoint {
++		data-lanes = <1>;
++		remote-endpoint = <&csiphy0_out_ep>;
++	};
++};
++
+ &camss_csiphy1_in_port {
+ 	camss_csiphy1_inep: endpoint {
+ 		data-lanes = <1 2 3 4>;
+@@ -1107,6 +1133,13 @@ camss_csiphy1_inep: endpoint {
+ 	};
+ };
+ 
++&camss_csiphy3_in_port {
++	camss_csiphy3_inep: endpoint {
++		data-lanes = <1 2 3 4>;
++		remote-endpoint = <&csiphy3_out_ep>;
++	};
++};
++
+ &cci0 {
+ 	status = "okay";
+ };
+@@ -1168,6 +1201,116 @@ sda-pins {
+ 	};
+ };
+ 
++&cci1 {
++	status = "okay";
++};
++
++&cci1_i2c0 {
++	/* Front */
++	camera@10 {
++		compatible = "ovti,ov16a1q";
++		reg = <0x10>;
++
++		/* 19.2 MHz, out of PMK8850 GPIO 2 */
++		clocks = <&rpmhcc RPMH_DIV_CLK1>;
++
++		reset-gpios = <&tlmm 7 GPIO_ACTIVE_LOW>;
++
++		avdd-supply = <&vreg_l4m_2p8>;
++		dvdd-supply = <&vreg_cam_front_vdig>;
++		dovdd-supply = <&vreg_l5m_1p8>;
++
++		orientation = <0>;
++		rotation = <90>;
++
++		pinctrl-0 = <&cam_front_mclk_default>, <&cam_front_reset_default>;
++		pinctrl-names = "default";
++
++		port {
++			ov16a1q_ep: endpoint {
++				data-lanes = <1 2 3 4>;
++				link-frequencies = /bits/ 64 <726400000>;
++				remote-endpoint = <&csiphy3_in_ep>;
++			};
++		};
++	};
++
++	/* Auxiliary */
++	camera@3d {
++		compatible = "ovti,ov02f10";
++		reg = <0x3d>;
++
++		/* 19.2 MHz, out of PMK8850 GPIO 8 */
++		clocks = <&rpmhcc RPMH_DIV_CLK1>;
++
++		reset-gpios = <&tlmm 105 GPIO_ACTIVE_LOW>;
++
++		avdd-supply = <&vreg_l6m_2p8>;
++		dovdd-supply = <&vreg_l5m_1p8>;
++
++		orientation = <1>;
++		rotation = <270>;
++
++		pinctrl-0 = <&cam_aux_mclk_default>, <&cam_aux_reset_default>;
++		pinctrl-names = "default";
++
++		port {
++			ov02f10_ep: endpoint {
++				data-lanes = <1>;
++				link-frequencies = /bits/ 64 <330000000>;
++				remote-endpoint = <&csiphy0_in_ep>;
++			};
++		};
++	};
++};
++
++/* Stock pulls the CCI1 lines up too */
++&cci1_i2c0_default {
++	scl-pins {
++		/delete-property/ bias-disable;
++		bias-pull-up;
++	};
++
++	sda-pins {
++		/delete-property/ bias-disable;
++		bias-pull-up;
++	};
++};
++
++&cci1_i2c1_default {
++	scl-pins {
++		/delete-property/ bias-disable;
++		bias-pull-up;
++	};
++
++	sda-pins {
++		/delete-property/ bias-disable;
++		bias-pull-up;
++	};
++};
++
++&csiphy0 {
++	vdda-0p9-supply = <&vreg_l3i_0p8>;
++	vdda-1p2-supply = <&vreg_l1d_1p2>;
++
++	status = "okay";
++};
++
++&csiphy0_in_port {
++	csiphy0_in_ep: endpoint {
++		bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
++		clock-lanes = <0>;
++		data-lanes = <1>;
++		remote-endpoint = <&ov02f10_ep>;
++	};
++};
++
++&csiphy0_out_port {
++	csiphy0_out_ep: endpoint {
++		remote-endpoint = <&camss_csiphy0_inep>;
++	};
++};
++
+ &csiphy1 {
+ 	vdda-0p9-supply = <&vreg_l3i_0p8>;
+ 	vdda-1p2-supply = <&vreg_l1d_1p2>;
+@@ -1190,6 +1333,28 @@ csiphy1_out_ep: endpoint {
+ 	};
+ };
+ 
++&csiphy3 {
++	vdda-0p9-supply = <&vreg_l3i_0p8>;
++	vdda-1p2-supply = <&vreg_l1d_1p2>;
++
++	status = "okay";
++};
++
++&csiphy3_in_port {
++	csiphy3_in_ep: endpoint {
++		bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
++		clock-lanes = <0>;
++		data-lanes = <1 2 3 4>;
++		remote-endpoint = <&ov16a1q_ep>;
++	};
++};
++
++&csiphy3_out_port {
++	csiphy3_out_ep: endpoint {
++		remote-endpoint = <&camss_csiphy3_inep>;
++	};
++};
++
+ &gpu {
+ 	status = "okay";
+ };
+@@ -1396,6 +1561,13 @@ cam_vio_en_default: cam-vio-en-default-state {
+ 		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+ 	};
+ 
++	cam_front_vdig_en_default: cam-front-vdig-en-default-state {
++		pins = "gpio15";
++		function = "normal";
++		power-source = <0>;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
++	};
++
+ 	cam_uw_vana_en_default: cam-uw-vana-en-default-state {
+ 		pins = "gpio18";
+ 		function = "normal";
+@@ -1444,6 +1616,22 @@ bt_default: bt-default-state {
+  * 0x9f and 0xa2; mainline exposes the first 128 bytes. 0x7c-0x7f is free
+  * and was zero: a 4-byte offset fits there.
+  */
++&pmk8850_gpios {
++	cam_front_mclk_default: cam-front-mclk-default-state {
++		pins = "gpio2";
++		function = "func2";
++		output-enable;
++		power-source = <0>;
++	};
++
++	cam_aux_mclk_default: cam-aux-mclk-default-state {
++		pins = "gpio8";
++		function = "func2";
++		output-enable;
++		power-source = <0>;
++	};
++};
++
+ &pmk8850_rtc {
+ 	nvmem-cells = <&rtc_offset>;
+ 	nvmem-cell-names = "offset";
+@@ -1565,6 +1753,20 @@ &tlmm {
+ 			       <119 2>, /* SoCCP */
+ 			       <144 4>; /* CXM UART */
+ 
++	cam_aux_reset_default: cam-aux-reset-default-state {
++		pins = "gpio105";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_front_reset_default: cam-front-reset-default-state {
++		pins = "gpio7";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	cam_uw_reset_default: cam-uw-reset-default-state {
+ 		pins = "gpio15";
+ 		function = "gpio";
+-- 
+2.56.0
+

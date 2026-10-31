@@ -1,7 +1,7 @@
 From a3b2f3a9441ee0df0ca84ca410ead69eb43884c3 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 02/40] dt-bindings: arm: qcom: Add Nubia RedMagic 11 Pro
+Subject: [PATCH 002/162] dt-bindings: arm: qcom: Add Nubia RedMagic 11 Pro
 
 Document the Nubia RedMagic 11 Pro (NX809J), a phone based on the
 Kaanapali (Snapdragon 8 Elite Gen 5) SoC.
@@ -12,7 +12,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/Documentation/devicetree/bindings/arm/qcom.yaml b/Documentation/devicetree/bindings/arm/qcom.yaml
-index 121ca557c..78e8e3e60 100644
+index 121ca557ce1e..78e8e3e606b9 100644
 --- a/Documentation/devicetree/bindings/arm/qcom.yaml
 +++ b/Documentation/devicetree/bindings/arm/qcom.yaml
 @@ -175,6 +175,7 @@ properties:

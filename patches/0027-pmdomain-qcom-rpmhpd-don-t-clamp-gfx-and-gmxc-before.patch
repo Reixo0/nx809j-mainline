@@ -1,8 +1,8 @@
 From 01abb2ca1819471540b4498d82cbe6cb073e9dfb Mon Sep 17 00:00:00 2001
 From: Oleg Keri <okerixx@gmail.com>
 Date: Wed, 21 Oct 2026 10:05:17 +0200
-Subject: [PATCH 27/40] pmdomain: qcom: rpmhpd: don't clamp gfx and gmxc before
- sync_state
+Subject: [PATCH 027/162] pmdomain: qcom: rpmhpd: don't clamp gfx and gmxc
+ before sync_state
 
 Until rpmhpd's sync_state every vote is clamped to the highest corner,
 so that hardware the bootloader left running keeps the rail level it
@@ -36,7 +36,7 @@ Tested-by: Denis Zornada <denis_zornada@hotmail.com> # Zenbook A16
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/pmdomain/qcom/rpmhpd.c b/drivers/pmdomain/qcom/rpmhpd.c
-index fa8fed5bd..2c9d4beef 100644
+index fa8fed5bd3e5..2c9d4beeffbe 100644
 --- a/drivers/pmdomain/qcom/rpmhpd.c
 +++ b/drivers/pmdomain/qcom/rpmhpd.c
 @@ -1006,7 +1006,7 @@ static int rpmhpd_aggregate_corner(struct rpmhpd *pd, unsigned int corner)

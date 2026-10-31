@@ -1,0 +1,157 @@
+From 6812ddbb0bf43c46c31aef1454df143198d8c91b Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 20:18:38 +0100
+Subject: [PATCH 160/162] media: qcom: camss: drop interconnect votes with
+ TITAN_TOP
+
+The CCI shares the TITAN_TOP domain and keeps it powered for a second
+after each transfer. CAMSS dropped its camera NoC votes at runtime
+suspend, while the domain stayed on. Opening a camera again within that
+second raised the votes in the same power cycle, and on SM8550 the RPMh
+request never completed: "Error sending AMC RPMH requests (-110)", then
+every later interconnect vote waited on the provider lock, UFS clock
+ungating with them, and the phone stopped.
+
+Drop the votes from a genpd notifier once TITAN_TOP is off instead, as
+the downstream driver keeps a camera NoC vote for as long as the CCI is
+active. Raising them on resume is unchanged. Without a separate
+TITAN_TOP domain the votes still follow runtime PM.
+
+Tested on the OnePlus Ace 3: an immediate reopen of either camera, and
+the main camera followed by the front, hung 3 out of 3 before and works
+6 out of 6 with this.
+
+(cherry picked from commit 26d70b82c3ae4a765edeb0a66ae6d7f1030580c7)
+---
+ drivers/media/platform/qcom/camss/camss.c | 64 +++++++++++++++++------
+ drivers/media/platform/qcom/camss/camss.h |  2 +
+ 2 files changed, 51 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index 4b29b8592c86..e376d0b7acaa 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -5562,6 +5562,41 @@ static const struct media_device_ops camss_media_ops = {
+ 	.link_notify = v4l2_pipeline_link_notify,
+ };
+ 
++static int camss_icc_set(struct camss *camss, bool on)
++{
++	const struct resources_icc *icc_res = camss->res->icc_res;
++	int i;
++	int ret;
++
++	for (i = 0; i < camss->res->icc_path_num; i++) {
++		ret = icc_set_bw(camss->icc_path[i],
++				 on ? icc_res[i].icc_bw_tbl.avg : 0,
++				 on ? icc_res[i].icc_bw_tbl.peak : 0);
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
++/*
++ * The CCI shares the TITAN_TOP domain and keeps it powered for a while after
++ * each transfer. When the camera NoC votes go to zero while the domain stays
++ * powered and come back within the same power cycle, RPMh never completes the
++ * request and every later interconnect vote waits for it. The votes are
++ * therefore dropped once TITAN_TOP is off, not when CAMSS suspends.
++ */
++static int camss_genpd_notify(struct notifier_block *nb, unsigned long action,
++			      void *data)
++{
++	struct camss *camss = container_of(nb, struct camss, genpd_nb);
++
++	if (action == GENPD_NOTIFY_OFF)
++		camss_icc_set(camss, false);
++
++	return NOTIFY_OK;
++}
++
+ static int camss_configure_pd(struct camss *camss)
+ {
+ 	const struct camss_resources *res = camss->res;
+@@ -5633,6 +5668,12 @@ static int camss_configure_pd(struct camss *camss)
+ 		goto fail_pm;
+ 	}
+ 
++	camss->genpd_nb.notifier_call = camss_genpd_notify;
++	if (!dev_pm_genpd_add_notifier(camss->genpd, &camss->genpd_nb))
++		camss->icc_follows_genpd = true;
++	else
++		dev_warn(dev, "interconnect votes follow runtime PM\n");
++
+ 	return 0;
+ 
+ fail_pm:
+@@ -5673,6 +5714,9 @@ static void camss_genpd_cleanup(struct camss *camss)
+ 
+ 	camss_genpd_subdevice_cleanup(camss);
+ 
++	if (camss->icc_follows_genpd)
++		dev_pm_genpd_remove_notifier(camss->genpd);
++
+ 	if (camss->genpd_link)
+ 		device_link_del(camss->genpd_link);
+ 
+@@ -6159,11 +6203,11 @@ MODULE_DEVICE_TABLE(of, camss_dt_match);
+ static int __maybe_unused camss_runtime_suspend(struct device *dev)
+ {
+ 	struct camss *camss = dev_get_drvdata(dev);
+-	int i;
+ 	int ret;
+ 
+-	for (i = 0; i < camss->res->icc_path_num; i++) {
+-		ret = icc_set_bw(camss->icc_path[i], 0, 0);
++	/* camss_genpd_notify() drops the votes with TITAN_TOP. */
++	if (!camss->icc_follows_genpd) {
++		ret = camss_icc_set(camss, false);
+ 		if (ret)
+ 			return ret;
+ 	}
+@@ -6178,25 +6222,15 @@ static int __maybe_unused camss_runtime_suspend(struct device *dev)
+ static int __maybe_unused camss_runtime_resume(struct device *dev)
+ {
+ 	struct camss *camss = dev_get_drvdata(dev);
+-	const struct resources_icc *icc_res = camss->res->icc_res;
+-	int i;
++#if IS_ENABLED(CONFIG_PM_CLK)
+ 	int ret;
+ 
+-#if IS_ENABLED(CONFIG_PM_CLK)
+ 	ret = pm_clk_resume(dev);
+ 	if (ret)
+ 		return ret;
+ #endif
+ 
+-	for (i = 0; i < camss->res->icc_path_num; i++) {
+-		ret = icc_set_bw(camss->icc_path[i],
+-				 icc_res[i].icc_bw_tbl.avg,
+-				 icc_res[i].icc_bw_tbl.peak);
+-		if (ret)
+-			return ret;
+-	}
+-
+-	return 0;
++	return camss_icc_set(camss, true);
+ }
+ 
+ static const struct dev_pm_ops camss_pm_ops = {
+diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
+index 67c13d4601bd..33c930c54dad 100644
+--- a/drivers/media/platform/qcom/camss/camss.h
++++ b/drivers/media/platform/qcom/camss/camss.h
+@@ -139,6 +139,8 @@ struct camss {
+ 	int genpd_num;
+ 	struct device *genpd;
+ 	struct device_link *genpd_link;
++	struct notifier_block genpd_nb;
++	bool icc_follows_genpd;
+ 	struct icc_path *icc_path[ICC_SM8250_COUNT];
+ 	const struct camss_resources *res;
+ 	bool legacy_phy;
+-- 
+2.56.0
+

@@ -1,8 +1,8 @@
 From 8168014ba74563e023afe95451c31720c9324465 Mon Sep 17 00:00:00 2001
 From: Vsevolod Nevorotov <email-hidden-by-archive@invalid>
 Date: Thu, 10 Sep 2026 09:15:01 +0000
-Subject: [PATCH 09/40] Input: synaptics_tcm_i2c - add Synaptics TouchComm I2C
- touchscreen driver
+Subject: [PATCH 009/162] Input: synaptics_tcm_i2c - add Synaptics TouchComm
+ I2C touchscreen driver
 
 Add input touchscreen driver for Synaptics TouchComm (TCM) generation-1
 controllers connected over I2C that boot into application mode out of
@@ -25,7 +25,7 @@ Signed-off-by: Vsevolod Nevorotov <redacted>
  create mode 100644 drivers/input/touchscreen/synaptics_tcm_i2c.c
 
 diff --git a/MAINTAINERS b/MAINTAINERS
-index 04f465490..394aa1385 100644
+index 04f465490612..394aa13854f7 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
 @@ -27095,6 +27095,13 @@ S:	Maintained
@@ -43,7 +43,7 @@ index 04f465490..394aa1385 100644
  M:	Sumit Semwal <sumit.semwal@linaro.org>
  L:	linux-media@vger.kernel.org
 diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
-index 9b9ae8ac3..c58e3e4cc 100644
+index 9b9ae8ac3f7f..c58e3e4cc1cc 100644
 --- a/drivers/input/touchscreen/Kconfig
 +++ b/drivers/input/touchscreen/Kconfig
 @@ -1310,6 +1310,21 @@ config TOUCHSCREEN_SX8654
@@ -69,7 +69,7 @@ index 9b9ae8ac3..c58e3e4cc 100644
  	tristate "TPS6507x based touchscreens"
  	depends on I2C
 diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
-index bfd9de833..a1debe134 100644
+index bfd9de83389d..a1debe134a0e 100644
 --- a/drivers/input/touchscreen/Makefile
 +++ b/drivers/input/touchscreen/Makefile
 @@ -86,6 +86,7 @@ obj-$(CONFIG_TOUCHSCREEN_STMPE)		+= stmpe-ts.o
@@ -82,7 +82,7 @@ index bfd9de833..a1debe134 100644
  obj-$(CONFIG_TOUCHSCREEN_TOUCHRIGHT)	+= touchright.o
 diff --git a/drivers/input/touchscreen/synaptics_tcm_i2c.c b/drivers/input/touchscreen/synaptics_tcm_i2c.c
 new file mode 100644
-index 000000000..406db582f
+index 000000000000..406db582f2c0
 --- /dev/null
 +++ b/drivers/input/touchscreen/synaptics_tcm_i2c.c
 @@ -0,0 +1,1066 @@

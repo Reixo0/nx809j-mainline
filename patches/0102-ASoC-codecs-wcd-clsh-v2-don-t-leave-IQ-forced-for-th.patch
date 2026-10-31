@@ -1,7 +1,7 @@
 From 4b083ef67a5999564d7947ed4900058a9eb85807 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 102/102] ASoC: codecs: wcd-clsh-v2: don't leave IQ forced for
+Subject: [PATCH 102/162] ASoC: codecs: wcd-clsh-v2: don't leave IQ forced for
  the second HPH channel
 
 Force IQ is released when the flyback and buck are turned on, which only
@@ -13,7 +13,7 @@ on the headphones. Only force IQ while there are no flyback users.
  1 file changed, 21 insertions(+), 3 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd-clsh-v2.c b/sound/soc/codecs/wcd-clsh-v2.c
-index 62ca22ea0..af8fac070 100644
+index 62ca22ea0f3b..af8fac0703d8 100644
 --- a/sound/soc/codecs/wcd-clsh-v2.c
 +++ b/sound/soc/codecs/wcd-clsh-v2.c
 @@ -547,7 +547,13 @@ static void wcd_clsh_v3_state_hph_r(struct wcd_clsh_ctrl *ctrl, int req_state,

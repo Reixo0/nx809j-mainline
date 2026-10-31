@@ -1,7 +1,7 @@
 From f58f0dc6bb6fb58260f7ce1f46bb602973b5bb35 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:48:16 +0200
-Subject: [PATCH 10/40] Input: synaptics_tcm_i2c - add SPI support
+Subject: [PATCH 010/162] Input: synaptics_tcm_i2c - add SPI support
 
 The TouchComm v1 message format is the same on SPI as on I2C: a read
 returns the next chunk of the current message, starting with the 0xa5
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 192 insertions(+), 51 deletions(-)
 
 diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
-index c58e3e4cc..9dc419d6b 100644
+index c58e3e4cc1cc..9dc419d6b415 100644
 --- a/drivers/input/touchscreen/Kconfig
 +++ b/drivers/input/touchscreen/Kconfig
 @@ -1311,11 +1311,14 @@ config TOUCHSCREEN_SX8654
@@ -46,7 +46,7 @@ index c58e3e4cc..9dc419d6b 100644
  	  Only controllers that boot into application mode out of their own
  	  flash are supported; there is no host firmware download.
 diff --git a/drivers/input/touchscreen/synaptics_tcm_i2c.c b/drivers/input/touchscreen/synaptics_tcm_i2c.c
-index 406db582f..5cc88dc8a 100644
+index 406db582f2c0..5cc88dc8a707 100644
 --- a/drivers/input/touchscreen/synaptics_tcm_i2c.c
 +++ b/drivers/input/touchscreen/synaptics_tcm_i2c.c
 @@ -36,6 +36,7 @@

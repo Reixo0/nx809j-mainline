@@ -1,7 +1,7 @@
 From 86f92dfab560c500b3be1a3f39b7bd14255e1245 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:30 +0100
-Subject: [PATCH 114/121] net: ipa: mark the microcontroller descriptor RAM on
+Subject: [PATCH 114/162] net: ipa: mark the microcontroller descriptor RAM on
  IPA v5.5
 
 Starting with IPA v5.5, the downstream driver writes 0xabcdef01 to the
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 14 insertions(+)
 
 diff --git a/drivers/net/ipa/ipa_mem.c b/drivers/net/ipa/ipa_mem.c
-index 078d32a18..5430a1ee2 100644
+index 078d32a18dbf..5430a1ee292c 100644
 --- a/drivers/net/ipa/ipa_mem.c
 +++ b/drivers/net/ipa/ipa_mem.c
 @@ -24,6 +24,9 @@

@@ -1,7 +1,7 @@
 From aa495e266b4739138b133d60cb72a9c62f3cb0fe Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Thu, 24 Sep 2026 19:04:22 -0700
-Subject: [PATCH 43/59] phy: qcom: qmp-combo: Keep the DP lanes of a
+Subject: [PATCH 043/162] phy: qcom: qmp-combo: Keep the DP lanes of a
  USB-capable DP sink
 
 UCSI reports TYPEC_STATE_USB after DP alt mode is set up for such sinks.
@@ -13,7 +13,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 8 insertions(+)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
-index 0cf9caaaa..08c8eb2e6 100644
+index 0cf9caaaa030..08c8eb2e6029 100644
 --- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 +++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 @@ -2637,6 +2637,7 @@ struct qmp_combo {

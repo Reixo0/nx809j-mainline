@@ -1,8 +1,8 @@
 From dee77733a01756c3781b9b135cfb5901f8d0d6bb Mon Sep 17 00:00:00 2001
 From: Oleg Keri <okerixx@gmail.com>
 Date: Wed, 9 Sep 2026 17:14:42 +0200
-Subject: [PATCH 44/59] phy: qcom: qmp-combo: do not decrement init_count on a
- forced init failure
+Subject: [PATCH 044/162] phy: qcom: qmp-combo: do not decrement init_count on
+ a forced init failure
 
 qmp_combo_com_init() only takes a reference when it is not forced:
 
@@ -39,7 +39,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
-index 08c8eb2e6..b4365193c 100644
+index 08c8eb2e6029..b4365193c3d1 100644
 --- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 +++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 @@ -4271,7 +4271,8 @@ static int qmp_combo_com_init(struct qmp_combo *qmp, bool force)

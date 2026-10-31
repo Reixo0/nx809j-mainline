@@ -1,7 +1,7 @@
 From 2acee4890230b369769665393ab3c9f0ae3f5ffc Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 23:54:12 +0100
-Subject: [PATCH 109/109] arm64: dts: qcom: kaanapali-nubia-nx809j: fan and
+Subject: [PATCH 109/162] arm64: dts: qcom: kaanapali-nubia-nx809j: fan and
  liquid cooling pump
 
 The fan is a PWM fan on the PMH0101 LPG channel 3 (25 kHz) through
@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 258 insertions(+), 4 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index edda5fd64..7cb432990 100644
+index edda5fd64f64..7cb4329903c2 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -10,6 +10,7 @@

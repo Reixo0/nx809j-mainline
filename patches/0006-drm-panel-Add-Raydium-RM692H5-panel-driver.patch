@@ -1,7 +1,7 @@
 From d34b441d4adbe783451d79deedca5c5b1345cfdb Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 23:13:58 +0200
-Subject: [PATCH 06/40] drm/panel: Add Raydium RM692H5 panel driver
+Subject: [PATCH 006/162] drm/panel: Add Raydium RM692H5 panel driver
 
 Add a driver for the Raydium RM692H5 based 6.8" 1216x2688 AMOLED panel
 found in the Nubia RedMagic 11 Pro (downstream name
@@ -31,7 +31,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  create mode 100644 drivers/gpu/drm/panel/panel-raydium-rm692h5.c
 
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
-index 7a520b4d6..f7b1415e6 100644
+index 7a520b4d60fe..f7b1415e65c9 100644
 --- a/drivers/gpu/drm/panel/Kconfig
 +++ b/drivers/gpu/drm/panel/Kconfig
 @@ -861,6 +861,18 @@ config DRM_PANEL_RAYDIUM_RM692E5
@@ -54,7 +54,7 @@ index 7a520b4d6..f7b1415e6 100644
  	tristate "Raydium RM69220-based DSI panel"
  	depends on OF
 diff --git a/drivers/gpu/drm/panel/Makefile b/drivers/gpu/drm/panel/Makefile
-index da5175909..bf9a66f6d 100644
+index da5175909d54..bf9a66f6da8a 100644
 --- a/drivers/gpu/drm/panel/Makefile
 +++ b/drivers/gpu/drm/panel/Makefile
 @@ -84,6 +84,7 @@ obj-$(CONFIG_DRM_PANEL_RAYDIUM_RM67191) += panel-raydium-rm67191.o
@@ -67,7 +67,7 @@ index da5175909..bf9a66f6d 100644
  obj-$(CONFIG_DRM_PANEL_RENESAS_R61307) += panel-renesas-r61307.o
 diff --git a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
 new file mode 100644
-index 000000000..1c0ebd0d8
+index 000000000000..1c0ebd0d83ac
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
 @@ -0,0 +1,595 @@

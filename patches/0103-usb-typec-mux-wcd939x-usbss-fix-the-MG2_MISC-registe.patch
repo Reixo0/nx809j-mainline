@@ -1,7 +1,7 @@
 From a453985945a5afe798354dd7b6889d4304de28bf Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 103/107] usb: typec: mux: wcd939x-usbss: fix the MG2_MISC
+Subject: [PATCH 103/162] usb: typec: mux: wcd939x-usbss: fix the MG2_MISC
  register address
 
 MG2_MISC sits at 0x2b, after MG2_EN (0x28) and MG2_BIAS (0x29), as
@@ -12,7 +12,7 @@ probe set a bit there instead of the MG2 OVP dynamic boost.
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/usb/typec/mux/wcd939x-usbss.c b/drivers/usb/typec/mux/wcd939x-usbss.c
-index 53bcd9edd..322c185a5 100644
+index 53bcd9eddb81..322c185a54dc 100644
 --- a/drivers/usb/typec/mux/wcd939x-usbss.c
 +++ b/drivers/usb/typec/mux/wcd939x-usbss.c
 @@ -42,7 +42,7 @@

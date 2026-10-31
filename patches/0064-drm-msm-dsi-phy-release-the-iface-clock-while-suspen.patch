@@ -1,7 +1,7 @@
 From 0d82adb9568d8c2e9eb3f494d7ead961bfe2c099 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Fri, 2 Oct 2026 12:59:46 +0300
-Subject: [PATCH 64/66] drm/msm/dsi/phy: release the iface clock while
+Subject: [PATCH 064/162] drm/msm/dsi/phy: release the iface clock while
  suspended
 
 The DSI PHY lets pm_clk manage its "iface" clock. pm_clk prepares the
@@ -39,7 +39,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 28 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c
-index 1fb3899b8..737b44ec3 100644
+index 1fb3899b88bf..737b44ec3787 100644
 --- a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c
 +++ b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c
 @@ -5,7 +5,6 @@
@@ -101,7 +101,7 @@ index 1fb3899b8..737b44ec3 100644
  
  static struct platform_driver dsi_phy_platform_driver = {
 diff --git a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h
-index f5d3e806f..e658dd283 100644
+index f5d3e806f8fd..e658dd283be8 100644
 --- a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h
 +++ b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h
 @@ -107,6 +107,7 @@ struct msm_dsi_phy {

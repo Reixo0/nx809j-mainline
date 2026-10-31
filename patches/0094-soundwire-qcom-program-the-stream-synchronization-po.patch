@@ -1,7 +1,7 @@
 From e7eddf6111a86c2b345e2ab92166df04da0006ba Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 18:45:48 +0100
-Subject: [PATCH 094/102] soundwire: qcom: program the stream synchronization
+Subject: [PATCH 094/162] soundwire: qcom: program the stream synchronization
  point period
 
 The frame control register of v2 controllers has an SSP period field
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 16 insertions(+)
 
 diff --git a/drivers/soundwire/qcom.c b/drivers/soundwire/qcom.c
-index c9cb8d52f..b74633b94 100644
+index c9cb8d52fe69..b74633b94562 100644
 --- a/drivers/soundwire/qcom.c
 +++ b/drivers/soundwire/qcom.c
 @@ -95,6 +95,9 @@

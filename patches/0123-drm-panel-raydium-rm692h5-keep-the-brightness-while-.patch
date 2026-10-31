@@ -1,8 +1,8 @@
 From de620c58000e77373b440c10d66996db58dc0ac9 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Tue, 27 Oct 2026 17:06:16 +0100
-Subject: [PATCH] drm/panel: raydium-rm692h5: keep the brightness while the
- panel is off
+Subject: [PATCH 123/162] drm/panel: raydium-rm692h5: keep the brightness while
+ the panel is off
 
 Writing the brightness before the panel is prepared fails with -EINVAL,
 as the DSI link is down. systemd-backlight restores the saved level as

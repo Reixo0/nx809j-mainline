@@ -1,8 +1,8 @@
 From 4acd1503525e51f68e940ec1e893501ec8326579 Mon Sep 17 00:00:00 2001
 From: Shawn Guo <shengchao.guo@oss.qualcomm.com>
 Date: Fri, 16 Oct 2026 22:11:52 +0800
-Subject: [PATCH 84/88] ASoC: qcom: q6apm: Clear the right handle on pos buffer
- unmap
+Subject: [PATCH 084/162] ASoC: qcom: q6apm: Clear the right handle on pos
+ buffer unmap
 
 Push/pull graphs map two shared-memory regions per graph, the circular
 buffer and the position buffer, and keep a separate DSP handle for
@@ -32,7 +32,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 12 insertions(+), 4 deletions(-)
 
 diff --git a/sound/soc/qcom/qdsp6/q6apm.c b/sound/soc/qcom/qdsp6/q6apm.c
-index 9f3656f68..f86456691 100644
+index 9f3656f68c40..f86456691ea7 100644
 --- a/sound/soc/qcom/qdsp6/q6apm.c
 +++ b/sound/soc/qcom/qdsp6/q6apm.c
 @@ -330,8 +330,9 @@ static int __q6apm_unmap_memory_fixed_region(struct device *dev, unsigned int gr

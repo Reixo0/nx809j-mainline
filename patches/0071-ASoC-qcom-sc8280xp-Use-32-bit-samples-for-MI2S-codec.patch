@@ -1,7 +1,7 @@
 From d774a80f3c1710afd86f31970b7649f0594210d8 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Thu, 24 Sep 2026 19:13:41 -0700
-Subject: [PATCH 71/73] ASoC: qcom: sc8280xp: Use 32-bit samples for MI2S
+Subject: [PATCH 071/162] ASoC: qcom: sc8280xp: Use 32-bit samples for MI2S
  codecs without S16
 
 Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
@@ -10,7 +10,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 7 insertions(+)
 
 diff --git a/sound/soc/qcom/sc8280xp.c b/sound/soc/qcom/sc8280xp.c
-index a3916c57a..33488f940 100644
+index a3916c57a6da..33488f940486 100644
 --- a/sound/soc/qcom/sc8280xp.c
 +++ b/sound/soc/qcom/sc8280xp.c
 @@ -292,6 +292,7 @@ static int sc8280xp_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,

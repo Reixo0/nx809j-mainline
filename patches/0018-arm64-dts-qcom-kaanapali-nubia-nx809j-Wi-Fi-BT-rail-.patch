@@ -1,8 +1,8 @@
 From af208e01cffa7757abba00aab2f353e80911d4cf Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:01:18 +0200
-Subject: [PATCH 18/40] arm64: dts: qcom: kaanapali-nubia-nx809j: Wi-Fi/BT rail
- voltages and UART18
+Subject: [PATCH 018/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Wi-Fi/BT
+ rail voltages and UART18
 
 Nothing sets the voltage of the Wi-Fi/BT chip's PMIC rails, so their
 floors are what gets voted. Raise them to the values downstream cnss2
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 42 insertions(+), 5 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index 6cae40446..66d6fff44 100644
+index 6cae40446b4c..66d6fff449ab 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -33,6 +33,7 @@ / {

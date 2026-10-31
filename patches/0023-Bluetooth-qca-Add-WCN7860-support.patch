@@ -1,7 +1,7 @@
 From 61bfd84c0fedff370c758b942522e3c9f211869f Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:24:48 -0700
-Subject: [PATCH 23/40] Bluetooth: qca: Add WCN7860 support
+Subject: [PATCH 023/162] Bluetooth: qca: Add WCN7860 support
 
 WCN7860 uses an ELF rampatch and board NVM files, and needs a vendor
 command before it switches its UART to the operating speed.
@@ -14,7 +14,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  3 files changed, 81 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/bluetooth/btqca.c b/drivers/bluetooth/btqca.c
-index 22b08ab05..aba442d9e 100644
+index 22b08ab05b82..aba442d9e852 100644
 --- a/drivers/bluetooth/btqca.c
 +++ b/drivers/bluetooth/btqca.c
 @@ -826,6 +826,11 @@ int qca_uart_setup(struct hci_dev *hdev, uint8_t baudrate,
@@ -67,7 +67,7 @@ index 22b08ab05..aba442d9e 100644
  		err = qca_read_fw_build_info(hdev);
  		if (err < 0)
 diff --git a/drivers/bluetooth/btqca.h b/drivers/bluetooth/btqca.h
-index 8f3c1b1c7..3fe18739e 100644
+index 8f3c1b1c77b3..3fe18739e5ab 100644
 --- a/drivers/bluetooth/btqca.h
 +++ b/drivers/bluetooth/btqca.h
 @@ -158,6 +158,7 @@ enum qca_btsoc_type {
@@ -79,7 +79,7 @@ index 8f3c1b1c7..3fe18739e 100644
  
  #if IS_ENABLED(CONFIG_BT_QCA)
 diff --git a/drivers/bluetooth/hci_qca.c b/drivers/bluetooth/hci_qca.c
-index 7089e9b63..042f9df6c 100644
+index 7089e9b639b2..042f9df6ce4d 100644
 --- a/drivers/bluetooth/hci_qca.c
 +++ b/drivers/bluetooth/hci_qca.c
 @@ -1383,6 +1383,7 @@ static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)

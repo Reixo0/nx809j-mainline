@@ -1,8 +1,8 @@
 From dc7241149accacf5508ee32ff70859080ce1ca1f Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Fri, 2 Oct 2026 18:48:11 +0300
-Subject: [PATCH 56/59] usb: gadget: f_ncm: retry the NTB flush while every IN
- request is busy
+Subject: [PATCH 056/162] usb: gadget: f_ncm: retry the NTB flush while every
+ IN request is busy
 
 ncm_tx_timeout() flushes a partially filled NTB by calling eth_start_xmit()
 with a NULL skb. When all IN requests are queued, eth_start_xmit() returns
@@ -51,7 +51,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 18 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/usb/gadget/function/f_ncm.c b/drivers/usb/gadget/function/f_ncm.c
-index 500c9c19c..75dae32a2 100644
+index 500c9c19c78b..75dae32a2bde 100644
 --- a/drivers/usb/gadget/function/f_ncm.c
 +++ b/drivers/usb/gadget/function/f_ncm.c
 @@ -76,6 +76,7 @@ struct f_ncm {

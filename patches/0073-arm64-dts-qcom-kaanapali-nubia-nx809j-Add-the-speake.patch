@@ -1,7 +1,7 @@
 From 13c07cf8cb13544c9e7e27637f668f904b901dcf Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 14:07:38 +0100
-Subject: [PATCH 73/73] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+Subject: [PATCH 073/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
  speakers
 
 Two Awinic AW88461 amplifiers on i2c_hub_3 (0x35 left, at the USB port
@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 126 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index 62f592777..340227498 100644
+index 62f592777522..340227498636 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -186,6 +186,30 @@ pmic_glink_sbu: endpoint {

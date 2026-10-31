@@ -1,0 +1,137 @@
+From 5d53a05ea88ff9b57d8b924952d42f5dd433dca9 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 08:19:21 +0100
+Subject: [PATCH 162/162] media: i2c: nx809j sensors: take the subdev client
+ info
+
+linux-next passes struct v4l2_subdev_client_info to the set_fmt and
+get_selection pad ops. The OV50D40, OV50E40, OV02F10 and OV16A1Q drivers
+were written against a tree without it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/i2c/ov02f10.c | 4 +++-
+ drivers/media/i2c/ov16a1q.c | 4 +++-
+ drivers/media/i2c/ov50d40.c | 4 +++-
+ drivers/media/i2c/ov50e40.c | 4 +++-
+ 4 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/i2c/ov02f10.c b/drivers/media/i2c/ov02f10.c
+index 7de65fa26467..130544e8714e 100644
+--- a/drivers/media/i2c/ov02f10.c
++++ b/drivers/media/i2c/ov02f10.c
+@@ -479,6 +479,7 @@ static void ov02f10_update_pad_format(const struct ov02f10_mode *mode,
+ }
+ 
+ static int ov02f10_set_pad_format(struct v4l2_subdev *sd,
++                                  const struct v4l2_subdev_client_info *ci,
+ 				  struct v4l2_subdev_state *state,
+ 				  struct v4l2_subdev_format *fmt)
+ {
+@@ -531,6 +532,7 @@ static int ov02f10_enum_frame_size(struct v4l2_subdev *sd,
+ }
+ 
+ static int ov02f10_get_selection(struct v4l2_subdev *sd,
++                                 const struct v4l2_subdev_client_info *ci,
+ 				 struct v4l2_subdev_state *sd_state,
+ 				 struct v4l2_subdev_selection *sel)
+ {
+@@ -562,7 +564,7 @@ static int ov02f10_init_state(struct v4l2_subdev *sd,
+ 		},
+ 	};
+ 
+-	ov02f10_set_pad_format(sd, state, &fmt);
++	ov02f10_set_pad_format(sd, NULL, state, &fmt);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/media/i2c/ov16a1q.c b/drivers/media/i2c/ov16a1q.c
+index d69a8033b6b6..e4e37788ad96 100644
+--- a/drivers/media/i2c/ov16a1q.c
++++ b/drivers/media/i2c/ov16a1q.c
+@@ -963,6 +963,7 @@ static void ov16a1q_update_pad_format(const struct ov16a1q_mode *mode,
+ }
+ 
+ static int ov16a1q_set_pad_format(struct v4l2_subdev *sd,
++                                  const struct v4l2_subdev_client_info *ci,
+ 				  struct v4l2_subdev_state *state,
+ 				  struct v4l2_subdev_format *fmt)
+ {
+@@ -1036,6 +1037,7 @@ static int ov16a1q_enum_frame_size(struct v4l2_subdev *sd,
+ }
+ 
+ static int ov16a1q_get_selection(struct v4l2_subdev *sd,
++                                 const struct v4l2_subdev_client_info *ci,
+ 				 struct v4l2_subdev_state *sd_state,
+ 				 struct v4l2_subdev_selection *sel)
+ {
+@@ -1068,7 +1070,7 @@ static int ov16a1q_init_state(struct v4l2_subdev *sd,
+ 		},
+ 	};
+ 
+-	ov16a1q_set_pad_format(sd, state, &fmt);
++	ov16a1q_set_pad_format(sd, NULL, state, &fmt);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/media/i2c/ov50d40.c b/drivers/media/i2c/ov50d40.c
+index 099dc0878d56..e04e4ee30b84 100644
+--- a/drivers/media/i2c/ov50d40.c
++++ b/drivers/media/i2c/ov50d40.c
+@@ -2083,6 +2083,7 @@ static void ov50d40_update_pad_format(const struct ov50d40_mode *mode,
+ }
+ 
+ static int ov50d40_set_pad_format(struct v4l2_subdev *sd,
++                                  const struct v4l2_subdev_client_info *ci,
+ 				  struct v4l2_subdev_state *state,
+ 				  struct v4l2_subdev_format *fmt)
+ {
+@@ -2156,6 +2157,7 @@ static int ov50d40_enum_frame_size(struct v4l2_subdev *sd,
+ }
+ 
+ static int ov50d40_get_selection(struct v4l2_subdev *sd,
++                                 const struct v4l2_subdev_client_info *ci,
+ 				 struct v4l2_subdev_state *sd_state,
+ 				 struct v4l2_subdev_selection *sel)
+ {
+@@ -2188,7 +2190,7 @@ static int ov50d40_init_state(struct v4l2_subdev *sd,
+ 		},
+ 	};
+ 
+-	ov50d40_set_pad_format(sd, state, &fmt);
++	ov50d40_set_pad_format(sd, NULL, state, &fmt);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/media/i2c/ov50e40.c b/drivers/media/i2c/ov50e40.c
+index 84ea26099d2a..fc9825d30caf 100644
+--- a/drivers/media/i2c/ov50e40.c
++++ b/drivers/media/i2c/ov50e40.c
+@@ -1495,6 +1495,7 @@ static void ov50e40_update_pad_format(const struct ov50e40_mode *mode,
+ }
+ 
+ static int ov50e40_set_pad_format(struct v4l2_subdev *sd,
++                                  const struct v4l2_subdev_client_info *ci,
+ 				  struct v4l2_subdev_state *state,
+ 				  struct v4l2_subdev_format *fmt)
+ {
+@@ -1568,6 +1569,7 @@ static int ov50e40_enum_frame_size(struct v4l2_subdev *sd,
+ }
+ 
+ static int ov50e40_get_selection(struct v4l2_subdev *sd,
++                                 const struct v4l2_subdev_client_info *ci,
+ 				 struct v4l2_subdev_state *sd_state,
+ 				 struct v4l2_subdev_selection *sel)
+ {
+@@ -1600,7 +1602,7 @@ static int ov50e40_init_state(struct v4l2_subdev *sd,
+ 		},
+ 	};
+ 
+-	ov50e40_set_pad_format(sd, state, &fmt);
++	ov50e40_set_pad_format(sd, NULL, state, &fmt);
+ 
+ 	return 0;
+ }
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 From c8f85fe189237c5bf6e42d44664c8829925065df Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sun, 27 Sep 2026 16:43:25 +0000
-Subject: [PATCH 55/59] usb: dwc3: tell xHCI that it lost its state when the
+Subject: [PATCH 055/162] usb: dwc3: tell xHCI that it lost its state when the
  core is powered off
 
 In host mode, dwc3_suspend_common() powers the core off for system
@@ -50,7 +50,7 @@ Signed-off-by: mzak <mzak.amin@gmail.com>
  3 files changed, 19 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/usb/dwc3/core.c b/drivers/usb/dwc3/core.c
-index fd5c2cd36..b5490b9a8 100644
+index fd5c2cd36c59..b5490b9a8474 100644
 --- a/drivers/usb/dwc3/core.c
 +++ b/drivers/usb/dwc3/core.c
 @@ -2572,8 +2572,10 @@ static int dwc3_suspend_common(struct dwc3 *dwc, pm_message_t msg)
@@ -65,7 +65,7 @@ index fd5c2cd36..b5490b9a8 100644
  		/* Let controller to suspend HSPHY before PHY driver suspends */
  		if (dwc->dis_u2_susphy_quirk ||
 diff --git a/drivers/usb/dwc3/core.h b/drivers/usb/dwc3/core.h
-index f3dabb37f..5caf737f4 100644
+index f3dabb37f806..5caf737f4981 100644
 --- a/drivers/usb/dwc3/core.h
 +++ b/drivers/usb/dwc3/core.h
 @@ -1133,6 +1133,8 @@ struct dwc3_glue_ops {
@@ -86,7 +86,7 @@ index f3dabb37f..5caf737f4 100644
  
  	unsigned		disable_scramble_quirk:1;
 diff --git a/drivers/usb/dwc3/host.c b/drivers/usb/dwc3/host.c
-index c5674161b..bc2951a4f 100644
+index c5674161b2b0..bc2951a4f750 100644
 --- a/drivers/usb/dwc3/host.c
 +++ b/drivers/usb/dwc3/host.c
 @@ -14,9 +14,7 @@

@@ -1,7 +1,7 @@
 From d491f2608803d934ce05ef51e2861236fcc1b9d2 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 23:54:12 +0100
-Subject: [PATCH 108/109] hwmon: add Awinic AWP1921 piezo micropump driver
+Subject: [PATCH 108/162] hwmon: add Awinic AWP1921 piezo micropump driver
 
 The AWP1921 drives the piezo micropump of the liquid cooling loop in the
 Nubia RedMagic 11 Pro. The register sequence comes from the vendor
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  create mode 100644 drivers/hwmon/awp1921.c
 
 diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
-index 18c682e1a..3911768f6 100644
+index 18c682e1a475..3911768f62b9 100644
 --- a/drivers/hwmon/Kconfig
 +++ b/drivers/hwmon/Kconfig
 @@ -302,6 +302,19 @@ config SENSORS_ASUS_ROG_RYUJIN
@@ -44,7 +44,7 @@ index 18c682e1a..3911768f6 100644
  	tristate "Analog Devices FAN Control HDL Core driver"
  	help
 diff --git a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
-index d4c345ed7..5458aaeab 100644
+index d4c345ed7261..5458aaeabefc 100644
 --- a/drivers/hwmon/Makefile
 +++ b/drivers/hwmon/Makefile
 @@ -59,6 +59,7 @@ obj-$(CONFIG_SENSORS_ASPEED)	+= aspeed-pwm-tacho.o
@@ -57,7 +57,7 @@ index d4c345ed7..5458aaeab 100644
  obj-$(CONFIG_SENSORS_AXIADO_TSADC)	+= axiado-tsadc.o
 diff --git a/drivers/hwmon/awp1921.c b/drivers/hwmon/awp1921.c
 new file mode 100644
-index 000000000..dcab26614
+index 000000000000..dcab26614ca4
 --- /dev/null
 +++ b/drivers/hwmon/awp1921.c
 @@ -0,0 +1,380 @@

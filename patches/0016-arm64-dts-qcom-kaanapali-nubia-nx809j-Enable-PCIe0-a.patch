@@ -1,8 +1,8 @@
 From cdd996ef27a42cd4d938727d9f12d0df7bbcd30f Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 12:06:08 +0200
-Subject: [PATCH 16/40] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable PCIe0
- and the Wi-Fi chip
+Subject: [PATCH 016/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Enable
+ PCIe0 and the Wi-Fi chip
 
 The Wi-Fi/BT combo (peach, 17cb:110e) sits on PCIe0 and is wired like
 the WCN7850 on the Kaanapali MTP: wlan-en on TLMM 16, bt-en on PMH0104
@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 149 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index b215edfe3..6cae40446 100644
+index b215edfe3904..6cae40446b4c 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -179,6 +179,73 @@ pmic_glink_sbu: endpoint {

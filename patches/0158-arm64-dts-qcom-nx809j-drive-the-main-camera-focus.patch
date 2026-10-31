@@ -1,0 +1,100 @@
+From a990b2b1c49b9368feedce536075a6f0a129d9b6 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 17:48:02 +0100
+Subject: [PATCH 158/162] arm64: dts: qcom: nx809j: drive the main camera focus
+
+The main camera DW9785 answers at 0x24 on CCI0 bus 1 once its
+supplies are on: the camera I/O rail, L3M at 2.8 V for the actuator,
+then the stabiliser switch on PMH0101 GPIO 17. L3M is held at 2.8 V,
+the voltage stock asks for. The sensor points at it as its lens.
+
+(cherry picked from commit a0506a3b121f2ecf0163edb0451f1ba8cabecc6a)
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 33 +++++++++++++++++--
+ 1 file changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 2469185448d2..0b8f7a61cbbe 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -343,6 +343,17 @@ vreg_cam_main_vana: regulator-cam-main-vana {
+ 		pinctrl-names = "default";
+ 	};
+ 
++	/* Main camera focus and OIS controller power, after L3M */
++	vreg_cam_main_oisvdd: regulator-cam-main-oisvdd {
++		compatible = "regulator-fixed";
++		regulator-name = "cam_main_oisvdd";
++		gpio = <&pmh0101_gpios 17 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++
++		pinctrl-0 = <&cam_main_oisvdd_en_default>;
++		pinctrl-names = "default";
++	};
++
+ 	vreg_cam_front_vdig: regulator-cam-front-vdig {
+ 		compatible = "regulator-fixed";
+ 		regulator-name = "cam_front_vdig";
+@@ -1018,10 +1029,11 @@ vreg_l2m_1p0: ldo2 {
+ 						   RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
++		/* Main camera focus motor */
+ 		vreg_l3m_2p8: ldo3 {
+ 			regulator-name = "vreg_l3m_2p8";
+ 			regulator-min-microvolt = <2800000>;
+-			regulator-max-microvolt = <2900000>;
++			regulator-max-microvolt = <2800000>;
+ 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+@@ -1196,7 +1208,7 @@ ov50d40_ep: endpoint {
+ };
+ 
+ &cci0_i2c1 {
+-	/* Main; its autofocus and OIS stay unpowered */
++	/* Main; its OIS stays off */
+ 	camera@36 {
+ 		compatible = "ovti,ov50e40";
+ 		reg = <0x36>;
+@@ -1213,6 +1225,7 @@ camera@36 {
+ 
+ 		orientation = <1>;
+ 		rotation = <270>;
++		lens-focus = <&main_lens>;
+ 
+ 		pinctrl-0 = <&cam_mclk2_default>, <&cam_main_reset_default>;
+ 		pinctrl-names = "default";
+@@ -1226,6 +1239,15 @@ ov50e40_ep: endpoint {
+ 			};
+ 		};
+ 	};
++
++	main_lens: lens@24 {
++		compatible = "dongwoon,dw9785";
++		reg = <0x24>;
++
++		vio-supply = <&vreg_cam_vio>;
++		vaf-supply = <&vreg_l3m_2p8>;
++		oisvdd-supply = <&vreg_cam_main_oisvdd>;
++	};
+ };
+ 
+ /* Stock pulls the CCI0 lines up in the SoC */
+@@ -1667,6 +1689,13 @@ cam_main_vana_en_default: cam-main-vana-en-default-state {
+ 		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+ 	};
+ 
++	cam_main_oisvdd_en_default: cam-main-oisvdd-en-default-state {
++		pins = "gpio17";
++		function = "normal";
++		power-source = <0>;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
++	};
++
+ 	fan_pwm_default: fan-pwm-default-state {
+ 		pins = "gpio9";
+ 		function = "func1";
+-- 
+2.56.0
+

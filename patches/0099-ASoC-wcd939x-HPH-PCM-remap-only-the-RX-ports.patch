@@ -1,7 +1,7 @@
 From 5d1e350462682186101882633fc9da7fec151ffd Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 099/102] ASoC: wcd939x: HPH PCM: remap only the RX ports
+Subject: [PATCH 099/162] ASoC: wcd939x: HPH PCM: remap only the RX ports
 
 The TX channel ids overlap the RX ones (WCD939X_ADC1/2 == WCD939X_HPH_L/R),
 and the SoundWire port mixers of both devices share get/set_swr_port. With
@@ -13,7 +13,7 @@ only on the RX device.
  1 file changed, 8 insertions(+), 5 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
-index c2ed87e20..a898879e3 100644
+index c2ed87e20e97..a898879e3d24 100644
 --- a/sound/soc/codecs/wcd939x.c
 +++ b/sound/soc/codecs/wcd939x.c
 @@ -2036,11 +2036,14 @@ static const struct soc_enum rdac3_enum =

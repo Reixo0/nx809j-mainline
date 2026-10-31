@@ -1,7 +1,7 @@
 From 4578dce67a980a8cd29ca6a7c509ad758142388c Mon Sep 17 00:00:00 2001
 From: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
 Date: Tue, 13 Oct 2026 18:29:37 +0800
-Subject: [PATCH 72/73] ASoC: codecs: aw88461: add Awinic AW88461 smart
+Subject: [PATCH 072/162] ASoC: codecs: aw88461: add Awinic AW88461 smart
  amplifier driver
 
 Add support for the Awinic AW88461 (chip ID 0x2308), an I2S input smart
@@ -27,7 +27,7 @@ Signed-off-by: Xu Qianhui <xiaqinghuan@mail.ustc.edu.cn>
  create mode 100644 sound/soc/codecs/aw88461.c
 
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
-index ba59dabee..d672e6e5b 100644
+index ba59dabeeccd..d672e6e5bece 100644
 --- a/sound/soc/codecs/Kconfig
 +++ b/sound/soc/codecs/Kconfig
 @@ -749,6 +749,18 @@ config SND_SOC_AW88399
@@ -50,7 +50,7 @@ index ba59dabee..d672e6e5b 100644
  	tristate "ROHM BD28623 CODEC"
  	help
 diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
-index 3826f9e4f..a1b96b672 100644
+index 3826f9e4fce8..a1b96b672adb 100644
 --- a/sound/soc/codecs/Makefile
 +++ b/sound/soc/codecs/Makefile
 @@ -55,6 +55,7 @@ snd-soc-aw88395-y := aw88395/aw88395.o
@@ -71,7 +71,7 @@ index 3826f9e4f..a1b96b672 100644
  obj-$(CONFIG_SND_SOC_BT_SCO)	+= snd-soc-bt-sco.o
 diff --git a/sound/soc/codecs/aw88461.c b/sound/soc/codecs/aw88461.c
 new file mode 100644
-index 000000000..73f37c253
+index 000000000000..73f37c253963
 --- /dev/null
 +++ b/sound/soc/codecs/aw88461.c
 @@ -0,0 +1,547 @@

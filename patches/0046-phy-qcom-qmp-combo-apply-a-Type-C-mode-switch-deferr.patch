@@ -1,7 +1,7 @@
 From a9b78ae8adda2c7f15894b80db7b614a1bc98709 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Mon, 19 Oct 2026 06:40:14 +0300
-Subject: [PATCH 46/59] phy: qcom: qmp-combo: apply a Type-C mode switch
+Subject: [PATCH 046/162] phy: qcom: qmp-combo: apply a Type-C mode switch
  deferred by the DP link
 
 qmp_combo_typec_mux_set() does not switch the PHY mode while the DP PHY
@@ -34,7 +34,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 41 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
-index 844da2b71..0bbc7ccf4 100644
+index 844da2b7119a..0bbc7ccf4089 100644
 --- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 +++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 @@ -2643,6 +2643,10 @@ struct qmp_combo {

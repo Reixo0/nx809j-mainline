@@ -1,0 +1,70 @@
+From 07d7aa8c0dfe6463313a67396d2b856f2e52e523 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 27 Oct 2026 21:51:38 +0100
+Subject: [PATCH 127/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Add the
+ haptics driver
+
+The AW86938 sits at 0x5a on hub I2C 4, interrupt on gpio88 and reset on
+gpio94, as in the stock tree. Boost is the stock 8.5 V.
+
+(cherry picked from commit d2666da1f1054056c961eab9f7aea428bc59a59b)
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 35 +++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 1832179bfebe..42291a2fbd26 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1153,6 +1153,27 @@ speaker_left: amplifier@35 {
+ 	};
+ };
+ 
++&i2c_hub_4 {
++	clock-frequency = <400000>;
++
++	status = "okay";
++
++	/* Downstream "aw8693x" (awinic,haptic_hv); same family as roadstr's 0x9380. */
++	haptics@5a {
++		compatible = "awinic,aw86938", "awinic,aw86927";
++		reg = <0x5a>;
++
++		interrupts-extended = <&tlmm 88 IRQ_TYPE_EDGE_FALLING>;
++		reset-gpios = <&tlmm 94 GPIO_ACTIVE_LOW>;
++
++		/* Stock aw8693x_bst_vol_default 0x0f */
++		awinic,boost-microvolt = <8500000>;
++
++		pinctrl-0 = <&vib_int_default>, <&vib_rst_default>;
++		pinctrl-names = "default";
++	};
++};
++
+ &i2c_master_hub {
+ 	status = "okay";
+ };
+@@ -1546,6 +1567,20 @@ usb_dp_qmpphy_portselect: usb-dp-qmpphy-portselect-state {
+ 		bias-pull-down;
+ 	};
+ 
++	vib_int_default: vib-int-default-state {
++		pins = "gpio88";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-up;
++	};
++
++	vib_rst_default: vib-rst-default-state {
++		pins = "gpio94";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	wcd_default: wcd-reset-n-active-state {
+ 		pins = "gpio161";
+ 		function = "gpio";
+-- 
+2.56.0
+

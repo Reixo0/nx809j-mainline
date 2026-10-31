@@ -1,7 +1,7 @@
 From 6e87afe5e99ce3525bf7fb3ac17c41ee79aa4650 Mon Sep 17 00:00:00 2001
 From: Michael Burch <me@michaelburch.net>
 Date: Sat, 3 Oct 2026 14:35:17 -0500
-Subject: [PATCH 32/40] drm/msm/adreno: Leave the GPU RSC awake for system
+Subject: [PATCH 032/162] drm/msm/adreno: Leave the GPU RSC awake for system
  poweroff
 
 On X1E80100 (Dell XPS 13 9345), commit d9108bfdb746 ("drm/msm/a6xx: Fix
@@ -30,7 +30,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 9 insertions(+)
 
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
-index d4cc9892b..975b819bc 100644
+index d4cc9892be09..975b819bcd2e 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
 @@ -690,6 +690,10 @@ static void a6xx_rpmh_stop(struct a6xx_gmu *gmu)
@@ -45,7 +45,7 @@ index d4cc9892b..975b819bc 100644
  		bitmask = BIT(30);
  
 diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
-index 775e9895a..f56c3327e 100644
+index 775e9895ad05..f56c3327e2f7 100644
 --- a/drivers/gpu/drm/msm/adreno/adreno_device.c
 +++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
 @@ -300,6 +300,11 @@ static void adreno_remove(struct platform_device *pdev)

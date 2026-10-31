@@ -1,7 +1,7 @@
 From 529ff67f9b12508ab00b2fb99a61344622949efc Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 10 Oct 2026 04:19:13 +0300
-Subject: [PATCH 82/88] ASoC: codecs: wcd939x: hold the TX device while
+Subject: [PATCH 082/162] ASoC: codecs: wcd939x: hold the TX device while
  measuring impedance
 
 The headset impedance measurement polls volatile result registers
@@ -23,7 +23,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 65 insertions(+), 11 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
-index 3bffd5abd..69078dc25 100644
+index 3bffd5abd09d..69078dc25a38 100644
 --- a/sound/soc/codecs/wcd939x.c
 +++ b/sound/soc/codecs/wcd939x.c
 @@ -2033,26 +2033,49 @@ static const struct zdet_param wcd939x_mbhc_zdet_param = {

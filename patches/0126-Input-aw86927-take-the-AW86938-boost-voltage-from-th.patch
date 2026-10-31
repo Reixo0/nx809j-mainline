@@ -1,0 +1,125 @@
+From 6eb4de79e6ba6c12fa7dd0312ae5fdbc8d75d1fa Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 27 Oct 2026 21:51:38 +0100
+Subject: [PATCH 126/162] Input: aw86927 - take the AW86938 boost voltage from
+ the device tree
+
+The driver writes 0x11 to the AW86938 boost setting, which Awinic's own
+formula, code = (mV - 6000) / 250 + 5, puts at 9.0 V. Boards run their
+LRA at the voltage their stock configuration names, so read it from
+awinic,boost-microvolt and keep the old value when it is absent.
+
+(cherry picked from commit 1722a0ecc2d0a1bee0026673e27da55eeaef52fb)
+---
+ .../bindings/input/awinic,aw86927.yaml        |  8 ++++
+ drivers/input/misc/aw86927.c                  | 40 ++++++++++++++++++-
+ 2 files changed, 47 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/devicetree/bindings/input/awinic,aw86927.yaml b/Documentation/devicetree/bindings/input/awinic,aw86927.yaml
+index bd74b81488f6..559e41b8a1c1 100644
+--- a/Documentation/devicetree/bindings/input/awinic,aw86927.yaml
++++ b/Documentation/devicetree/bindings/input/awinic,aw86927.yaml
+@@ -27,6 +27,14 @@ properties:
+   interrupts:
+     maxItems: 1
+ 
++  awinic,boost-microvolt:
++    description:
++      Boost output voltage that drives the LRA, as set by the board's stock
++      configuration.
++    minimum: 6000000
++    maximum: 11000000
++    multipleOf: 250000
++
+ required:
+   - compatible
+   - reg
+diff --git a/drivers/input/misc/aw86927.c b/drivers/input/misc/aw86927.c
+index 1f73f063690e..1f4fb1039ab7 100644
+--- a/drivers/input/misc/aw86927.c
++++ b/drivers/input/misc/aw86927.c
+@@ -15,6 +15,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/input.h>
+ #include <linux/module.h>
++#include <linux/property.h>
+ #include <linux/regmap.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/types.h>
+@@ -49,6 +50,10 @@
+ #define AW86938_PLAYCFG1_BST_MODE_BYPASS	0
+ #define AW86938_PLAYCFG1_BST_VOUT_VREFSET_MASK	GENMASK(4, 0)
+ #define AW86938_PLAYCFG1_BST_7000MV		0x11
++#define AW86938_BST_MIN_UV			6000000
++#define AW86938_BST_MAX_UV			11000000
++#define AW86938_BST_STEP_UV			250000
++#define AW86938_BST_MIN_CODE			5
+ 
+ #define AW86927_PLAYCFG2_REG			0x07
+ 
+@@ -195,6 +200,7 @@ struct aw86927_data {
+ 	struct regmap *regmap;
+ 	struct gpio_desc *reset_gpio;
+ 	u16 level;
++	u8 boost;
+ };
+ 
+ static const struct regmap_config aw86927_regmap_config = {
+@@ -594,7 +600,7 @@ static int aw86927_haptic_init(struct aw86927_data *haptics)
+ 					 AW86938_PLAYCFG1_REG,
+ 					 AW86938_PLAYCFG1_BST_VOUT_VREFSET_MASK,
+ 					 FIELD_PREP(AW86938_PLAYCFG1_BST_VOUT_VREFSET_MASK,
+-						    AW86938_PLAYCFG1_BST_7000MV));
++						    haptics->boost));
+ 		if (err)
+ 			return err;
+ 		break;
+@@ -762,6 +768,34 @@ static int aw86927_detect(struct aw86927_data *haptics)
+ 	return 0;
+ }
+ 
++/*
++ * The boost voltage drives the LRA. A board names its own in
++ * "awinic,boost-microvolt"; the AW86938 step size is Awinic's.
++ */
++static int aw86927_read_boost(struct aw86927_data *haptics)
++{
++	u32 uv;
++
++	haptics->boost = AW86938_PLAYCFG1_BST_7000MV;
++
++	if (device_property_read_u32(haptics->dev, "awinic,boost-microvolt", &uv))
++		return 0;
++
++	if (haptics->model != AW86938)
++		return dev_err_probe(haptics->dev, -EINVAL,
++				     "awinic,boost-microvolt is only known for the AW86938\n");
++
++	if (uv < AW86938_BST_MIN_UV || uv > AW86938_BST_MAX_UV ||
++	    (uv - AW86938_BST_MIN_UV) % AW86938_BST_STEP_UV)
++		return dev_err_probe(haptics->dev, -EINVAL,
++				     "Unsupported boost voltage %u uV\n", uv);
++
++	haptics->boost = (uv - AW86938_BST_MIN_UV) / AW86938_BST_STEP_UV +
++			 AW86938_BST_MIN_CODE;
++
++	return 0;
++}
++
+ static int aw86927_probe(struct i2c_client *client)
+ {
+ 	struct aw86927_data *haptics;
+@@ -805,6 +839,10 @@ static int aw86927_probe(struct i2c_client *client)
+ 	if (err)
+ 		return dev_err_probe(haptics->dev, err, "Failed to find chip\n");
+ 
++	err = aw86927_read_boost(haptics);
++	if (err)
++		return err;
++
+ 	/* IRQ config */
+ 	err = regmap_write(haptics->regmap, AW86927_SYSCTRL4_REG,
+ 			   FIELD_PREP(AW86927_SYSCTRL4_INT_MODE_MASK,
+-- 
+2.56.0
+

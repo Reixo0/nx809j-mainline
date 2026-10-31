@@ -1,7 +1,7 @@
 From ca36493b87dd8e64a337d44f51a4e40619890692 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 22:48:07 +0200
-Subject: [PATCH 03/40] arm64: dts: qcom: Add Nubia RedMagic 11 Pro
+Subject: [PATCH 003/162] arm64: dts: qcom: Add Nubia RedMagic 11 Pro
 
 Add initial support for the Nubia RedMagic 11 Pro (NX809J), based on the
 Kaanapali QRD board file. Working so far:
@@ -29,7 +29,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  create mode 100644 arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 
 diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
-index 88230c4e0..93980a9d9 100644
+index 88230c4e00ea..93980a9d94c8 100644
 --- a/arch/arm64/boot/dts/qcom/Makefile
 +++ b/arch/arm64/boot/dts/qcom/Makefile
 @@ -49,6 +49,7 @@ dtb-$(CONFIG_ARCH_QCOM)	+= ipq9574-rdp453.dtb
@@ -42,7 +42,7 @@ index 88230c4e0..93980a9d9 100644
  
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 new file mode 100644
-index 000000000..47790c2cf
+index 000000000000..47790c2cf511
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -0,0 +1,894 @@

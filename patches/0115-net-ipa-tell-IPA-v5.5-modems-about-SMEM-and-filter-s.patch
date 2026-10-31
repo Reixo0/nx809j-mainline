@@ -1,7 +1,7 @@
 From e70822328cf99f06b798f6fe1fc9710dbd1467a5 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:31 +0100
-Subject: [PATCH 115/121] net: ipa: tell IPA v5.5 modems about SMEM and filter
+Subject: [PATCH 115/162] net: ipa: tell IPA v5.5 modems about SMEM and filter
  statistics
 
 The downstream driver adds three TLVs to the INIT_DRIVER request on
@@ -26,7 +26,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  5 files changed, 154 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/net/ipa/ipa.h b/drivers/net/ipa/ipa.h
-index 7ef10a4ff..9f7d4d0c7 100644
+index 7ef10a4ff35e..9f7d4d0c7315 100644
 --- a/drivers/net/ipa/ipa.h
 +++ b/drivers/net/ipa/ipa.h
 @@ -51,6 +51,8 @@ struct ipa_smp2p;
@@ -48,7 +48,7 @@ index 7ef10a4ff..9f7d4d0c7 100644
  	dma_addr_t zero_addr;
  	void *zero_virt;
 diff --git a/drivers/net/ipa/ipa_mem.c b/drivers/net/ipa/ipa_mem.c
-index 5430a1ee2..2afd6aa96 100644
+index 5430a1ee292c..2afd6aa9636f 100644
 --- a/drivers/net/ipa/ipa_mem.c
 +++ b/drivers/net/ipa/ipa_mem.c
 @@ -602,6 +602,8 @@ static int ipa_smem_init(struct ipa *ipa, size_t size)
@@ -61,7 +61,7 @@ index 5430a1ee2..2afd6aa96 100644
  	return 0;
  }
 diff --git a/drivers/net/ipa/ipa_qmi.c b/drivers/net/ipa/ipa_qmi.c
-index d771f3a71..ce91e28d9 100644
+index d771f3a71f94..ce91e28d9807 100644
 --- a/drivers/net/ipa/ipa_qmi.c
 +++ b/drivers/net/ipa/ipa_qmi.c
 @@ -269,6 +269,10 @@ static const struct qmi_msg_handler ipa_client_msg_handlers[] = {
@@ -105,7 +105,7 @@ index d771f3a71..ce91e28d9 100644
  }
  
 diff --git a/drivers/net/ipa/ipa_qmi_msg.c b/drivers/net/ipa/ipa_qmi_msg.c
-index 51dc13a57..6c7728ed8 100644
+index 51dc13a577a5..6c7728ed8748 100644
 --- a/drivers/net/ipa/ipa_qmi_msg.c
 +++ b/drivers/net/ipa/ipa_qmi_msg.c
 @@ -250,6 +250,41 @@ const struct qmi_elem_info ipa_mem_range_ei[] = {
@@ -221,7 +221,7 @@ index 51dc13a57..6c7728ed8 100644
  		.data_type	= QMI_EOTI,
  	},
 diff --git a/drivers/net/ipa/ipa_qmi_msg.h b/drivers/net/ipa/ipa_qmi_msg.h
-index 644b8c271..e7d642011 100644
+index 644b8c27108b..e7d642011315 100644
 --- a/drivers/net/ipa/ipa_qmi_msg.h
 +++ b/drivers/net/ipa/ipa_qmi_msg.h
 @@ -27,7 +27,7 @@

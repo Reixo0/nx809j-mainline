@@ -1,7 +1,7 @@
 From 853825661506fa7d69d2211db0bc08ff970636a4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:29:32 +0100
-Subject: [PATCH 65/66] drm/msm/dsi: size the DSC link by the DSI format in
+Subject: [PATCH 065/162] drm/msm/dsi: size the DSC link by the DSI format in
  command mode
 
 dsi_adjust_pclk_for_compression() scales hdisplay by
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 25 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
-index d92659d80..ceba004a2 100644
+index d92659d80f17..ceba004a295c 100644
 --- a/drivers/gpu/drm/msm/dsi/dsi_host.c
 +++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
 @@ -585,10 +585,17 @@ void dsi_link_clk_disable_v2(struct msm_dsi_host *msm_host)

@@ -1,0 +1,101 @@
+From c4b48d5b75de8154dbf86f797bd83f71cf4c659c Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 17:08:40 +0100
+Subject: [PATCH 154/162] media: qcom: camss: pass C-PHY links to the PHY
+
+For a C-PHY endpoint the CSIPHY now asks for the C-PHY mode and
+hands the PHY the symbol rate, twice the link frequency, and the trio
+count. CSID 1080 marks the receiver as C-PHY in RX_CFG0 bit 24.
+
+(cherry picked from commit 62cfe7202020ccd4ed08af23a255d8c14d804a31)
+---
+ .../platform/qcom/camss/camss-csid-1080.c     |  2 ++
+ .../media/platform/qcom/camss/camss-csiphy.c  | 32 +++++++++++--------
+ 2 files changed, 20 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/camss/camss-csid-1080.c b/drivers/media/platform/qcom/camss/camss-csid-1080.c
+index 0b87ad0c1bd7..8ff3ad8557fd 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid-1080.c
++++ b/drivers/media/platform/qcom/camss/camss-csid-1080.c
+@@ -64,6 +64,7 @@
+ #define		CSI2_RX_CFG0_NUM_ACTIVE_LANES		0
+ #define		CSI2_RX_CFG0_DL0_INPUT_SEL		4
+ #define		CSI2_RX_CFG0_PHY_NUM_SEL		20
++#define		CSI2_RX_CFG0_PHY_TYPE_SEL		24
+ #define		CSI2_RX_CFG0_TPG_MUX_EN			BIT(27)
+ #define		CSI2_RX_CFG0_TPG_MUX_SEL		GENMASK(29, 28)
+ #define		CSI2_RX_CFG0_PHY_SEL_BASE_IDX		1
+@@ -159,6 +160,7 @@ static void __csid_configure_rx(struct csid_device *csid,
+ 
+ 	val = (lane_cnt - 1) << CSI2_RX_CFG0_NUM_ACTIVE_LANES;
+ 	val |= phy->lane_assign << CSI2_RX_CFG0_DL0_INPUT_SEL;
++	val |= phy->phy_sel << CSI2_RX_CFG0_PHY_TYPE_SEL;
+ 
+ 	if (camss->tpg && csid->tpg_linked &&
+ 	    camss->tpg[phy->csiphy_id].testgen.mode != TPG_PAYLOAD_MODE_DISABLED) {
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index 56206ef8de80..7910465579c2 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -329,16 +329,14 @@ static int csiphy_stream_on(struct csiphy_device *csiphy)
+ 	u8 bpp = csiphy_get_bpp(csiphy->res->formats->formats, csiphy->res->formats->nformats,
+ 				csiphy->fmt[MSM_CSIPHY_PAD_SINK].code);
+ 	struct csiphy_lanes_cfg *lncfg = &csiphy->cfg.csi2->lane_cfg;
+-	struct phy_configure_opts_mipi_dphy *dphy_cfg;
+-	union phy_configure_opts dphy_opts = { 0 };
++	const bool cphy = lncfg->phy_cfg == V4L2_MBUS_CSI2_CPHY;
++	union phy_configure_opts opts = { 0 };
+ 	struct device *dev = csiphy->camss->dev;
+ 	u8 num_lanes = lncfg->num_data;
+ 	s64 link_freq;
+ 	int ret;
+ 
+-	dphy_cfg = &dphy_opts.mipi_dphy;
+-
+-	link_freq = camss_get_link_freq(&csiphy->subdev.entity, bpp, num_lanes);
++	link_freq = camss_get_link_freq(&csiphy->subdev.entity, bpp, num_lanes, cphy);
+ 
+ 	if (link_freq <= 0) {
+ 		dev_err(dev,
+@@ -346,23 +344,29 @@ static int csiphy_stream_on(struct csiphy_device *csiphy)
+ 		return -EINVAL;
+ 	}
+ 
+-	ret = phy_mipi_dphy_get_default_config_for_hsclk(link_freq, num_lanes,
+-							 dphy_cfg);
+-	if (ret < 0) {
+-		dev_err(dev, "Invalid config for link frequency %lld\n",
+-			link_freq);
+-		return ret;
++	if (cphy) {
++		/* The C-PHY link frequency is half the symbol rate */
++		opts.mipi_cphy.symbol_rate = link_freq * 2;
++		opts.mipi_cphy.trios = num_lanes;
++	} else {
++		ret = phy_mipi_dphy_get_default_config_for_hsclk(link_freq, num_lanes,
++								 &opts.mipi_dphy);
++		if (ret < 0) {
++			dev_err(dev, "Invalid config for link frequency %lld\n",
++				link_freq);
++			return ret;
++		}
+ 	}
+ 
+-	ret = phy_set_mode(csiphy->phy, PHY_MODE_MIPI_DPHY);
++	ret = phy_set_mode(csiphy->phy, cphy ? PHY_MODE_MIPI_CPHY : PHY_MODE_MIPI_DPHY);
+ 	if (ret) {
+ 		dev_err(dev, "Failed to set phy mode\n");
+ 		return ret;
+ 	}
+ 
+-	ret = phy_configure(csiphy->phy, &dphy_opts);
++	ret = phy_configure(csiphy->phy, &opts);
+ 	if (ret) {
+-		dev_err(dev, "failed to configure MIPI D-PHY\n");
++		dev_err(dev, "failed to configure MIPI %s\n", cphy ? "C-PHY" : "D-PHY");
+ 		goto error;
+ 	}
+ 
+-- 
+2.56.0
+

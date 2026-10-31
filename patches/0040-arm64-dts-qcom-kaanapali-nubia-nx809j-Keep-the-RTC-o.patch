@@ -1,8 +1,8 @@
 From b457c69d31957407619b3d5ea7bf419f64c0c2c0 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 21:24:40 +0200
-Subject: [PATCH 40/40] arm64: dts: qcom: kaanapali-nubia-nx809j: Keep the RTC
- offset in SDAM2
+Subject: [PATCH 040/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Keep the
+ RTC offset in SDAM2
 
 The PMIC RTC counter belongs to the secure world and refuses writes, so
 the clock came up at 1970 (the bare counter) on every boot. rtc-pm8xxx
@@ -22,7 +22,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 19 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index 18565205c..02add4e1b 100644
+index 18565205c1c8..02add4e1bd6b 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -974,6 +974,25 @@ bt_default: bt-default-state {

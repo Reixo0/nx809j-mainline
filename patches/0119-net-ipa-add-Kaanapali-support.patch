@@ -1,7 +1,7 @@
 From 13dafd7a63e8b12a3d22ac28d40d2644544af9f0 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:34 +0100
-Subject: [PATCH 119/121] net: ipa: add Kaanapali support
+Subject: [PATCH 119/162] net: ipa: add Kaanapali support
 
 Kaanapali has IPA v5.5 like SM8550, but its configuration differs, as
 seen in the downstream driver:
@@ -25,7 +25,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 305 insertions(+)
 
 diff --git a/drivers/net/ipa/data/ipa_data-v5.5.c b/drivers/net/ipa/data/ipa_data-v5.5.c
-index 741ae21d9..55bdca299 100644
+index 741ae21d9d78..55bdca2992b0 100644
 --- a/drivers/net/ipa/data/ipa_data-v5.5.c
 +++ b/drivers/net/ipa/data/ipa_data-v5.5.c
 @@ -61,6 +61,20 @@ static const struct ipa_qsb_data ipa_qsb_data[] = {
@@ -361,7 +361,7 @@ index 741ae21d9..55bdca299 100644
 +	.power_data		= &ipa_power_data,
 +};
 diff --git a/drivers/net/ipa/ipa_data.h b/drivers/net/ipa/ipa_data.h
-index 231d53291..9e08f155e 100644
+index 231d532917c9..9e08f155ebde 100644
 --- a/drivers/net/ipa/ipa_data.h
 +++ b/drivers/net/ipa/ipa_data.h
 @@ -257,5 +257,6 @@ extern const struct ipa_data ipa_data_v4_11;
@@ -372,7 +372,7 @@ index 231d53291..9e08f155e 100644
  
  #endif /* _IPA_DATA_H_ */
 diff --git a/drivers/net/ipa/ipa_main.c b/drivers/net/ipa/ipa_main.c
-index 2b47ed5bd..e7897c95a 100644
+index 2b47ed5bddd0..e7897c95a8d2 100644
 --- a/drivers/net/ipa/ipa_main.c
 +++ b/drivers/net/ipa/ipa_main.c
 @@ -672,6 +672,10 @@ static const struct of_device_id ipa_match[] = {

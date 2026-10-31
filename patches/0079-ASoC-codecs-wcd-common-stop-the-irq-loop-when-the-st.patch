@@ -1,7 +1,7 @@
 From 59d8596f215282d58644ca92ff49c8fa63172110 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 3 Oct 2026 11:44:32 +0300
-Subject: [PATCH 79/88] ASoC: codecs: wcd-common: stop the irq loop when the
+Subject: [PATCH 079/162] ASoC: codecs: wcd-common: stop the irq loop when the
  status read fails
 
 wcd_interrupt_callback() keeps dispatching the nested interrupt while
@@ -22,7 +22,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 11 insertions(+), 5 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd-common.c b/sound/soc/codecs/wcd-common.c
-index 9016e9745..1fd899bde 100644
+index 9016e974582f..1fd899bde439 100644
 --- a/sound/soc/codecs/wcd-common.c
 +++ b/sound/soc/codecs/wcd-common.c
 @@ -126,14 +126,20 @@ int wcd_interrupt_callback(struct sdw_slave *slave, struct irq_domain *slave_irq

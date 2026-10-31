@@ -1,7 +1,7 @@
 From 47641bbbc06d737e9fd2b6211c4ee769b73f8ec8 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Mon, 28 Sep 2026 16:43:27 +0300
-Subject: [PATCH 47/59] soc: qcom: pmic_glink: attach a channel that comes up
+Subject: [PATCH 047/162] soc: qcom: pmic_glink: attach a channel that comes up
  before the platform device
 
 On Kaanapali the pmic_glink service runs on the SoCCP, which the boot chain
@@ -29,7 +29,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 33 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/soc/qcom/pmic_glink.c b/drivers/soc/qcom/pmic_glink.c
-index 84fd0c82c..cf6a8ffbc 100644
+index 84fd0c82c0c4..cf6a8ffbc219 100644
 --- a/drivers/soc/qcom/pmic_glink.c
 +++ b/drivers/soc/qcom/pmic_glink.c
 @@ -53,6 +53,8 @@ struct pmic_glink {

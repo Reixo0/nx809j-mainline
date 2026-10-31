@@ -1,0 +1,68 @@
+From d2de5752e2209f272e9f128d8145d9df254d6f46 Mon Sep 17 00:00:00 2001
+From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Date: Sat, 24 Oct 2026 20:17:22 -0700
+Subject: [PATCH 132/162] phy: qcom-mipi-csi2: Add Kaanapali support
+
+Add the Kaanapali 3nm configuration for the standalone CSI2 DPHY
+driver, including the Kaanapali common status offset and power domain.
+
+Reviewed-by: Bryan O'Donoghue <bod@kernel.org>
+Signed-off-by: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Link: https://patchwork.kernel.org/series/1192881/ (v22)
+(cherry picked from commit c19f8bea857b65e992eb80cee6f0cd82d61b27e2)
+---
+ .../phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c   | 16 ++++++++++++++++
+ drivers/phy/qualcomm/phy-qcom-mipi-csi2-core.c   |  1 +
+ drivers/phy/qualcomm/phy-qcom-mipi-csi2.h        |  1 +
+ 3 files changed, 18 insertions(+)
+
+diff --git a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
+index 8cd331cfb4b3..658a39463104 100644
+--- a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
++++ b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
+@@ -389,3 +389,19 @@ const struct mipi_csi2phy_soc_cfg mipi_csi2_dphy_4nm_x1e = {
+ 	.genpds = x1e_genpds,
+ 	.num_genpds = ARRAY_SIZE(x1e_genpds),
+ };
++
++const struct mipi_csi2phy_soc_cfg mipi_csi2_dphy_3nm_kaanapali = {
++	.ops = &phy_qcom_mipi_csi2_ops_3ph_1_0,
++	.reg_info = {
++		.init_seq = lane_regs_x1e80100,
++		.lane_array_size = ARRAY_SIZE(lane_regs_x1e80100),
++		.common_regs_offset = 0x1000,
++		.common_status_offset = 0x138,
++	},
++	.supply_names = (const char **)x1e_supplies,
++	.num_supplies = ARRAY_SIZE(x1e_supplies),
++	.clk_names = (const char **)x1e_clks,
++	.num_clk = ARRAY_SIZE(x1e_clks),
++	.genpds = x1e_genpds,
++	.num_genpds = ARRAY_SIZE(x1e_genpds),
++};
+diff --git a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-core.c b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-core.c
+index c0a4fa20eaf0..aff9e66f0352 100644
+--- a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-core.c
++++ b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-core.c
+@@ -444,6 +444,7 @@ static int phy_qcom_mipi_csi2_probe(struct platform_device *pdev)
+ 
+ static const struct of_device_id phy_qcom_mipi_csi2_of_match_table[] = {
+ 	{ .compatible	= "qcom,x1e80100-csi2-phy", .data = &mipi_csi2_dphy_4nm_x1e },
++	{ .compatible	= "qcom,kaanapali-csi2-phy", .data = &mipi_csi2_dphy_3nm_kaanapali },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, phy_qcom_mipi_csi2_of_match_table);
+diff --git a/drivers/phy/qualcomm/phy-qcom-mipi-csi2.h b/drivers/phy/qualcomm/phy-qcom-mipi-csi2.h
+index d6366f809e51..2355a1db9b94 100644
+--- a/drivers/phy/qualcomm/phy-qcom-mipi-csi2.h
++++ b/drivers/phy/qualcomm/phy-qcom-mipi-csi2.h
+@@ -94,5 +94,6 @@ struct mipi_csi2phy_device {
+ };
+ 
+ extern const struct mipi_csi2phy_soc_cfg mipi_csi2_dphy_4nm_x1e;
++extern const struct mipi_csi2phy_soc_cfg mipi_csi2_dphy_3nm_kaanapali;
+ 
+ #endif /* __PHY_QCOM_MIPI_CSI2_H__ */
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 From cb52a126226de930a051e6277161e5ac08ea88c2 Mon Sep 17 00:00:00 2001
 From: map220v <map220v300@gmail.com>
 Date: Thu, 11 Jun 2026 07:56:25 +0000
-Subject: [PATCH 28/40] SM8850: Fix GMU address
+Subject: [PATCH 028/162] SM8850: Fix GMU address
 
 (cherry picked from commit 50a7944c836935cc951c1672bdd52301acbbe5f3)
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH 28/40] SM8850: Fix GMU address
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
-index e48a179d0..92c80e1e8 100644
+index e48a179d0722..92c80e1e8503 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 +++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 @@ -2859,10 +2859,10 @@ opp-1300000000 {

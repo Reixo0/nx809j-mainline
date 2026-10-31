@@ -1,7 +1,7 @@
 From dd4a0b4396c4365bfac20d5f19c4ed97cf15c73a Mon Sep 17 00:00:00 2001
 From: Krishna Kurapati <krishna.kurapati@oss.qualcomm.com>
 Date: Thu, 17 Sep 2026 15:10:09 +0530
-Subject: [PATCH 53/59] phy: qualcomm: phy-qcom-eusb2-repeater: Fix SMB Power
+Subject: [PATCH 053/162] phy: qualcomm: phy-qcom-eusb2-repeater: Fix SMB Power
  leakage issue
 
 On Glymur, it is observed that although the exit call is done, there is a
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 2 insertions(+)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-eusb2-repeater.c b/drivers/phy/qualcomm/phy-qcom-eusb2-repeater.c
-index d056f0f8d..724b64d5f 100644
+index d056f0f8dd93..724b64d5f192 100644
 --- a/drivers/phy/qualcomm/phy-qcom-eusb2-repeater.c
 +++ b/drivers/phy/qualcomm/phy-qcom-eusb2-repeater.c
 @@ -230,7 +230,9 @@ static int eusb2_repeater_set_mode(struct phy *phy,

@@ -1,7 +1,7 @@
 From 248acf093c23fff38b4a4d96e42895e00d25393f Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:48:16 +0200
-Subject: [PATCH 11/40] arm64: dts: qcom: kaanapali-nubia-nx809j: Add
+Subject: [PATCH 011/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Add
  touchscreen
 
 The Synaptics S3910 TouchComm controller sits on SPI19, CS 0, at 10 MHz,
@@ -14,7 +14,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 17 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
-index 1de1b4bda..25525c57d 100644
+index 1de1b4bda14c..25525c57d4b3 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 +++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
 @@ -868,6 +868,23 @@ &remoteproc_soccp {

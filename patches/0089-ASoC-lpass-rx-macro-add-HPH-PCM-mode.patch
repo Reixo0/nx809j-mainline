@@ -1,7 +1,7 @@
 From 6d3590b7789707567ed7b7201599f9e6c09ce8d3 Mon Sep 17 00:00:00 2001
 From: KONKR Pocket FIT Elite port <unknown-email@domain.tld>
 Date: Sat, 29 Aug 2026 11:27:39 +0200
-Subject: [PATCH 089/102] ASoC: lpass-rx-macro: add HPH PCM mode
+Subject: [PATCH 089/162] ASoC: lpass-rx-macro: add HPH PCM mode
 
 > X-Git-Archeology: > recovered message: > Bring over the patches ROCKNIX still carries on top of the set imported
 > X-Git-Archeology: > recovered message: > in the bringup: the integrated-jack USBSS routing with the HPH PCM HiFi
@@ -21,7 +21,7 @@ Subject: [PATCH 089/102] ASoC: lpass-rx-macro: add HPH PCM mode
  1 file changed, 62 insertions(+), 9 deletions(-)
 
 diff --git a/sound/soc/codecs/lpass-rx-macro.c b/sound/soc/codecs/lpass-rx-macro.c
-index c41eb8de6..18981e04d 100644
+index c41eb8de6160..18981e04d042 100644
 --- a/sound/soc/codecs/lpass-rx-macro.c
 +++ b/sound/soc/codecs/lpass-rx-macro.c
 @@ -658,6 +658,8 @@ struct rx_macro {

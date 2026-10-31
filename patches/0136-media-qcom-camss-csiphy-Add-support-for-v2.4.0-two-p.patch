@@ -1,0 +1,91 @@
+From 3e75ccb118b2decf4b4422dd8b6878cf569095de Mon Sep 17 00:00:00 2001
+From: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Date: Sat, 24 Oct 2026 20:17:26 -0700
+Subject: [PATCH 136/162] media: qcom: camss: csiphy: Add support for v2.4.0
+ two-phase CSIPHY
+
+Add support for the v2.4.0 two-phase CSIPHY found on Kaanapali, where
+the PHY is driven by the standalone phy-qcom-mipi-csi2 DPHY driver
+rather than by CAMSS. Add the mipi_csi2_dphy_3nm_kaanapali configuration,
+which reuses the x1e80100 lane sequence, clocks and supplies but selects
+the v2.4.0 common status offset, adds Kaanapali power domain and register
+the "qcom,kaanapali-csi2-phy" compatible.
+
+Reviewed-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hangxiang Ma <hangxiang.ma@oss.qualcomm.com>
+Link: https://patchwork.kernel.org/series/1192881/ (v22)
+(cherry picked from commit 207f9b4101f955ee5dc9d4c19c578b33202c32e9)
+---
+ drivers/media/platform/qcom/camss/camss.c | 47 +++++++++++++++++++++++
+ 1 file changed, 47 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index 39b43011e289..106114dcec11 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -46,6 +46,51 @@
+ 
+ static const struct parent_dev_ops vfe_parent_dev_ops;
+ 
++static const struct camss_subdev_resources csiphy_res_kaanapali[] = {
++	/* CSIPHY0 */
++	{
++		.csiphy = {
++			.id = 0,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++	/* CSIPHY1 */
++	{
++		.csiphy = {
++			.id = 1,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++	/* CSIPHY2 */
++	{
++		.csiphy = {
++			.id = 2,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++	/* CSIPHY3 */
++	{
++		.csiphy = {
++			.id = 3,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++	/* CSIPHY4 */
++	{
++		.csiphy = {
++			.id = 4,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++	/* CSIPHY5 */
++	{
++		.csiphy = {
++			.id = 5,
++			.formats = &csiphy_formats_sdm845
++		},
++	},
++};
++
+ static const struct resources_icc icc_res_kaanapali[] = {
+ 	{
+ 		.name = "ahb",
+@@ -5621,8 +5666,10 @@ static void camss_remove(struct platform_device *pdev)
+ static const struct camss_resources kaanapali_resources = {
+ 	.version = CAMSS_KAANAPALI,
+ 	.pd_name = "top",
++	.csiphy_res = csiphy_res_kaanapali,
+ 	.icc_res = icc_res_kaanapali,
+ 	.icc_path_num = ARRAY_SIZE(icc_res_kaanapali),
++	.csiphy_num = ARRAY_SIZE(csiphy_res_kaanapali),
+ };
+ 
+ static const struct camss_resources msm8916_resources = {
+-- 
+2.56.0
+

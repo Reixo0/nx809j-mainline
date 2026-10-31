@@ -1,7 +1,7 @@
 From ff5aa8497a8b24a8d2002b8384d9e50ef0c88e58 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Tue, 27 Oct 2026 17:41:06 +0100
-Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: reserve the
+Subject: [PATCH 124/162] arm64: dts: qcom: kaanapali-nubia-nx809j: reserve the
  firmware regions
 
 Booted through Mu-Silicium, the UEFI memory map lists nine regions of

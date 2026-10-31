@@ -1,7 +1,7 @@
 From 796085c81ce74d12ba6a10cc90996af9732d6291 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 100/102] ASoC: codecs: wcd939x: keep the codec device resumed
+Subject: [PATCH 100/162] ASoC: codecs: wcd939x: keep the codec device resumed
  while a jack is set
 
 Holding only the SoundWire RX/TX devices is not enough: the codec platform
@@ -12,7 +12,7 @@ it up as well for as long as a jack is registered.
  1 file changed, 2 insertions(+)
 
 diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
-index a898879e3..eff33e775 100644
+index a898879e3d24..eff33e775ade 100644
 --- a/sound/soc/codecs/wcd939x.c
 +++ b/sound/soc/codecs/wcd939x.c
 @@ -3443,6 +3443,7 @@ static int wcd939x_codec_set_jack(struct snd_soc_component *comp,

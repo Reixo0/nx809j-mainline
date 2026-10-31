@@ -1,7 +1,8 @@
 From 856de1c198ed7ca5e3643db87ea26c1a460bde40 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:01:18 +0200
-Subject: [PATCH 17/40] wifi: ath12k: Add support for the peach (WCN7880) chip
+Subject: [PATCH 017/162] wifi: ath12k: Add support for the peach (WCN7880)
+ chip
 
 Kaanapali phones such as the Nubia RedMagic 11 Pro use Qualcomm's
 "peach" Wi-Fi 7 chip (PCI 17cb:110e, firmware variant WCN7880, family
@@ -46,7 +47,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  9 files changed, 422 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
-index 25987bc58..567a489fb 100644
+index 25987bc58556..567a489fb9df 100644
 --- a/drivers/net/wireless/ath/ath12k/core.c
 +++ b/drivers/net/wireless/ath/ath12k/core.c
 @@ -1713,6 +1713,21 @@ static void ath12k_core_restart(struct work_struct *work)
@@ -80,7 +81,7 @@ index 25987bc58..567a489fb 100644
  
  	timer_setup(&ab->rx_replenish_retry, ath12k_ce_rx_replenish_retry, 0);
 diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
-index 99d71dab7..a40bd95e0 100644
+index 99d71dab7c04..a40bd95e0514 100644
 --- a/drivers/net/wireless/ath/ath12k/core.h
 +++ b/drivers/net/wireless/ath/ath12k/core.h
 @@ -158,6 +158,7 @@ enum ath12k_hw_rev {
@@ -100,7 +101,7 @@ index 99d71dab7..a40bd95e0 100644
  	struct ath12k_htc htc;
  
 diff --git a/drivers/net/wireless/ath/ath12k/hw.h b/drivers/net/wireless/ath/ath12k/hw.h
-index 52558dd12..0468dfb06 100644
+index 52558dd126a0..0468dfb0688b 100644
 --- a/drivers/net/wireless/ath/ath12k/hw.h
 +++ b/drivers/net/wireless/ath/ath12k/hw.h
 @@ -195,6 +195,8 @@ struct ath12k_hw_params {
@@ -113,7 +114,7 @@ index 52558dd12..0468dfb06 100644
  	bool supports_cong_ctrl_max_msdus:1;
  
 diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
-index 12bbb7557..e022b6360 100644
+index 12bbb75570f1..e022b6360115 100644
 --- a/drivers/net/wireless/ath/ath12k/pci.c
 +++ b/drivers/net/wireless/ath/ath12k/pci.c
 @@ -1480,7 +1480,9 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
@@ -128,7 +129,7 @@ index 12bbb7557..e022b6360 100644
  
  	/* restore aspm in case firmware bootup fails */
 diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
-index 817bd8206..4c67d86ee 100644
+index 817bd820623d..4c67d86ee243 100644
 --- a/drivers/net/wireless/ath/ath12k/qmi.c
 +++ b/drivers/net/wireless/ath/ath12k/qmi.c
 @@ -2058,6 +2058,122 @@ static const struct qmi_elem_info qmi_wlanfw_fw_ready_ind_msg_v01_ei[] = {
@@ -423,7 +424,7 @@ index 817bd8206..4c67d86ee 100644
  			ath12k_warn(ab, "invalid event type: %d\n", event->type);
  			break;
 diff --git a/drivers/net/wireless/ath/ath12k/qmi.h b/drivers/net/wireless/ath/ath12k/qmi.h
-index 1b1c88906..5d3823500 100644
+index 1b1c88906f1e..5d3823500eeb 100644
 --- a/drivers/net/wireless/ath/ath12k/qmi.h
 +++ b/drivers/net/wireless/ath/ath12k/qmi.h
 @@ -30,6 +30,7 @@
@@ -499,7 +500,7 @@ index 1b1c88906..5d3823500 100644
  
  static inline void ath12k_qmi_set_event_block(struct ath12k_qmi *qmi, bool block)
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal.c b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
-index a0a1902fb..976d56706 100644
+index a0a1902fb491..976d56706e63 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/hal.c
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
 @@ -57,6 +57,13 @@ static const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
@@ -517,7 +518,7 @@ index a0a1902fb..976d56706 100644
  
  int ath12k_wifi7_hal_init(struct ath12k_base *ab)
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hw.c b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
-index b1c17cc19..43e8a8396 100644
+index b1c17cc197df..43e8a8396c61 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/hw.c
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/hw.c
 @@ -909,6 +909,109 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
@@ -631,7 +632,7 @@ index b1c17cc19..43e8a8396 100644
  
  /* Note: called under rcu_read_lock() */
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/pci.c b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
-index 6c96b52de..739c5757d 100644
+index 6c96b52dec13..739c5757d63e 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/pci.c
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
 @@ -20,6 +20,7 @@

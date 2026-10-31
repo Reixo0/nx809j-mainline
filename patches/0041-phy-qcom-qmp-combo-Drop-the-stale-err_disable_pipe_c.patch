@@ -1,7 +1,7 @@
 From b6c62c1e86cbcdf45a6e3e569cf57c5e49da4703 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 00:00:27 -0700
-Subject: [PATCH 41/59] phy: qcom: qmp-combo: Drop the stale
+Subject: [PATCH 041/162] phy: qcom: qmp-combo: Drop the stale
  err_disable_pipe_clk teardown
 
 pipe_clk is no longer enabled in qmp_combo_usb_power_on(), so its error
@@ -15,7 +15,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 1 insertion(+), 6 deletions(-)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
-index 187f0cd11..b2e870414 100644
+index 187f0cd11f6c..b2e87041462b 100644
 --- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 +++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 @@ -4407,15 +4407,10 @@ static int qmp_combo_usb_power_on(struct phy *phy)

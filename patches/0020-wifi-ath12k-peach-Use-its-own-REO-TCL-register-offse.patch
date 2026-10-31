@@ -1,7 +1,7 @@
 From 519bcec46d92c80a8fd8fae1cec3784304514229 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:30:52 +0200
-Subject: [PATCH 20/40] wifi: ath12k: peach: Use its own REO/TCL register
+Subject: [PATCH 020/162] wifi: ath12k: peach: Use its own REO/TCL register
  offsets
 
 On peach the REO R0 ring configuration registers sit 0x1c above
@@ -21,7 +21,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 96 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal.c b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
-index 976d56706..05c8d9f4e 100644
+index 976d56706e63..05c8d9f4e935 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/hal.c
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/hal.c
 @@ -62,7 +62,7 @@ static const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
@@ -34,7 +34,7 @@ index 976d56706..05c8d9f4e 100644
  };
  
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.c b/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.c
-index 61be8443e..1962c0b4d 100644
+index 61be8443e46e..1962c0b4d527 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.c
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.c
 @@ -260,6 +260,100 @@ const struct ath12k_hw_regs wcn7850_regs = {
@@ -139,7 +139,7 @@ index 61be8443e..1962c0b4d 100644
  bool ath12k_hal_rx_desc_get_first_msdu_wcn7850(struct hal_rx_desc *desc)
  {
 diff --git a/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.h b/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.h
-index a56ca9fd3..fcf758fe1 100644
+index a56ca9fd3de4..fcf758fe1e9f 100644
 --- a/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.h
 +++ b/drivers/net/wireless/ath/ath12k/wifi7/hal_wcn7850.h
 @@ -13,6 +13,7 @@

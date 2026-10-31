@@ -1,7 +1,7 @@
 From 117c421e0bc86886b2fa0f4e808b713e2f560914 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 18:45:48 +0100
-Subject: [PATCH 097/102] arm64: dts: qcom: kaanapali: describe RX SoundWire
+Subject: [PATCH 097/162] arm64: dts: qcom: kaanapali: describe RX SoundWire
  port 9
 
 Port 9 of swr1 carries the WCD9395 HIFI_PCM headphone stream. Describe
@@ -14,7 +14,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 9 insertions(+), 9 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
-index ac54c6259..c95792173 100644
+index ac54c625926a..c95792173a7f 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 +++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 @@ -3211,15 +3211,15 @@ swr1: soundwire@6ad0000 {

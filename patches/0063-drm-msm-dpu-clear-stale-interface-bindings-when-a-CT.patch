@@ -1,8 +1,8 @@
 From a51b7e5799d2cc53c19e062bc50113337bfee6a4 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 01:17:35 -0700
-Subject: [PATCH 63/66] drm/msm/dpu: clear stale interface bindings when a CTL
- is reused
+Subject: [PATCH 063/162] drm/msm/dpu: clear stale interface bindings when a
+ CTL is reused
 
 A CTL moved between encoders kept its previous interface active, and
 later commits waited to flush it.
@@ -15,7 +15,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  3 files changed, 24 insertions(+)
 
 diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
-index 0a6be69a3..aaff4e9c8 100644
+index 0a6be69a3e83..aaff4e9c876f 100644
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
 @@ -1358,6 +1358,10 @@ static void dpu_encoder_virt_atomic_enable(struct drm_encoder *drm_enc,
@@ -30,7 +30,7 @@ index 0a6be69a3..aaff4e9c8 100644
  	if (dpu_enc->cur_slave && dpu_enc->cur_slave->ops.enable)
  		dpu_enc->cur_slave->ops.enable(dpu_enc->cur_slave);
 diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
-index e8729fe1c..4d9f9dcaa 100644
+index e8729fe1cfef..4d9f9dcaa15a 100644
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c
 @@ -657,6 +657,19 @@ static void dpu_hw_ctl_intf_cfg(struct dpu_hw_ctl *ctx,
@@ -62,7 +62,7 @@ index e8729fe1c..4d9f9dcaa 100644
  			dpu_hw_ctl_update_pending_flush_intf_v1;
  
 diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
-index e535bf013..09c80f372 100644
+index e535bf013825..09c80f3727db 100644
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.h
 @@ -240,6 +240,12 @@ struct dpu_hw_ctl_ops {

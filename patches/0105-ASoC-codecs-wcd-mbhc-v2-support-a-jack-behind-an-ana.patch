@@ -1,7 +1,7 @@
 From f0c920dda635991ea73aad53efb3d40100463992 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 20:58:45 +0100
-Subject: [PATCH 105/107] ASoC: codecs: wcd-mbhc-v2: support a jack behind an
+Subject: [PATCH 105/162] ASoC: codecs: wcd-mbhc-v2: support a jack behind an
  analog switch
 
 With a jack's mic and ground behind an analog switch (hsj_switch), MBHC
@@ -21,7 +21,7 @@ picks the wiring itself:
  2 files changed, 87 insertions(+), 1 deletion(-)
 
 diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
-index 3557a18e9..a3e1bf7c4 100644
+index 3557a18e9125..a3e1bf7c4424 100644
 --- a/sound/soc/codecs/wcd-mbhc-v2.c
 +++ b/sound/soc/codecs/wcd-mbhc-v2.c
 @@ -13,6 +13,7 @@
@@ -171,7 +171,7 @@ index 3557a18e9..a3e1bf7c4 100644
  		   struct snd_soc_jack *jack)
  {
 diff --git a/sound/soc/codecs/wcd-mbhc-v2.h b/sound/soc/codecs/wcd-mbhc-v2.h
-index a5d52b964..633cae272 100644
+index a5d52b9643f5..633cae272bd5 100644
 --- a/sound/soc/codecs/wcd-mbhc-v2.h
 +++ b/sound/soc/codecs/wcd-mbhc-v2.h
 @@ -195,6 +195,10 @@ struct wcd_mbhc_config {

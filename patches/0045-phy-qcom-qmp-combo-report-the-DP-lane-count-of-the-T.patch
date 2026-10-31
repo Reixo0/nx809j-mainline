@@ -1,7 +1,7 @@
 From 0eced2a7b670842c82fbec9d3847e7d3beec994d Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Mon, 19 Oct 2026 06:38:44 +0300
-Subject: [PATCH 45/59] phy: qcom: qmp-combo: report the DP lane count of the
+Subject: [PATCH 045/162] phy: qcom: qmp-combo: report the DP lane count of the
  Type-C mode
 
 The Type-C mux decides how many lanes DisplayPort gets: all four in
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 35 insertions(+)
 
 diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
-index b4365193c..844da2b71 100644
+index b4365193c3d1..844da2b7119a 100644
 --- a/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 +++ b/drivers/phy/qualcomm/phy-qcom-qmp-combo.c
 @@ -4294,6 +4294,35 @@ static int qmp_combo_com_exit(struct qmp_combo *qmp, bool force)

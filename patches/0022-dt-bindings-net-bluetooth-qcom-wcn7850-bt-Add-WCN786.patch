@@ -1,7 +1,7 @@
 From 5d148881a85f4849963b8b56326469398963bd04 Mon Sep 17 00:00:00 2001
 From: Victor Fuentes <victor@vlinkz.dev>
 Date: Wed, 29 Jul 2026 01:15:09 -0700
-Subject: [PATCH 22/40] dt-bindings: net: bluetooth: qcom,wcn7850-bt: Add
+Subject: [PATCH 022/162] dt-bindings: net: bluetooth: qcom,wcn7850-bt: Add
  WCN7860
 
 It has the same supplies as WCN7850.
@@ -12,7 +12,7 @@ Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
  1 file changed, 1 insertion(+)
 
 diff --git a/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml b/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml
-index 8108ef83e..9d0fe088b 100644
+index 8108ef83e99b..9d0fe088ba7d 100644
 --- a/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml
 +++ b/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml
 @@ -15,6 +15,7 @@ properties:

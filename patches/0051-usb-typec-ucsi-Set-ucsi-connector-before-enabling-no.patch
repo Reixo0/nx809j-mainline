@@ -1,7 +1,7 @@
 From 12ae6257b6d553ef20b9f62009504c05a5c9e5fd Mon Sep 17 00:00:00 2001
 From: Uttkarsh Aggarwal <uttkarsh.aggarwal@oss.qualcomm.com>
 Date: Tue, 29 Sep 2026 14:59:39 +0530
-Subject: [PATCH 51/59] usb: typec: ucsi: Set ucsi->connector before enabling
+Subject: [PATCH 051/162] usb: typec: ucsi: Set ucsi->connector before enabling
  notifications
 
 In ucsi_init(), ucsi->connector is assigned only after the
@@ -38,7 +38,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 9 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/usb/typec/ucsi/ucsi.c b/drivers/usb/typec/ucsi/ucsi.c
-index 244792e80..bdad3b890 100644
+index 244792e809a9..bdad3b89089d 100644
 --- a/drivers/usb/typec/ucsi/ucsi.c
 +++ b/drivers/usb/typec/ucsi/ucsi.c
 @@ -2232,6 +2232,14 @@ static int ucsi_init(struct ucsi *ucsi)

@@ -1,0 +1,49 @@
+From 66b13558ebe0d64de3cce641d138e76ef76aabdb Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 27 Oct 2026 20:49:37 +0100
+Subject: [PATCH 125/162] arm64: dts: qcom: kaanapali-nubia-nx809j: Pull up the
+ touchscreen pins
+
+The touchscreen's interrupt and reset lines had no pin state, so the
+interrupt kept the TLMM default pull-down. Without the stock pull-up the
+level-low interrupt stays asserted, the driver reads the controller
+while it has nothing to send and gets 0xff and 0x00 instead of a
+message, and the probe fails. Use the stock ts_active state: GPIO 66 and
+158 as GPIOs, 8 mA, pulled up.
+
+(cherry picked from commit ce183f724f0a5070b6a5adacdae959499af136a0)
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index abbd819201d6..1832179bfebe 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1372,6 +1372,9 @@ touchscreen@0 {
+ 
+ 		vdd-supply = <&vreg_l4b_1p8>;
+ 		avdd-supply = <&vreg_l14b_3p2>;
++
++		pinctrl-0 = <&ts_default>;
++		pinctrl-names = "default";
+ 	};
+ };
+ 
+@@ -1529,6 +1532,13 @@ sw_ctrl_default: sw-ctrl-default-state {
+ 		bias-pull-down;
+ 	};
+ 
++	ts_default: ts-default-state {
++		pins = "gpio66", "gpio158";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-pull-up;
++	};
++
+ 	usb_dp_qmpphy_portselect: usb-dp-qmpphy-portselect-state {
+ 		pins = "gpio60";
+ 		function = "usb_phy";
+-- 
+2.56.0
+

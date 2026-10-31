@@ -1,8 +1,8 @@
 From 664546a42b1463b79de2635ba2e7fb6e7e22be95 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 13:29:32 +0100
-Subject: [PATCH 66/66] drm/panel: raydium-rm692h5: Add the 90, 120 and 144 Hz
- modes
+Subject: [PATCH 066/162] drm/panel: raydium-rm692h5: Add the 90, 120 and 144
+ Hz modes
 
 The downstream panel has four timings. They differ in the porches,
 which only size the DSI link in command mode, and in a block of about
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 218 insertions(+), 128 deletions(-)
 
 diff --git a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
-index 1c0ebd0d8..bcdd8e5b7 100644
+index 1c0ebd0d83ac..bcdd8e5b776e 100644
 --- a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
 +++ b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
 @@ -20,7 +20,8 @@

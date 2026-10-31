@@ -1,7 +1,7 @@
 From 7c3a13ff6b390801b45127a0ba3cd35416ff4413 Mon Sep 17 00:00:00 2001
 From: David Vornholt <david@vornholt.online>
 Date: Sat, 10 Oct 2026 20:39:17 +0200
-Subject: [PATCH 50/59] usb: typec: ucsi: Stop a power level change
+Subject: [PATCH 050/162] usb: typec: ucsi: Stop a power level change
  notification storm
 
 On a Lenovo ThinkPad X1 Carbon Gen 13 (BIOS N4BET78W 1.48, EC N4BHT61W
@@ -69,7 +69,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 115 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/usb/typec/ucsi/ucsi.c b/drivers/usb/typec/ucsi/ucsi.c
-index 3368bd59d..244792e80 100644
+index 3368bd59da58..244792e809a9 100644
 --- a/drivers/usb/typec/ucsi/ucsi.c
 +++ b/drivers/usb/typec/ucsi/ucsi.c
 @@ -274,6 +274,37 @@ int ucsi_send_command(struct ucsi *ucsi, u64 command,
@@ -265,7 +265,7 @@ index 3368bd59d..244792e80 100644
  
  	if (!ucsi->connector)
 diff --git a/drivers/usb/typec/ucsi/ucsi.h b/drivers/usb/typec/ucsi/ucsi.h
-index 1996f04ed..c873192d1 100644
+index 1996f04ed5e6..c873192d1905 100644
 --- a/drivers/usb/typec/ucsi/ucsi.h
 +++ b/drivers/usb/typec/ucsi/ucsi.h
 @@ -497,6 +497,8 @@ struct ucsi {

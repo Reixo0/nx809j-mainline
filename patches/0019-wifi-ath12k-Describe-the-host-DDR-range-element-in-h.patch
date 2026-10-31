@@ -1,7 +1,7 @@
 From e574b551c6faf9f118180bdda009e1f552560c6a Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 14:30:52 +0200
-Subject: [PATCH 19/40] wifi: ath12k: Describe the host DDR range element in
+Subject: [PATCH 019/162] wifi: ath12k: Describe the host DDR range element in
  host capability
 
 The ddr_range array in the host capability request is a QMI_STRUCT
@@ -16,7 +16,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 25 insertions(+)
 
 diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
-index 4c67d86ee..38a061856 100644
+index 4c67d86ee243..38a061856333 100644
 --- a/drivers/net/wireless/ath/ath12k/qmi.c
 +++ b/drivers/net/wireless/ath/ath12k/qmi.c
 @@ -64,6 +64,30 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {

@@ -1,8 +1,8 @@
 From 8d1fb09fcc0b88d6b770c58ebe9ed285937e2839 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sun, 18 Oct 2026 20:00:00 +0300
-Subject: [PATCH 57/59] arm64: dts: qcom: kaanapali: mark the USB/DP QMP PHY as
- a mode switch
+Subject: [PATCH 057/162] arm64: dts: qcom: kaanapali: mark the USB/DP QMP PHY
+ as a mode switch
 
 The USB3/DP combo PHY sits in the Type-C graph (pmic_glink connector ->
 usb_dp_qmpphy_out) and is already an orientation switch, but without
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
-index 92c80e1e8..21380d32f 100644
+index 92c80e1e8503..21380d32fe0f 100644
 --- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 +++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
 @@ -3565,6 +3565,7 @@ usb_dp_qmpphy: phy@88e8000 {

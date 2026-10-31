@@ -1,0 +1,47 @@
+From 201833916ea8645f64e735a82cd8ed3fcf43c29c Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 21:25:43 +0100
+Subject: [PATCH 161/162] phy: qcom: mipi-csi2: leave the CSIPHY in reset when
+ it stops
+
+Switching the RedMagic 11 Pro from its ultrawide (D-PHY, CSIPHY1) to
+its main camera (C-PHY, CSIPHY2) gave no frame about half the time
+while TITAN_TOP stayed powered. The CSID then counted no packets and
+reported SoT lost on every lane, with its own registers and the
+CSIPHY2 status the same as in a good start. Main to ultrawide and
+reopening the same camera never failed, nor did any switch once
+TITAN_TOP had powered off between the two.
+
+Putting CSIPHY1 into reset by hand before it stopped took the switch
+from 3 failures in 8 to none in 8. The vendor driver ends every stream
+that way, so do the same.
+
+(cherry picked from commit cc2de7a37a7c8bbc5d6024cbb06f07972edbf3cf)
+---
+ drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
+index 4da48e33b693..ebb7feef5688 100644
+--- a/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
++++ b/drivers/phy/qualcomm/phy-qcom-mipi-csi2-3ph-dphy.c
+@@ -492,6 +492,16 @@ phy_qcom_mipi_csi2_lanes_disable(struct mipi_csi2phy_device *csi2phy,
+ 
+ 	writel(0, csi2phy->base +
+ 	       CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->common_regs_offset, 6));
++
++	/*
++	 * Stay in reset until the next stream, as the vendor driver does. On
++	 * Kaanapali a CSIPHY left running after a D-PHY stream stops the next
++	 * C-PHY stream on another CSIPHY from reaching the CSID about half the
++	 * time, until TITAN_TOP powers off.
++	 */
++	writel(CSIPHY_3PH_CMN_CSI_COMMON_CTRL0_PHY_SW_RESET,
++	       csi2phy->base + CSIPHY_3PH_CMN_CSI_COMMON_CTRLn(regs->common_regs_offset, 0));
++	fsleep(20);
+ }
+ 
+ static const struct mipi_csi2phy_hw_ops phy_qcom_mipi_csi2_ops_3ph_1_0 = {
+-- 
+2.56.0
+

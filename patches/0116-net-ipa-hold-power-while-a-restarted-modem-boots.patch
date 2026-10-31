@@ -1,7 +1,7 @@
 From a5c7b3bb47d5f93ec2f2281c24ea1befe0cc6d0e Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:32 +0100
-Subject: [PATCH 116/121] net: ipa: hold power while a restarted modem boots
+Subject: [PATCH 116/162] net: ipa: hold power while a restarted modem boots
 
 The modem accesses IPA while it boots. On the first boot the driver
 holds a proxy power reference until the microcontroller reports that
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  5 files changed, 38 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/net/ipa/ipa.h b/drivers/net/ipa/ipa.h
-index 9f7d4d0c7..3a0168f0e 100644
+index 9f7d4d0c7315..3a0168f0e79b 100644
 --- a/drivers/net/ipa/ipa.h
 +++ b/drivers/net/ipa/ipa.h
 @@ -39,6 +39,7 @@ struct ipa_smp2p;
@@ -44,7 +44,7 @@ index 9f7d4d0c7..3a0168f0e 100644
  	void __iomem *reg_virt;
  	const struct regs *regs;
 diff --git a/drivers/net/ipa/ipa_modem.c b/drivers/net/ipa/ipa_modem.c
-index d84c1dbd3..9466f3e11 100644
+index d84c1dbd3b1a..9466f3e11c34 100644
 --- a/drivers/net/ipa/ipa_modem.c
 +++ b/drivers/net/ipa/ipa_modem.c
 @@ -471,6 +471,7 @@ static int ipa_modem_notify(struct notifier_block *nb, unsigned long action,
@@ -56,7 +56,7 @@ index d84c1dbd3..9466f3e11 100644
  
  	case QCOM_SSR_AFTER_SHUTDOWN:
 diff --git a/drivers/net/ipa/ipa_qmi.c b/drivers/net/ipa/ipa_qmi.c
-index ce91e28d9..b04241408 100644
+index ce91e28d9807..b042414084bc 100644
 --- a/drivers/net/ipa/ipa_qmi.c
 +++ b/drivers/net/ipa/ipa_qmi.c
 @@ -12,6 +12,7 @@
@@ -78,7 +78,7 @@ index ce91e28d9..b04241408 100644
  
  /* All QMI clients from the modem node are gone (modem shut down or crashed). */
 diff --git a/drivers/net/ipa/ipa_uc.c b/drivers/net/ipa/ipa_uc.c
-index dc7e92f2a..e25cfef5f 100644
+index dc7e92f2a4fb..e25cfef5f78b 100644
 --- a/drivers/net/ipa/ipa_uc.c
 +++ b/drivers/net/ipa/ipa_uc.c
 @@ -212,8 +212,22 @@ void ipa_uc_power(struct ipa *ipa)
@@ -123,7 +123,7 @@ index dc7e92f2a..e25cfef5f 100644
  static void send_uc_command(struct ipa *ipa, u32 command, u32 command_param)
  {
 diff --git a/drivers/net/ipa/ipa_uc.h b/drivers/net/ipa/ipa_uc.h
-index 12997ecf5..20d504682 100644
+index 12997ecf5faa..20d504682ff1 100644
 --- a/drivers/net/ipa/ipa_uc.h
 +++ b/drivers/net/ipa/ipa_uc.h
 @@ -41,6 +41,12 @@ void ipa_uc_deconfig(struct ipa *ipa);

@@ -1,8 +1,8 @@
 From 2d7edc04a07fa5849591d7c6297dce9a56fcc7a0 Mon Sep 17 00:00:00 2001
 From: mzak <mzak.amin@gmail.com>
 Date: Sat, 3 Oct 2026 11:44:32 +0300
-Subject: [PATCH 80/88] ASoC: codecs: wcd-mbhc-v2: resume the codec in the plug
- detect work
+Subject: [PATCH 080/162] ASoC: codecs: wcd-mbhc-v2: resume the codec in the
+ plug detect work
 
 The MBHC initialisation and the plug-type correction work take a
 runtime PM reference on the codec before they access it, but the plug
@@ -21,7 +21,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 12 insertions(+)
 
 diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
-index 850be84d6..3eb2a5fca 100644
+index 850be84d65ce..3eb2a5fca0f6 100644
 --- a/sound/soc/codecs/wcd-mbhc-v2.c
 +++ b/sound/soc/codecs/wcd-mbhc-v2.c
 @@ -516,6 +516,17 @@ static void mbhc_plug_detect_fn(struct work_struct *work)

@@ -1,7 +1,7 @@
 From 6d52ca27062c001030f67d228ac025e570b7d9e4 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 18:45:48 +0100
-Subject: [PATCH 096/102] ASoC: wcd939x: HPH PCM: stock PA gain, no crosstalk
+Subject: [PATCH 096/162] ASoC: wcd939x: HPH PCM: stock PA gain, no crosstalk
  cancellation
 
 Match what the stock driver programs for HPH PCM playback on Kaanapali
@@ -15,7 +15,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 10 insertions(+), 6 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
-index 0c5c221b4..c2ed87e20 100644
+index 0c5c221b444f..c2ed87e20e97 100644
 --- a/sound/soc/codecs/wcd939x.c
 +++ b/sound/soc/codecs/wcd939x.c
 @@ -582,10 +582,11 @@ static void wcd939x_hph_pcm_pre_dac(struct snd_soc_component *component,

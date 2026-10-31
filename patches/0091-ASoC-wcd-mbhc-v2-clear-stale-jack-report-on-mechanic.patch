@@ -1,7 +1,7 @@
 From 3d56ed95960829fe7a0c0b13d1c265fe05ae8d9c Mon Sep 17 00:00:00 2001
 From: KONKR Pocket FIT Elite port <unknown-email@domain.tld>
 Date: Sat, 29 Aug 2026 11:27:39 +0200
-Subject: [PATCH 091/102] ASoC: wcd-mbhc-v2: clear stale jack report on
+Subject: [PATCH 091/162] ASoC: wcd-mbhc-v2: clear stale jack report on
  mechanical removal
 
 > X-Git-Archeology: > recovered message: > Bring over the patches ROCKNIX still carries on top of the set imported
@@ -22,7 +22,7 @@ Subject: [PATCH 091/102] ASoC: wcd-mbhc-v2: clear stale jack report on
  1 file changed, 20 insertions(+), 3 deletions(-)
 
 diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
-index 3eb2a5fca..3557a18e9 100644
+index 3eb2a5fca0f6..3557a18e9125 100644
 --- a/sound/soc/codecs/wcd-mbhc-v2.c
 +++ b/sound/soc/codecs/wcd-mbhc-v2.c
 @@ -557,7 +557,7 @@ static void mbhc_plug_detect_fn(struct work_struct *work)

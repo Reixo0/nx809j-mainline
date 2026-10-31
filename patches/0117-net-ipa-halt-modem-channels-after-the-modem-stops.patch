@@ -1,7 +1,7 @@
 From 8fc0cde0b15cba9d0c4d1db5f5720acca15c9b0d Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Mon, 26 Oct 2026 17:12:32 +0100
-Subject: [PATCH 117/121] net: ipa: halt modem channels after the modem stops
+Subject: [PATCH 117/162] net: ipa: halt modem channels after the modem stops
 
 The downstream driver halts the GSI channels of every modem endpoint
 once the modem has shut down (IPA v4.0 and later), so they are idle
@@ -22,7 +22,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  6 files changed, 48 insertions(+)
 
 diff --git a/drivers/net/ipa/gsi.c b/drivers/net/ipa/gsi.c
-index 624649484..c95a2e96a 100644
+index 624649484d62..c95a2e96afb5 100644
 --- a/drivers/net/ipa/gsi.c
 +++ b/drivers/net/ipa/gsi.c
 @@ -1837,6 +1837,21 @@ static void gsi_modem_channel_halt(struct gsi *gsi, u32 channel_id)
@@ -48,7 +48,7 @@ index 624649484..c95a2e96a 100644
  void
  gsi_modem_channel_flow_control(struct gsi *gsi, u32 channel_id, bool enable)
 diff --git a/drivers/net/ipa/gsi.h b/drivers/net/ipa/gsi.h
-index 9d8e05d95..fe1b67a73 100644
+index 9d8e05d950e3..fe1b67a73bef 100644
 --- a/drivers/net/ipa/gsi.h
 +++ b/drivers/net/ipa/gsi.h
 @@ -198,6 +198,16 @@ int gsi_channel_start(struct gsi *gsi, u32 channel_id);
@@ -69,7 +69,7 @@ index 9d8e05d95..fe1b67a73 100644
   * gsi_modem_channel_flow_control() - Set channel flow control state (IPA v4.2+)
   * @gsi:	GSI pointer returned by gsi_setup()
 diff --git a/drivers/net/ipa/ipa.h b/drivers/net/ipa/ipa.h
-index 3a0168f0e..e7a379334 100644
+index 3a0168f0e79b..e7a379334345 100644
 --- a/drivers/net/ipa/ipa.h
 +++ b/drivers/net/ipa/ipa.h
 @@ -35,6 +35,7 @@ struct ipa_smp2p;
@@ -89,7 +89,7 @@ index 3a0168f0e..e7a379334 100644
  
  	struct ipa_interrupt *interrupt;
 diff --git a/drivers/net/ipa/ipa_data.h b/drivers/net/ipa/ipa_data.h
-index 3eb9dc2ce..231d53291 100644
+index 3eb9dc2ce339..231d532917c9 100644
 --- a/drivers/net/ipa/ipa_data.h
 +++ b/drivers/net/ipa/ipa_data.h
 @@ -226,6 +226,7 @@ struct ipa_power_data {
@@ -109,7 +109,7 @@ index 3eb9dc2ce..231d53291 100644
  	const struct ipa_gsi_endpoint_data *endpoint_data;
  	const struct ipa_resource_data *resource_data;
 diff --git a/drivers/net/ipa/ipa_main.c b/drivers/net/ipa/ipa_main.c
-index 14ac2d2fa..2b47ed5bd 100644
+index 14ac2d2faf7c..2b47ed5bddd0 100644
 --- a/drivers/net/ipa/ipa_main.c
 +++ b/drivers/net/ipa/ipa_main.c
 @@ -849,6 +849,7 @@ static int ipa_probe(struct platform_device *pdev)
@@ -121,7 +121,7 @@ index 14ac2d2fa..2b47ed5bd 100644
  
  	ret = ipa_reg_init(ipa, pdev);
 diff --git a/drivers/net/ipa/ipa_modem.c b/drivers/net/ipa/ipa_modem.c
-index 9466f3e11..d25d79e45 100644
+index 9466f3e11c34..d25d79e45e8f 100644
 --- a/drivers/net/ipa/ipa_modem.c
 +++ b/drivers/net/ipa/ipa_modem.c
 @@ -448,6 +448,22 @@ static void ipa_modem_crashed(struct ipa *ipa)

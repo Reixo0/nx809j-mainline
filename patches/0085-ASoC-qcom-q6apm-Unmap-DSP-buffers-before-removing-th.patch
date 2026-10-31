@@ -1,7 +1,7 @@
 From 42d2ce1de58f121731180b52ede86766c193e193 Mon Sep 17 00:00:00 2001
 From: Shawn Guo <shengchao.guo@oss.qualcomm.com>
 Date: Fri, 16 Oct 2026 22:11:53 +0800
-Subject: [PATCH 85/88] ASoC: qcom: q6apm: Unmap DSP buffers before removing
+Subject: [PATCH 085/162] ASoC: qcom: q6apm: Unmap DSP buffers before removing
  the topology
 
 Since buffers are mapped once in pcm_new() and unmapped in pcm_free(),
@@ -40,7 +40,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 20 insertions(+), 4 deletions(-)
 
 diff --git a/sound/soc/qcom/qdsp6/q6apm.c b/sound/soc/qcom/qdsp6/q6apm.c
-index f86456691..f592ddeda 100644
+index f86456691ea7..f592ddeda492 100644
 --- a/sound/soc/qcom/qdsp6/q6apm.c
 +++ b/sound/soc/qcom/qdsp6/q6apm.c
 @@ -323,11 +323,10 @@ int q6apm_alloc_fragments(struct q6apm_graph *graph, unsigned int dir, phys_addr
