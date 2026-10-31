@@ -1,19 +1,25 @@
 # Denial's phone apps, cross-built by scripts/build-denial.sh from
 # https://github.com/denialwm/denial-apps and packed into apps.tar.gz by
 # scripts/arch-pkgs.sh. Named denial-* in /usr/bin: "settings" and "camera"
-# are too generic for a system path.
+# are too generic for a system path. Messages stays "messages": Calls and its
+# notifier start it by that name.
 pkgname=denial-apps-nx809j
-pkgver=r30.gb5d3a8605
+pkgver=r31.gea17be246
 pkgrel=1
-pkgdesc="Denial's Camera, Sensors and Phone Settings apps"
+pkgdesc="Denial's Camera, Sensors, Phone Settings, Calls and Messages apps"
 arch=(aarch64)
 url='https://github.com/denialwm/denial-apps'
 license=(LicenseRef-Sustainable-Use-1.0 CC-BY-SA-4.0)
-depends=(phonewave-nx809j denial-nx809j vulkan-freedreno)
+depends=(phonewave-nx809j denial-nx809j vulkan-freedreno pipewire sound-theme-freedesktop)
 options=(!strip !debug)
 source=(apps.tar.gz)
 sha256sums=(SKIP)
 
 package() {
   cp -a usr "$pkgdir/"
+  local wants="$pkgdir/usr/lib/systemd/user/graphical-session.target.wants" u
+  install -d "$wants"
+  for u in calls-ringer messages-notifier; do
+    ln -s "../$u.service" "$wants/$u.service"
+  done
 }

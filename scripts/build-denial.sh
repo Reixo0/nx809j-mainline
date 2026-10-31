@@ -96,10 +96,10 @@ cross "$W/denial/compositor" -p denial-polkit-agent
 cross "$W/denial/native_app" --bin denial-app
 export CARGO_TARGET_DIR=$OUT/pw-rust
 PW=$CARGO_TARGET_DIR/$TARGET/release
-for s in haptics/hapticd sensors/steinerd camera/braun; do cross "$W/phonewave/services/$s"; done
+for s in haptics/hapticd sensors/steinerd camera/braun modem/dmail audio/callaudio; do cross "$W/phonewave/services/$s"; done
 export CARGO_TARGET_DIR=$OUT/apps-rust
 AP=$CARGO_TARGET_DIR/$TARGET/release
-for a in camera sensors settings; do cross "$W/denial-apps/apps/$a"; done
+for a in camera sensors settings calls messages; do cross "$W/denial-apps/apps/$a"; done
 
 # Stage what each package holds
 ST=$W/stage; rm -rf "$ST"
@@ -127,15 +127,20 @@ done
 n=$ST/phonewave; P=$W/phonewave/services; R=$W/phonewave/devices/nx809j/rootfs
 mkdir -p "$n/usr/bin" "$n/usr/lib/systemd/system" "$n/usr/share/dbus-1/system-services" \
   "$n/usr/share/dbus-1/system.d" "$n/usr/lib/sysusers.d" "$n/usr/lib/udev/rules.d" \
-  "$n/usr/share/braun/sensors" "$n/etc/braun" "$n/etc/hapticd"
-install -m755 "$PW"/{hapticd,hapticctl,steinerd,steinerctl,braun,braunctl} "$n/usr/bin/"
-for s in haptics/hapticd:hapticd sensors/steinerd:steinerd camera/braun:braun; do
+  "$n/usr/share/braun/sensors" "$n/etc/braun" "$n/etc/hapticd" "$n/etc/dmail" \
+  "$n/usr/lib/systemd/user" "$n/usr/share/dbus-1/services"
+install -m755 "$PW"/{hapticd,hapticctl,steinerd,steinerctl,braun,braunctl,dmail,dmailctl,callaudio} "$n/usr/bin/"
+for s in haptics/hapticd:hapticd sensors/steinerd:steinerd camera/braun:braun modem/dmail:dmail; do
   k=$P/${s%:*}/packaging; m=${s#*:}
   install -m644 "$k/$m.service" "$n/usr/lib/systemd/system/"
   install -m644 "$k/org.$m.service" "$n/usr/share/dbus-1/system-services/"
   install -m644 "$k/org.$m.conf" "$n/usr/share/dbus-1/system.d/"
 done
 install -m644 "$P/camera/braun/packaging/braun.sysusers" "$n/usr/lib/sysusers.d/braun.conf"
+install -m644 "$P/modem/dmail/packaging/dmail.sysusers" "$n/usr/lib/sysusers.d/dmail.conf"
+install -m644 "$R/etc/dmail/device.toml" "$n/etc/dmail/"
+install -m644 "$P/audio/callaudio/packaging/callaudio.service" "$n/usr/lib/systemd/user/"
+install -m644 "$P/audio/callaudio/packaging/org.callaudio.service" "$n/usr/share/dbus-1/services/"
 install -m644 "$P/camera/braun/sensors/"*.toml "$n/usr/share/braun/sensors/"
 install -m644 "$R/etc/braun/"*.toml "$n/etc/braun/"
 install -m644 "$R/etc/hapticd/config.json" "$n/etc/hapticd/"
@@ -143,12 +148,19 @@ install -m644 "$R/usr/lib/udev/rules.d/70-hapticd-aw86927-haptics.rules" "$n/usr
 
 n=$ST/apps; mkdir -p "$n/usr/bin" "$n/usr/share/applications" \
   "$n/usr/share/icons/hicolor/512x512/apps" "$n/usr/share/licenses/denial-apps-nx809j"
-for a in camera:Camera:denial-camera sensors:Sensors:denial-sensors settings:Settings:denial-phone-settings; do
+# Messages keeps its name: Calls and its notifier look for "messages"
+for a in camera:Camera:denial-camera sensors:Sensors:denial-sensors settings:Settings:denial-phone-settings \
+    calls:Calls:denial-calls messages:Messages:messages; do
   IFS=: read -r d N b <<< "$a"
   install -m755 "$AP/$d" "$n/usr/bin/$b"
   sed "s|^Exec=.*|Exec=/usr/bin/$b|; s|^Name=Settings\$|Name=Phone Settings|" \
     "$W/denial-apps/apps/$d/org.denialwm.$N.desktop" > "$n/usr/share/applications/org.denialwm.$N.desktop"
   install -m644 "$W/denial-apps/apps/$d/org.denialwm.$N.png" "$n/usr/share/icons/hicolor/512x512/apps/"
+done
+install -m755 "$AP"/{calls-ringer,messages-notifier} "$n/usr/bin/"
+mkdir -p "$n/usr/lib/systemd/user"
+for u in calls/packaging/calls-ringer messages/packaging/messages-notifier; do
+  sed 's|^ExecStart=.*/|ExecStart=/usr/bin/|' "$W/denial-apps/apps/$u.service" > "$n/usr/lib/systemd/user/${u##*/}.service"
 done
 install -m644 "$W/denial-apps/LICENSE.md" "$n/usr/share/licenses/denial-apps-nx809j/"
 
