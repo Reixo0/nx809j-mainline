@@ -33,7 +33,7 @@ PACKAGES=(base archlinuxarm-keyring sudo nano nx809j-device
   # Hardware
   mesa vulkan-freedreno pipewire pipewire-pulse wireplumber alsa-utils
   bluez power-profiles-daemon dosfstools openssh)
-SERVICES=(NetworkManager bluetooth nx809j-denial power-profiles-daemon sshd
+SERVICES=(NetworkManager bluetooth nx809j-denial power-profiles-daemon
   systemd-resolved systemd-timesyncd)
 
 [[ $(uname -m) == aarch64 && $(id -u) == 0 ]] || { echo "run as root on aarch64" >&2; exit 1; }
