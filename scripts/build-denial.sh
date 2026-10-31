@@ -113,6 +113,11 @@ bundle "$OUT/shell-assembly" "$n/shell"
 bundle "$OUT/settings-assembly" "$n/settings"
 install -m755 "$D/denial-app" "$n/settings/denial-settings"
 git -C "$W/denial" rev-parse HEAD > "$n/source-commit"
+mkdir -p "$n/portal"
+for f in denial-portal.service denial-portals.conf denial.portal xdg-desktop-portal-wlr-Denial \
+    org.freedesktop.impl.portal.desktop.denial.service; do
+  install -m644 "$W/denial/packaging/arch/$f" "$n/portal/"
+done
 
 n=$ST/phonewave; P=$W/phonewave/services; R=$W/phonewave/devices/nx809j/rootfs
 mkdir -p "$n/usr/bin" "$n/usr/lib/systemd/system" "$n/usr/share/dbus-1/system-services" \
