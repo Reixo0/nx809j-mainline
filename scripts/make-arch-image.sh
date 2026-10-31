@@ -8,13 +8,15 @@
 #               dispatcher (EFI/BOOT/BOOTAA64.EFI) and Mu-Silicium (MU.fd)
 #
 # No phone firmware is included: firmware/nx809j-firmware.sh adds it from
-# Android after flashing.
+# Android after flashing. FIRMWARE=file.tar (the script's tar output) puts it in
+# the image instead, for this phone only: such an image must never be published.
 #
 # Usage: sudo REPO=file:///path/to/repo DISPATCH=dispatch.efi MUFD=MU.fd \
 #          scripts/make-arch-image.sh [outdir]
 #   REPO       where pacman finds [nx809j] while building (default: the
 #              GitHub release the image itself is configured with)
 #   USERNAME, PASSWORD   the phone's user (default alarm / 147147)
+#   FIRMWARE   the phone's own firmware, see above
 set -euo pipefail
 OUT=$(realpath "${1:-.}")
 RELEASE_REPO=https://github.com/Reixo0/nx809j-mainline/releases/download/arch-repo
@@ -68,6 +70,7 @@ conf=$work/pacman.conf
 sed '/^\[nx809j\]/,/^$/d' /etc/pacman.conf > "$conf"
 printf '\n[nx809j]\nSigLevel = Optional TrustAll\nServer = %s\n' "$REPO" >> "$conf"
 pacstrap -C "$conf" -K "$M" "${PACKAGES[@]}"
+[[ -z ${FIRMWARE:-} ]] || tar -C "$M" --no-same-owner -xf "$FIRMWARE"
 
 # The image's own pacman.conf gets [nx809j] from the GitHub release
 sed -i '/^\[nx809j\]/,/^$/d' "$M/etc/pacman.conf"
@@ -98,7 +101,7 @@ chmod 440 "$M/etc/sudoers.d/10-nx809j"
 arch-chroot "$M" /bin/bash -e <<EOF
 locale-gen >/dev/null
 pacman-key --populate archlinuxarm >/dev/null
-useradd -m -G wheel,audio,video,input,network,rfkill "$USERNAME"
+useradd -m -G wheel,audio,video,input,network,rfkill,dmail "$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
 passwd -l root >/dev/null
 systemctl enable ${SERVICES[*]}

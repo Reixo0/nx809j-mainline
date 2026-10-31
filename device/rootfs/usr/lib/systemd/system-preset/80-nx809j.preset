@@ -4,4 +4,4 @@ enable nx809j-wifi-mac.service
 enable nx809j-bt-addr.service
 enable rmtfs.service
 enable tqftpserv.service
-enable ModemManager.service
+enable nx809j-audio-hexagonrpcd.service

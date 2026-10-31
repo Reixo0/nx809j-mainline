@@ -1,16 +1,17 @@
 # Phonewave's device services the NX809J uses: hapticd (vibration), steinerd
-# (sensors) and braun (cameras), cross-built by scripts/build-denial.sh from
+# (sensors), braun (cameras), dmail (modem) and callaudio (call audio),
+# cross-built by scripts/build-denial.sh from
 # https://github.com/denialwm/phonewave and packed into phonewave.tar.gz by
 # scripts/arch-pkgs.sh. Its fingerprint stack is left out: that writes to
 # persist and RPMB.
 pkgname=phonewave-nx809j
-pkgver=r78.gc35741226
+pkgver=r79.g1d04ec77d
 pkgrel=1
-pkgdesc='Vibration, sensor and camera services for the NX809J'
+pkgdesc='Vibration, sensor, camera, modem and call audio services for the NX809J'
 arch=(aarch64)
 url='https://github.com/denialwm/phonewave'
 license=(MIT)
-depends=(hexagonrpc)
+depends=(hexagonrpc alsa-lib alsa-utils libpipewire)
 backup=(etc/hapticd/config.json)
 options=(!strip !debug)
 source=(phonewave.tar.gz nx809j-sensors-hexagonrpcd.service)
@@ -22,7 +23,10 @@ package() {
     "$pkgdir/usr/lib/systemd/system/nx809j-sensors-hexagonrpcd.service"
   local wants="$pkgdir/usr/lib/systemd/system/multi-user.target.wants" u
   install -d "$wants"
-  for u in hapticd steinerd braun nx809j-sensors-hexagonrpcd; do
+  for u in hapticd steinerd braun dmail nx809j-sensors-hexagonrpcd; do
     ln -s "../$u.service" "$wants/$u.service"
   done
+  wants="$pkgdir/usr/lib/systemd/user/default.target.wants"
+  install -d "$wants"
+  ln -s ../callaudio.service "$wants/callaudio.service"
 }

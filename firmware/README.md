@@ -40,6 +40,12 @@ What it copies (`qcom/kaanapali/nubia/nx809j/` unless noted):
 | `/vendor/firmware/aw882xx_acf.bin` | `aw88461_acf.bin` |
 | `/vendor/firmware_mnt/image/peach/*` | `ath12k/PEACH/hw2.0/{amss,m3,aux_ucode,board,regdb}.bin`, `qdss_trace_config.cfg` |
 | `/vendor/bt_firmware/image/brhbt{fw20.mbn,nv20.*}` | `qca/` |
+| `/vendor/dsp/adsp` | `/usr/share/qcom/kaanapali/Nubia/NX809J-audio/dsp/adsp`, the ADSP's voice modules |
+| `nx809j-voice.bin` next to the script, or `VOICE_PROFILE` | `voice.bin`, the voice call profile |
+
+The voice profile can't be made on Android: build it on a PC from the phone's
+ACDB ([device/README.md](../device/README.md#voice-call-profile)) and push it to
+`/data/local/tmp/nx809j-voice.bin` first. Without it calls connect with no audio.
 
 The Adreno 840 microcode (`qcom/gen80200_{sqe,gmu,aqe}`) comes from your
 distribution's linux-firmware package instead: mainline doesn't work with the

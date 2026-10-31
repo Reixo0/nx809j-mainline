@@ -11,7 +11,11 @@
 #   FILE.tar          an archive with usr/lib/firmware/... inside
 #
 # The source directories can be overridden (FW_IMAGE, FW_BT, FW_VENDOR, SOCCP,
-# VENDOR_ETC and SENSOR_REGISTRY) to run it on a copy of these files.
+# VENDOR_ETC, SENSOR_REGISTRY and FW_DSP) to run it on a copy of these files.
+#
+# Android can't build the voice call profile (firmware/README.md). If
+# nx809j-voice.bin is next to this script, or VOICE_PROFILE names one, it is
+# installed too; without it everything works except call audio.
 set -eu
 
 FW_IMAGE=${FW_IMAGE:-/vendor/firmware_mnt/image}
@@ -115,6 +119,18 @@ mkdir -p "$SENSORS/sensors" "$SENSORS/dsp"
 cp -R "${VENDOR_ETC:-/vendor/etc}/sensors/config" "$SENSORS/sensors/config"
 cp "${VENDOR_ETC:-/vendor/etc}/sensors/sns_reg_config" "$SENSORS/sensors/sns_reg.conf"
 cp -R "$SENSOR_REGISTRY" "$SENSORS/sensors/registry"
+
+# The ADSP's voice modules, served to its audio PD by hexagonrpcd
+VOICE_DSP=$WORK/stage/usr/share/qcom/kaanapali/Nubia/NX809J-audio/dsp
+mkdir -p "$VOICE_DSP"
+cp -R "${FW_DSP:-/vendor/dsp/adsp}" "$VOICE_DSP/adsp"
+
+VOICE_PROFILE=${VOICE_PROFILE:-$(dirname "$0")/nx809j-voice.bin}
+if [ -f "$VOICE_PROFILE" ]; then
+  cp "$VOICE_PROFILE" "$STAGE/$DEV/voice.bin"
+else
+  echo "No voice profile ($VOICE_PROFILE): calls will have no audio"
+fi
 
 # Where these came from, for when Android is updated
 {

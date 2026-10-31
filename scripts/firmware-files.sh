@@ -9,10 +9,22 @@
 # our audio topology. The Adreno 840 microcode (qcom/gen80200_*) comes from
 # the distribution's linux-firmware-qcom package. On the phone itself,
 # firmware/nx809j-firmware.sh does the same from Android.
+#
+# With "share" as the argument, prints what goes under /usr/share/qcom instead,
+# "<path under /usr/share/qcom>:<source file>": the ADSP's voice modules.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FW=$ROOT/out/firmware/lib/firmware
 DEV=qcom/kaanapali/nubia/nx809j
+
+if [[ ${1:-} == share ]]; then
+  # Served to the ADSP's audio PD by nx809j-audio-hexagonrpcd.service
+  DSP=$ROOT/dump/firmware/vendor_dsp/adsp
+  (cd "$DSP" && find . -maxdepth 1 -type f -printf '%f\n' | sort) | while read -r f; do
+    echo "kaanapali/Nubia/NX809J-audio/dsp/adsp/$f:$DSP/$f"
+  done
+  exit 0
+fi
 
 files="$DEV/gen80200_zap.mbn
   $DEV/adsp.mbn $DEV/adsp_dtb.mbn $DEV/cdsp.mbn $DEV/cdsp_dtb.mbn
@@ -48,7 +60,8 @@ done
 echo "qcom/kaanapali/Nubia-NX809J-tplg.bin:$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin"
 echo "$DEV/aw88461_acf.bin:$ROOT/dump/firmware/vendor_firmware/aw882xx_acf.bin"
 
-# Voice calls: the profile built from the phone's ACDB (device/audio/voice.toml).
+# Voice calls: the profile built from the phone's ACDB (device/README.md).
 # Vendor data, only on machines that generated it.
-[ -f "$ROOT/dump/vendor-audio/nx809j-voice.bin" ] &&
+if [[ -f $ROOT/dump/vendor-audio/nx809j-voice.bin ]]; then
   echo "$DEV/voice.bin:$ROOT/dump/vendor-audio/nx809j-voice.bin"
+fi

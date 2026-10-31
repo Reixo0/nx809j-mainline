@@ -33,6 +33,15 @@ while IFS= read -r pair; do
   n=$((n + 1))
 done <<< "$list"
 echo "firmware files: $n"
+list=$("$ROOT"/scripts/firmware-files.sh share)
+n=0
+while IFS= read -r pair; do
+  f=${pair%%:*} src=${pair#*:}
+  [[ -f $src ]] || { echo "missing $src" >&2; exit 1; }
+  install -Dm644 "$src" "$DEST/usr/share/qcom/$f"
+  n=$((n + 1))
+done <<< "$list"
+echo "ADSP voice modules: $n"
 
 if [[ ${MODULES:-1} == 1 ]]; then
   REL=$(cat "$ROOT/out/kernel/include/config/kernel.release")

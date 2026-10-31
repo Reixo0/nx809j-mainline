@@ -1,0 +1,13 @@
+#!/bin/bash
+# RedMagic 11 Pro on nx809j-mainline: rmtfs, tqftpserv and the modem are started
+# by our own services (device/rootfs). Only check that they are up.
+set -euo pipefail
+systemctl is-active -q rmtfs.service tqftpserv.service
+for p in /sys/class/remoteproc/remoteproc*; do
+	[[ $(<"$p/name") == modem ]] || continue
+	[[ $(<"$p/state") == running ]] && exit 0
+	echo "modem-setup: the modem is $(<"$p/state")" >&2
+	exit 1
+done
+echo "modem-setup: no modem remoteproc" >&2
+exit 1
