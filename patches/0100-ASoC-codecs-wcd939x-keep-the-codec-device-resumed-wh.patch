@@ -1,8 +1,8 @@
 From 796085c81ce74d12ba6a10cc90996af9732d6291 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sun, 25 Oct 2026 19:23:40 +0100
-Subject: [PATCH 100/165] ASoC: codecs: wcd939x: keep the codec device resumed
- while a jack is set
+Subject: [PATCH] ASoC: codecs: wcd939x: keep the codec device resumed while a
+ jack is set
 
 Holding only the SoundWire RX/TX devices is not enough: the codec platform
 device still runtime suspends, and jack removal is then not reported. Hold

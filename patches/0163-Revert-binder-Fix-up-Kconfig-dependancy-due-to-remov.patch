@@ -1,8 +1,8 @@
 From d22d0c711e0c50ac83074e892df1f1f6760eaf9c Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 13:17:37 +0100
-Subject: [PATCH 163/165] Revert "binder: Fix up Kconfig dependancy due to
- removal of .c code"
+Subject: [PATCH] Revert "binder: Fix up Kconfig dependancy due to removal of
+ .c code"
 
 This reverts commit 315860c4f912990c75ef228775ea8871fc5bcc9a.
 

@@ -1,7 +1,7 @@
 From 66088c62b764cde8a66f41c2974f298055b9cc6c Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 18:24:59 +0100
-Subject: [PATCH 173/178] misc: fastrpc: serve the audio PD remote heap maps
+Subject: [PATCH] misc: fastrpc: serve the audio PD remote heap maps
 
 The audio PD asks for more heap with ADSP_MMAP_REMOTE_HEAP_ADDR as soon as it
 attaches, and stalls when refused. Give it the start of the reserved region

@@ -1,0 +1,44 @@
+From 329e4188d952d57f9a6f82aa0ed5224c0e2ac8a5 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 02:14:20 +0100
+Subject: [PATCH] PCI: qcom: tell endpoint drivers the link survives suspend
+
+A host bridge that hands the link to the ADSP (PCIe DRV) sets
+suspend_keeps_link, so an endpoint driver can keep its device in D0
+and tell its firmware how to wake the host.
+
+(cherry picked from commit dcb9f8e8d5cd3f02b0e83921e69796cfb615af1d)
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 2 ++
+ include/linux/pci.h                    | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index d903f10211c2..df50ba0d8bb9 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -2397,6 +2397,8 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	platform_set_drvdata(pdev, pcie);
+ 
+ 	ret = dw_pcie_host_init(pp);
++	if (!ret && pcie->drv_id >= 0)
++		pp->bridge->suspend_keeps_link = 1;
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "cannot initialize host\n");
+ 		goto err_phy_exit;
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index 6482549a8417..b1c5248ff595 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -677,6 +677,8 @@ struct pci_host_bridge {
+ 	unsigned int	msi_domain:1;		/* Bridge wants MSI domain */
+ 	unsigned int	broken_l1ss_resume:1;	/* Resuming from L1SS during
+ 						   system suspend is broken */
++	unsigned int	suspend_keeps_link:1;	/* Link held in L1SS through
++						   system suspend */
+ 
+ 	/* Resource alignment requirements */
+ 	resource_size_t (*align_resource)(struct pci_dev *dev,
+-- 
+2.56.0
+

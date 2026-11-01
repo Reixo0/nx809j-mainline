@@ -1,8 +1,8 @@
 From afc20a679269555ae16e5d7e7ac84533ab0be57a Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 18:26:23 +0100
-Subject: [PATCH 174/178] ASoC: qcom: q6apm-voice: wait out the audio server
- probing the verb
+Subject: [PATCH] ASoC: qcom: q6apm-voice: wait out the audio server probing
+ the verb
 
 PipeWire enables each UCM verb while it probes the card. When that took longer
 than the 300 ms debounce the voice session started, the HiFi PCMs failed to

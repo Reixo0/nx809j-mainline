@@ -1,0 +1,71 @@
+From 904bd10bf4be3ffe031681469a1aaabd4167d58a Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 02:07:31 +0100
+Subject: [PATCH] wifi: ath12k: stay in D0 while suspended into wake-on-WLAN
+
+From D3hot the WCN7850 signals neither WAKE# nor a PME that reaches the
+host: the firmware matched a magic packet and the host slept on. As on
+the vendor stack, the chip stays in D0 with MHI in M3 and asserts WAKE#.
+Saving the PCI state keeps the PCI core from moving it and its root
+port to D3hot.
+
+(cherry picked from commit c53368376f27f708fe9cd64820f7d6b17a0f6fed)
+---
+ drivers/net/wireless/ath/ath12k/core.c | 8 ++++++++
+ drivers/net/wireless/ath/ath12k/core.h | 1 +
+ drivers/net/wireless/ath/ath12k/pci.c  | 8 ++++++++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
+index 567a489fb9df..5d3055373983 100644
+--- a/drivers/net/wireless/ath/ath12k/core.c
++++ b/drivers/net/wireless/ath/ath12k/core.c
+@@ -215,6 +215,14 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
+ }
+ EXPORT_SYMBOL(ath12k_core_suspend_late);
+ 
++/* Suspended into wake-on-WLAN: the firmware keeps running, MHI is in M3. */
++bool ath12k_core_wow_suspended(struct ath12k_base *ab)
++{
++	return ab->hw_params->supports_suspend &&
++	       ath12k_core_continue_suspend_resume(ab) == 0;
++}
++EXPORT_SYMBOL(ath12k_core_wow_suspended);
++
+ int ath12k_core_resume_early(struct ath12k_base *ab)
+ {
+ 	int ret;
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 0e4c2f12d501..4c3856148789 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -1274,6 +1274,7 @@ int ath12k_core_resume_early(struct ath12k_base *ab);
+ int ath12k_core_resume(struct ath12k_base *ab);
+ int ath12k_core_suspend(struct ath12k_base *ab);
+ int ath12k_core_suspend_late(struct ath12k_base *ab);
++bool ath12k_core_wow_suspended(struct ath12k_base *ab);
+ void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
+ u8 ath12k_get_num_partner_link(struct ath12k *ar);
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index e332547d0c23..a6da3633328d 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1797,6 +1797,14 @@ static __maybe_unused int ath12k_pci_pm_suspend_late(struct device *dev)
+ 	if (ret)
+ 		ath12k_warn(ab, "failed to late suspend core: %d\n", ret);
+ 
++	/*
++	 * Armed for wake-on-WLAN, the chip wakes the host with an MSI, which
++	 * it can only send from D0: saving the state here keeps the PCI core
++	 * from putting it (and its root port) into D3hot.
++	 */
++	if (!ret && device_may_wakeup(dev) && ath12k_core_wow_suspended(ab))
++		pci_save_state(to_pci_dev(dev));
++
+ 	return ret;
+ }
+ 
+-- 
+2.56.0
+

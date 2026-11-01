@@ -1,7 +1,7 @@
 From 39569a8c44aebbd93ccebc0def0dac0d24e40545 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 13:26:51 +0100
-Subject: [PATCH 165/165] binderfs: take the const idmap in rename
+Subject: [PATCH] binderfs: take the const idmap in rename
 
 The C Binder driver came back after vfs made the idmap const.
 

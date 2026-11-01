@@ -1,0 +1,42 @@
+From b28c9be978b388d65b3847928b68277623df33cc Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 21:31:34 +0100
+Subject: [PATCH] Revert "drm/msm/dpu: fix DSC 1.2 encoder configuration for 10
+ bpc command mode"
+
+This reverts commit 8e35150e69ff. Testing the RM692H5 corruption: its
+detailed areas break up on some boots. linux-perpetua dropped the same
+encoder change after trying it (dbeb775d2237) and its picture holds.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dsc_1_2.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dsc_1_2.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dsc_1_2.c
+index 7228ed31c8e1..b3395e9c34a1 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dsc_1_2.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dsc_1_2.c
+@@ -124,10 +124,6 @@ static void dpu_hw_dsc_config_1_2(struct dpu_hw_dsc *hw_dsc,
+ 
+ 	data |= (_dsc_calc_output_buf_max_addr(hw_dsc, num_active_slice_per_enc) << 18);
+ 
+-	/* full ICH precision */
+-	if (dsc->bits_per_component > 8)
+-		data |= BIT(12);
+-
+ 	DPU_REG_WRITE(hw, sblk->enc.base + ENC_DF_CTRL, data);
+ 
+ 	data = (dsc->dsc_version_minor & 0xf) << 28;
+@@ -236,6 +232,8 @@ static void dpu_hw_dsc_config_1_2(struct dpu_hw_dsc *hw_dsc,
+ 		data |= BIT(12);
+ 	if (mode & DSC_MODE_MULTIPLEX)
+ 		data |= BIT(13);
++	if (!(mode & DSC_MODE_VIDEO))
++		data |= BIT(17);
+ 
+ 	DPU_REG_WRITE(hw, sblk->ctl.base + DSC_CFG, data);
+ }
+-- 
+2.56.0
+

@@ -1,0 +1,35 @@
+From 2c31bb9f462b5625ae662bc1119d34888bc81443 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 01:08:00 +0100
+Subject: [PATCH] drm/panel: raydium-rm692h5: keep the level while the link is
+ down
+
+Writing brightness before the panel is prepared returned -EINVAL, so
+systemd-backlight failed at every boot.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/panel/panel-raydium-rm692h5.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
+index 7015fc04731d..4636027296aa 100644
+--- a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
++++ b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
+@@ -791,9 +791,11 @@ static int rm692h5_bl_update_status(struct backlight_device *bl)
+ 	 * Idle mode keeps ambient_brightness, also while the host wakes only to
+ 	 * draw, and leaving it restores this level. A blank into idle mode sets
+ 	 * its own level: brightness 0 first would show a dark frame, and the
+-	 * host may already be off.
++	 * host may already be off. The DSI link is down while the panel is off:
++	 * the backlight core sends the level again when it is enabled.
+ 	 */
+-	if (ctx->idle || (READ_ONCE(ambient) && backlight_is_blank(bl)))
++	if (!ctx->panel.prepared || ctx->idle ||
++	    (READ_ONCE(ambient) && backlight_is_blank(bl)))
+ 		return 0;
+ 
+ 	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+-- 
+2.56.0
+

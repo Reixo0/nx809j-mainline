@@ -1,8 +1,7 @@
 From 52bc10e738e40311aa3fd4e8fa6419ddc45d1d72 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 18:31:40 +0100
-Subject: [PATCH 175/178] ASoC: qcom: q6apm-voice: keep PipeWire off the
- session switch
+Subject: [PATCH] ASoC: qcom: q6apm-voice: keep PipeWire off the session switch
 
 "Voice Call Switch" and "Voice Call Volume" are one simple mixer element, and
 the voice verb names the volume for callaudio. PipeWire then unmutes the switch

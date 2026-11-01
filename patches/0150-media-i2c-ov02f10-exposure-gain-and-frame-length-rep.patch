@@ -1,8 +1,8 @@
 From bd46be913d77ecdaa957ee851059ddaf77cd23dd Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Wed, 28 Oct 2026 16:22:26 +0100
-Subject: [PATCH 150/165] media: i2c: ov02f10: exposure, gain and frame length;
- report RGGB
+Subject: [PATCH] media: i2c: ov02f10: exposure, gain and frame length; report
+ RGGB
 
 Found on the phone by writing page 1 while streaming, under a steady
 light: 0x0e/0x0f is the exposure in lines (8 to 1200 lines lifts the

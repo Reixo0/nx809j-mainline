@@ -1,7 +1,7 @@
 From 0529236739b2f690b9f231c7ded8395b17fb6000 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 13:17:37 +0100
-Subject: [PATCH 164/165] Revert "binder: rm -f binder.c"
+Subject: [PATCH] Revert "binder: rm -f binder.c"
 
 This reverts commit fd2bc059ed466bdd95347a4f7891d150d94e7de2.
 

@@ -1,0 +1,319 @@
+From 01fc81877e1661f0ab602734d28a838382b3015e Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Wed, 28 Oct 2026 22:01:23 +0100
+Subject: [PATCH] wifi: ath12k: station power save reaches the firmware;
+ userspace may hold it off
+
+mac80211 reports BSS_CHANGED_PS through vif_cfg_changed(), but ath12k
+handled it only in the link path, so power save never reached the
+WCN7850 firmware. On the Ace 3 that left the phone at 0.79-0.86 W with
+the screen off, against 0.305 W once power save is on. Handle it in
+vif_cfg_changed() for every link.
+
+In power save the station now wakes for every beacon (DTIM policy
+normal, listen interval 1): the firmware's own schedule held the first
+unicast frame after an idle gap for up to 2 s, and waking each beacon
+cost no measurable power.
+
+Power save still adds latency, so the PCI device gets
+power_save_allowed. Writing 0 keeps station power save off; writing 1
+lets it follow mac80211 again. Denial holds it off while a screen is
+lit.
+
+(cherry picked from commit 7c98a10e6bb75d64a9f2e7b1e152ad1234a38659)
+---
+ drivers/net/wireless/ath/ath12k/core.h |   2 +
+ drivers/net/wireless/ath/ath12k/mac.c  | 201 +++++++++++++++++--------
+ drivers/net/wireless/ath/ath12k/mac.h  |   2 +
+ drivers/net/wireless/ath/ath12k/pci.c  |   1 +
+ 4 files changed, 146 insertions(+), 60 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index a40bd95e0514..0e4c2f12d501 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -945,6 +945,8 @@ enum ath12k_device_family {
+ /* Master structure to hold the hw data which may be used in core module */
+ struct ath12k_base {
+ 	enum ath12k_hw_rev hw_rev;
++	/* Userspace keeps station power save off, see power_save_allowed. */
++	bool power_save_blocked;
+ 	struct platform_device *pdev;
+ 	struct device *dev;
+ 	struct ath12k_qmi qmi;
+diff --git a/drivers/net/wireless/ath/ath12k/mac.c b/drivers/net/wireless/ath/ath12k/mac.c
+index 01f8c6572f65..556865c0f45d 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.c
++++ b/drivers/net/wireless/ath/ath12k/mac.c
+@@ -4057,11 +4057,19 @@ static void ath12k_bss_assoc(struct ath12k *ar,
+ 	if (ar->ab->hw_params->supports_sta_ps &&
+ 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+ 	    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
++		/* In power save, wake for every beacon. The firmware's own
++		 * schedule held the first unicast frame after an idle gap for
++		 * up to 2 s, and waking each beacon cost no measurable power
++		 * on WCN7850.
++		 */
+ 		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+ 						    WMI_VDEV_PARAM_DTIM_POLICY,
+-						    WMI_DTIM_POLICY_STICK);
++						    WMI_DTIM_POLICY_NORMAL);
++		if (!ret)
++			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
++							    WMI_VDEV_PARAM_LISTEN_INTERVAL, 1);
+ 		if (ret)
+-			ath12k_warn(ar->ab, "failed to set vdev %d stick DTIM policy: %d\n",
++			ath12k_warn(ar->ab, "failed to set vdev %d beacon wake policy: %d\n",
+ 				    arvif->vdev_id, ret);
+ 	}
+ 
+@@ -4441,6 +4449,126 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
+ 	return ret;
+ }
+ 
++static void ath12k_mac_vif_setup_ps(struct ath12k_link_vif *arvif)
++{
++	struct ath12k *ar = arvif->ar;
++	struct ieee80211_vif *vif = arvif->ahvif->vif;
++	struct ieee80211_conf *conf = &ath12k_ar_to_hw(ar)->conf;
++	enum wmi_sta_powersave_param param;
++	struct ieee80211_bss_conf *info;
++	enum wmi_sta_ps_mode psmode;
++	int ret;
++	int timeout;
++	bool enable_ps;
++
++	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
++
++	if (vif->type != NL80211_IFTYPE_STATION)
++		return;
++
++	enable_ps = arvif->ahvif->ps && !READ_ONCE(ar->ab->power_save_blocked);
++	if (enable_ps) {
++		psmode = WMI_STA_PS_MODE_ENABLED;
++		param = WMI_STA_PS_PARAM_INACTIVITY_TIME;
++
++		timeout = conf->dynamic_ps_timeout;
++		if (timeout == 0) {
++			info = ath12k_mac_get_link_bss_conf(arvif);
++			if (!info) {
++				ath12k_warn(ar->ab, "unable to access bss link conf in setup ps for vif %pM link %u\n",
++					    vif->addr, arvif->link_id);
++				return;
++			}
++
++			/* firmware doesn't like 0 */
++			timeout = ieee80211_tu_to_usec(info->beacon_int) / 1000;
++		}
++
++		ret = ath12k_wmi_set_sta_ps_param(ar, arvif->vdev_id, param,
++						  timeout);
++		if (ret) {
++			ath12k_warn(ar->ab, "failed to set inactivity time for vdev %d: %i\n",
++				    arvif->vdev_id, ret);
++			return;
++		}
++	} else {
++		psmode = WMI_STA_PS_MODE_DISABLED;
++	}
++
++	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d psmode %s\n",
++		   arvif->vdev_id, psmode ? "enable" : "disable");
++
++	ret = ath12k_wmi_pdev_set_ps_mode(ar, arvif->vdev_id, psmode);
++	if (ret)
++		ath12k_warn(ar->ab, "failed to set sta power save mode %d for vdev %d: %d\n",
++			    psmode, arvif->vdev_id, ret);
++}
++
++/*
++ * power_save_allowed lets userspace keep station power save off while low
++ * latency matters, such as while a screen is lit. Power save then follows
++ * mac80211 again once it is allowed.
++ */
++static ssize_t power_save_allowed_show(struct device *dev,
++				       struct device_attribute *attr, char *buf)
++{
++	struct ath12k_base *ab = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%d\n", !READ_ONCE(ab->power_save_blocked));
++}
++
++static ssize_t power_save_allowed_store(struct device *dev,
++					struct device_attribute *attr,
++					const char *buf, size_t count)
++{
++	struct ath12k_base *ab = dev_get_drvdata(dev);
++	struct ath12k_link_vif *arvif;
++	struct wiphy *wiphy;
++	struct ath12k *ar;
++	bool allowed;
++	int i, ret;
++
++	ret = kstrtobool(buf, &allowed);
++	if (ret)
++		return ret;
++
++	WRITE_ONCE(ab->power_save_blocked, !allowed);
++	if (!ab->hw_params->supports_sta_ps)
++		return count;
++
++	for (i = 0; i < ab->num_radios; i++) {
++		ar = ab->pdevs[i].ar;
++		if (!ar)
++			continue;
++
++		wiphy = ath12k_ar_to_hw(ar)->wiphy;
++		wiphy_lock(wiphy);
++		if (ar->ah->state == ATH12K_HW_STATE_ON) {
++			list_for_each_entry(arvif, &ar->arvifs, list)
++				if (arvif->is_created)
++					ath12k_mac_vif_setup_ps(arvif);
++		}
++		wiphy_unlock(wiphy);
++	}
++
++	return count;
++}
++static DEVICE_ATTR_RW(power_save_allowed);
++
++static struct attribute *ath12k_mac_attrs[] = {
++	&dev_attr_power_save_allowed.attr,
++	NULL,
++};
++
++static const struct attribute_group ath12k_mac_group = {
++	.attrs = ath12k_mac_attrs,
++};
++
++const struct attribute_group *ath12k_mac_groups[] = {
++	&ath12k_mac_group,
++	NULL,
++};
++
+ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
+ 				   struct ieee80211_vif *vif,
+ 				   u64 changed)
+@@ -4510,63 +4638,22 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
+ 			}
+ 		}
+ 	}
+-}
+-EXPORT_SYMBOL(ath12k_mac_op_vif_cfg_changed);
+-
+-static void ath12k_mac_vif_setup_ps(struct ath12k_link_vif *arvif)
+-{
+-	struct ath12k *ar = arvif->ar;
+-	struct ieee80211_vif *vif = arvif->ahvif->vif;
+-	struct ieee80211_conf *conf = &ath12k_ar_to_hw(ar)->conf;
+-	enum wmi_sta_powersave_param param;
+-	struct ieee80211_bss_conf *info;
+-	enum wmi_sta_ps_mode psmode;
+-	int ret;
+-	int timeout;
+-	bool enable_ps;
+-
+-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+-
+-	if (vif->type != NL80211_IFTYPE_STATION)
+-		return;
+-
+-	enable_ps = arvif->ahvif->ps;
+-	if (enable_ps) {
+-		psmode = WMI_STA_PS_MODE_ENABLED;
+-		param = WMI_STA_PS_PARAM_INACTIVITY_TIME;
+ 
+-		timeout = conf->dynamic_ps_timeout;
+-		if (timeout == 0) {
+-			info = ath12k_mac_get_link_bss_conf(arvif);
+-			if (!info) {
+-				ath12k_warn(ar->ab, "unable to access bss link conf in setup ps for vif %pM link %u\n",
+-					    vif->addr, arvif->link_id);
+-				return;
+-			}
++	/* mac80211 reports BSS_CHANGED_PS here, not in link_info_changed(). */
++	if (changed & BSS_CHANGED_PS) {
++		links = ahvif->links_map;
++		for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
++			arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
++			if (!arvif || !arvif->ar ||
++			    !arvif->ar->ab->hw_params->supports_sta_ps)
++				continue;
+ 
+-			/* firmware doesn't like 0 */
+-			timeout = ieee80211_tu_to_usec(info->beacon_int) / 1000;
++			ahvif->ps = vif->cfg.ps;
++			ath12k_mac_vif_setup_ps(arvif);
+ 		}
+-
+-		ret = ath12k_wmi_set_sta_ps_param(ar, arvif->vdev_id, param,
+-						  timeout);
+-		if (ret) {
+-			ath12k_warn(ar->ab, "failed to set inactivity time for vdev %d: %i\n",
+-				    arvif->vdev_id, ret);
+-			return;
+-		}
+-	} else {
+-		psmode = WMI_STA_PS_MODE_DISABLED;
+ 	}
+-
+-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d psmode %s\n",
+-		   arvif->vdev_id, psmode ? "enable" : "disable");
+-
+-	ret = ath12k_wmi_pdev_set_ps_mode(ar, arvif->vdev_id, psmode);
+-	if (ret)
+-		ath12k_warn(ar->ab, "failed to set sta power save mode %d for vdev %d: %d\n",
+-			    psmode, arvif->vdev_id, ret);
+ }
++EXPORT_SYMBOL(ath12k_mac_op_vif_cfg_changed);
+ 
+ static bool ath12k_mac_supports_tpc(struct ath12k *ar, struct ath12k_vif *ahvif,
+ 				    const struct cfg80211_chan_def *chandef)
+@@ -4771,7 +4858,6 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
+ {
+ 	struct ath12k_vif *ahvif = arvif->ahvif;
+ 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+-	struct ieee80211_vif_cfg *vif_cfg = &vif->cfg;
+ 	struct ath12k_link_vif *tx_arvif;
+ 	struct cfg80211_chan_def def;
+ 	u32 param_id, param_value;
+@@ -5110,11 +5196,6 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
+ 
+ 	ath12k_mac_fils_discovery(arvif, info);
+ 
+-	if (changed & BSS_CHANGED_PS &&
+-	    ar->ab->hw_params->supports_sta_ps) {
+-		ahvif->ps = vif_cfg->ps;
+-		ath12k_mac_vif_setup_ps(arvif);
+-	}
+ }
+ 
+ static struct ath12k_vif_cache *ath12k_ahvif_get_link_cache(struct ath12k_vif *ahvif,
+diff --git a/drivers/net/wireless/ath/ath12k/mac.h b/drivers/net/wireless/ath/ath12k/mac.h
+index ae44ebfd9bd9..d97412da3b03 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.h
++++ b/drivers/net/wireless/ath/ath12k/mac.h
+@@ -151,6 +151,8 @@ void ath12k_mac_11d_scan_stop(struct ath12k *ar);
+ void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab);
+ 
+ void ath12k_mac_destroy(struct ath12k_hw_group *ag);
++
++extern const struct attribute_group *ath12k_mac_groups[];
+ void ath12k_mac_unregister(struct ath12k_hw_group *ag);
+ int ath12k_mac_register(struct ath12k_hw_group *ag);
+ int ath12k_mac_allocate(struct ath12k_hw_group *ag);
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index e022b6360115..e332547d0c23 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1845,6 +1845,7 @@ int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
+ 	pci_driver->remove = ath12k_pci_remove;
+ 	pci_driver->shutdown = ath12k_pci_shutdown;
+ 	pci_driver->driver.pm = &ath12k_pci_pm_ops;
++	pci_driver->dev_groups = ath12k_mac_groups;
+ 
+ 	return pci_register_driver(pci_driver);
+ }
+-- 
+2.56.0
+

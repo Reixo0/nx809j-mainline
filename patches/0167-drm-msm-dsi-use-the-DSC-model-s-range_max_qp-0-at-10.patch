@@ -1,8 +1,8 @@
 From 5df7290b897420c4341987de0241f045faddcb73 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Sun, 18 Oct 2026 02:58:59 +0200
-Subject: [PATCH 167/178] drm/msm/dsi: use the DSC model's range_max_qp[0] at
- 10 bpc, 8 bpp
+Subject: [PATCH] drm/msm/dsi: use the DSC model's range_max_qp[0] at 10 bpc, 8
+ bpp
 
 VESA DSC 1.1 Table E-5 gives 4, but the DSC model's pre-SCR
 configuration, which panel decoders and the downstream driver follow,

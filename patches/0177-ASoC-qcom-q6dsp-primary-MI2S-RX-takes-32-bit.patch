@@ -1,7 +1,7 @@
 From 5b3467b27b474fd2640a07607500ddc4340d6779 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 18:47:20 +0100
-Subject: [PATCH 177/178] ASoC: qcom: q6dsp: primary MI2S RX takes 32 bit
+Subject: [PATCH] ASoC: qcom: q6dsp: primary MI2S RX takes 32 bit
 
 Stock graphs run it at 32 bit, and the voice backend needs that.
 

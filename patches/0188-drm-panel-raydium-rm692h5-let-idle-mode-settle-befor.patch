@@ -1,0 +1,61 @@
+From a6b81bbb0251905b7a22679713a76942c9da5a05 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Fri, 30 Oct 2026 18:10:17 +0100
+Subject: [PATCH] drm/panel: raydium-rm692h5: let idle mode settle before the
+ host moves on
+
+Blanking into idle mode dimmed the picture for a moment when the host
+powered down right after the switch, and new pixels written while the
+panel was in idle mode sometimes left a line across it. Wait after
+entering idle mode (idle_settle_ms, 150) and after leaving it
+(idle_exit_ms, 50); both stay tunable while the right values are found.
+
+(cherry picked from commit 038b270b2efa7bda5ff775f23c8f796fa0077f68)
+---
+ drivers/gpu/drm/panel/panel-raydium-rm692h5.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
+index 3eb76d4dfd3a..b2f7ec9c953a 100644
+--- a/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
++++ b/drivers/gpu/drm/panel/panel-raydium-rm692h5.c
+@@ -51,6 +51,19 @@ static uint ambient_brightness = 0x0120;
+ module_param(ambient_brightness, uint, 0644);
+ MODULE_PARM_DESC(ambient_brightness, "Brightness code for a blank into idle mode (stock 0x0120)");
+ 
++/*
++ * The panel takes a while to switch idle mode. Powering the host down in
++ * the middle of the switch dims the picture for a moment, and pixels
++ * written before it ends can leave a line across the screen.
++ */
++static uint idle_settle_ms = 150;
++module_param(idle_settle_ms, uint, 0644);
++MODULE_PARM_DESC(idle_settle_ms, "Wait after entering idle mode before the host powers down");
++
++static uint idle_exit_ms = 50;
++module_param(idle_exit_ms, uint, 0644);
++MODULE_PARM_DESC(idle_exit_ms, "Wait after leaving idle mode before new pixels");
++
+ struct rm692h5_rate;
+ 
+ /* Power-on order and delays as in the downstream panel power sequence */
+@@ -84,7 +97,7 @@ static void rm692h5_idle_on(struct mipi_dsi_multi_context *dsi_ctx)
+ 	dsi_ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+ 	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfe, 0x00);
+ 	mipi_dsi_dcs_write_buffer_multi(dsi_ctx, (u8[]){ MIPI_DCS_ENTER_IDLE_MODE }, 1);
+-	mipi_dsi_msleep(dsi_ctx, 20);
++	mipi_dsi_msleep(dsi_ctx, idle_settle_ms);
+ }
+ 
+ /* Stock nolp: brightness 0 before idle off, so the old level never flashes. */
+@@ -94,6 +107,7 @@ static void rm692h5_idle_off(struct mipi_dsi_multi_context *dsi_ctx)
+ 	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xfe, 0x00);
+ 	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0x51, 0x00, 0x00);
+ 	mipi_dsi_dcs_write_buffer_multi(dsi_ctx, (u8[]){ MIPI_DCS_EXIT_IDLE_MODE }, 1);
++	mipi_dsi_msleep(dsi_ctx, idle_exit_ms);
+ }
+ 
+ /* Switches idle mode on a lit panel: idle mode's look and brightness codes. */
+-- 
+2.56.0
+

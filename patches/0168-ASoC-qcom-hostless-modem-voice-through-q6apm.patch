@@ -1,7 +1,7 @@
 From cdac313edf39dc9a22c3a2f757c02996d5581295 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 17:21:44 +0100
-Subject: [PATCH 168/178] ASoC: qcom: hostless modem voice through q6apm
+Subject: [PATCH] ASoC: qcom: hostless modem voice through q6apm
 
 Boards with modem voice graphs get private links copied from the physical
 backends; the voice driver opens them to power codecs, clocks and

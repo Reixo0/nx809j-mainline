@@ -1,8 +1,8 @@
 From aea0adca8ce9eac19b2ef5201bb88b4eff130dd7 Mon Sep 17 00:00:00 2001
 From: Joonhoe Kim <26rote@gmail.com>
 Date: Sat, 26 Sep 2026 01:30:48 +0000
-Subject: [PATCH 038/165] clk: qcom: gdsc: keep the clock controller active
- while a GDSC is on
+Subject: [PATCH] clk: qcom: gdsc: keep the clock controller active while a
+ GDSC is on
 
 A GDSC whose parents are the controller's own power domains (pd_list,
 e.g. camcc: MMCX + MXC) needs those rails at the required-opps level to

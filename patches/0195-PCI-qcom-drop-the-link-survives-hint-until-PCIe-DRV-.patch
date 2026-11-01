@@ -1,0 +1,29 @@
+From a555a1109a02f4fcb5bc489279077689a1004af3 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 00:52:00 +0100
+Subject: [PATCH] PCI: qcom: drop the link-survives hint until PCIe DRV is here
+
+pcie->drv_id comes from the PCIe DRV commit, which is not in this tree:
+it is enabled only on SM8550. Nothing sets suspend_keeps_link yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index df50ba0d8bb9..d903f10211c2 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -2397,8 +2397,6 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	platform_set_drvdata(pdev, pcie);
+ 
+ 	ret = dw_pcie_host_init(pp);
+-	if (!ret && pcie->drv_id >= 0)
+-		pp->bridge->suspend_keeps_link = 1;
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "cannot initialize host\n");
+ 		goto err_phy_exit;
+-- 
+2.56.0
+

@@ -1,0 +1,31 @@
+From 46a23946ead75786400e7493a336953e2204f52c Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 17:11:09 +0100
+Subject: [PATCH] arm64: dts: qcom: nx809j: touch reports at 240 Hz
+
+The S3910 firmware reports at 120 Hz on a 144 Hz panel, so Android's input
+resampling leaves some frames without a touch sample and dragged views
+skip a frame. Code 3 measured 233 reports/s.
+
+(cherry picked from commit 8e354e7e4d276cc9e684a43a4b83ac233ecb65df)
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 9317b7968140..0878b8dba6fa 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1841,6 +1841,9 @@ touchscreen@0 {
+ 		vdd-supply = <&vreg_l4b_1p8>;
+ 		avdd-supply = <&vreg_l14b_3p2>;
+ 
++		/* 240 Hz, a touch sample for every 144 Hz frame; firmware starts at 120 Hz. */
++		syna,report-rate = <3>;
++
+ 		pinctrl-0 = <&ts_default>;
+ 		pinctrl-names = "default";
+ 	};
+-- 
+2.56.0
+

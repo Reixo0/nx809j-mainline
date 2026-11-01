@@ -1,7 +1,7 @@
 From d0f4e26f2fdb549fa1b734daa66da28e8f5eb320 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 17:42:31 +0100
-Subject: [PATCH 171/178] ASoC: qcom: q6apm-voice: trigger the backend codecs
+Subject: [PATCH] ASoC: qcom: q6apm-voice: trigger the backend codecs
 
 The voice backends stop at PREPARE: the DSP moves the audio, so the PCM is
 never started. The AW88461 powers up from its trigger, as its I2S clocks may

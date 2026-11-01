@@ -1,8 +1,8 @@
 From 02a88c7aca4f0a5fb2736844642fd8e6ee672a42 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 17:58:46 +0100
-Subject: [PATCH 172/178] arm64: dts: qcom: kaanapali: give the ADSP FastRPC
- its remote heap
+Subject: [PATCH] arm64: dts: qcom: kaanapali: give the ADSP FastRPC its remote
+ heap
 
 The audio PD is a static PD and takes its heap from this region. It loads the
 voice modules that the ADSP image leaves out, such as Fluence. Stock has 12 MB

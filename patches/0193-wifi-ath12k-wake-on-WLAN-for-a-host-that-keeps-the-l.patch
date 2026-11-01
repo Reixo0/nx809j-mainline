@@ -1,0 +1,94 @@
+From dcb94cd9cc87fd8781e4ef8c5709e9d07fe65184 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 02:14:21 +0100
+Subject: [PATCH] wifi: ath12k: wake-on-WLAN for a host that keeps the link
+
+On a host bridge that keeps the link through suspend, ath12k tells the
+firmware so in WOW_ENABLE, as the vendor host does (DRV L1SS sleep,
+system suspend). The firmware then wakes the host through WAKE#. The
+D0 stay is limited to these hosts.
+
+(cherry picked from commit 3664004f0da8cf76c18b14b85293c0a94aec6773)
+---
+ drivers/net/wireless/ath/ath12k/core.h | 2 ++
+ drivers/net/wireless/ath/ath12k/pci.c  | 9 +++++----
+ drivers/net/wireless/ath/ath12k/wmi.c  | 7 ++++++-
+ drivers/net/wireless/ath/ath12k/wmi.h  | 3 +++
+ 4 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 4c3856148789..eeaa48bd249c 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -947,6 +947,8 @@ struct ath12k_base {
+ 	enum ath12k_hw_rev hw_rev;
+ 	/* Userspace keeps station power save off, see power_save_allowed. */
+ 	bool power_save_blocked;
++	/* The host holds the link through suspend (Qualcomm PCIe DRV). */
++	bool suspend_keeps_link;
+ 	struct platform_device *pdev;
+ 	struct device *dev;
+ 	struct ath12k_qmi qmi;
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index a6da3633328d..6ce771bb685f 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1554,6 +1554,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
+ 	}
+ 
+ 	ab->dev = &pdev->dev;
++	ab->suspend_keeps_link = pci_find_host_bridge(pdev->bus)->suspend_keeps_link;
+ 	ab_pci = ath12k_pci_priv(ab);
+ 	ab_pci->dev_id = pci_dev->device;
+ 	ab_pci->ab = ab;
+@@ -1798,11 +1799,11 @@ static __maybe_unused int ath12k_pci_pm_suspend_late(struct device *dev)
+ 		ath12k_warn(ab, "failed to late suspend core: %d\n", ret);
+ 
+ 	/*
+-	 * Armed for wake-on-WLAN, the chip wakes the host with an MSI, which
+-	 * it can only send from D0: saving the state here keeps the PCI core
+-	 * from putting it (and its root port) into D3hot.
++	 * Suspended into wake-on-WLAN on a host that keeps the link, the chip
++	 * stays in D0 with MHI in M3, as on the vendor stack: saving the state
++	 * keeps the PCI core from putting it and its root port into D3hot.
+ 	 */
+-	if (!ret && device_may_wakeup(dev) && ath12k_core_wow_suspended(ab))
++	if (!ret && ab->suspend_keeps_link && ath12k_core_wow_suspended(ab))
+ 		pci_save_state(to_pci_dev(dev));
+ 
+ 	return ret;
+diff --git a/drivers/net/wireless/ath/ath12k/wmi.c b/drivers/net/wireless/ath/ath12k/wmi.c
+index 75b259990c79..3dd5829a1eb5 100644
+--- a/drivers/net/wireless/ath/ath12k/wmi.c
++++ b/drivers/net/wireless/ath/ath12k/wmi.c
+@@ -10885,7 +10885,12 @@ int ath12k_wmi_wow_enable(struct ath12k *ar)
+ 
+ 	cmd->enable = cpu_to_le32(1);
+ 	cmd->pause_iface_config = cpu_to_le32(WOW_IFACE_PAUSE_ENABLED);
+-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "wmi tlv wow enable\n");
++	/* With the link kept, the firmware wakes the host through WAKE#. */
++	if (ar->ab->suspend_keeps_link)
++		cmd->flags = cpu_to_le32(WMI_WOW_FLAG_ENABLE_DRV_PCIE_L1SS_SLEEP |
++					 WMI_WOW_FLAG_SYSTEM_SUSPEND_WOW);
++	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "wmi tlv wow enable flags %#x\n",
++		   le32_to_cpu(cmd->flags));
+ 
+ 	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_WOW_ENABLE_CMDID);
+ 	if (ret) {
+diff --git a/drivers/net/wireless/ath/ath12k/wmi.h b/drivers/net/wireless/ath/ath12k/wmi.h
+index b508aa759bd8..a5d3e2952f0d 100644
+--- a/drivers/net/wireless/ath/ath12k/wmi.h
++++ b/drivers/net/wireless/ath/ath12k/wmi.h
+@@ -5561,6 +5561,9 @@ enum wmi_wow_interface_cfg {
+ 	WOW_IFACE_PAUSE_DISABLED
+ };
+ 
++#define WMI_WOW_FLAG_ENABLE_DRV_PCIE_L1SS_SLEEP	BIT(4)
++#define WMI_WOW_FLAG_SYSTEM_SUSPEND_WOW		BIT(5)
++
+ #define C2S(x) case x: return #x
+ 
+ static inline const char *wow_wakeup_event(enum wmi_wow_wakeup_event ev)
+-- 
+2.56.0
+

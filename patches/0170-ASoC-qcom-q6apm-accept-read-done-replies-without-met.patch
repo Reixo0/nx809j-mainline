@@ -1,8 +1,7 @@
 From fcabe5fd25c7a5d3f2fd52f6db8e4aa842abbd93 Mon Sep 17 00:00:00 2001
 From: Reixo <125610085+Reixo0@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 17:29:36 +0100
-Subject: [PATCH 170/178] ASoC: qcom: q6apm: accept read-done replies without
- metadata
+Subject: [PATCH] ASoC: qcom: q6apm: accept read-done replies without metadata
 
 The size check added with the hostless voice code asked for the whole
 read-done struct, metadata fields included. The Kaanapali ADSP leaves them

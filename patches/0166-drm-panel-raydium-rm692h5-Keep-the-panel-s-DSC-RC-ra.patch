@@ -1,8 +1,7 @@
 From f1620cf96c197f72429018cab981d4bc0a183c50 Mon Sep 17 00:00:00 2001
 From: Doctor Logix <doctor.logix@gmail.com>
 Date: Tue, 27 Oct 2026 20:20:57 +0100
-Subject: [PATCH 166/178] drm/panel: raydium-rm692h5: Keep the panel's DSC RC
- range 0
+Subject: [PATCH] drm/panel: raydium-rm692h5: Keep the panel's DSC RC range 0
 
 The panel decodes DSC with its own config on page 0xd2. The driver as
 picked rewrote RC range 0 to the VESA DSC 1.1 value {0, 4, 2} to match an
