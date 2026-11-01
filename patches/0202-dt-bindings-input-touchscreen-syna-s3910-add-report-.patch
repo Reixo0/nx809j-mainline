@@ -1,0 +1,36 @@
+From 52f16daebe9113b05372e80ab07e3a683df0707c Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 17:11:09 +0100
+Subject: [PATCH] dt-bindings: input: touchscreen: syna,s3910: add report rate
+
+The firmware starts at its own touch report rate, which can sit below the
+display's refresh rate. syna,report-rate names the firmware's rate code to
+apply whenever the panel turns on.
+
+(cherry picked from commit a17db361bd2d538d5a1537eaf276f8f65a3c3e53)
+---
+ .../devicetree/bindings/input/touchscreen/syna,s3910.yaml | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/input/touchscreen/syna,s3910.yaml b/Documentation/devicetree/bindings/input/touchscreen/syna,s3910.yaml
+index 82e7a1f95f82..4bd6bf462c48 100644
+--- a/Documentation/devicetree/bindings/input/touchscreen/syna,s3910.yaml
++++ b/Documentation/devicetree/bindings/input/touchscreen/syna,s3910.yaml
+@@ -44,6 +44,14 @@ properties:
+   avdd-supply:
+     description: Analog supply.
+ 
++  syna,report-rate:
++    $ref: /schemas/types.yaml#/definitions/uint32
++    maximum: 0xffff
++    description:
++      Touch report rate applied whenever the panel turns on, as the firmware's
++      own rate code (dynamic configuration 0xe6). Absent or 0 keeps the rate
++      the firmware starts with.
++
+ required:
+   - compatible
+   - reg
+-- 
+2.56.0
+

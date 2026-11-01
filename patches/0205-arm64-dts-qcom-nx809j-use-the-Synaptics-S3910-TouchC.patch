@@ -1,0 +1,39 @@
+From 7452d460798f92ee57e8c18ff29d7f26c54b8d91 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 23:37:14 +0100
+Subject: [PATCH] arm64: dts: qcom: nx809j: use the Synaptics S3910 TouchComm
+ driver
+
+The touchscreen follows the panel, as in the Perpetua tree.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 0878b8dba6fa..aa78c82bc8d4 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1598,7 +1598,7 @@ &mdss_dsi0 {
+ 
+ 	status = "okay";
+ 
+-	panel@0 {
++	nx809j_panel: panel@0 {
+ 		compatible = "nubia,nx809j-rm692h5", "raydium,rm692h5";
+ 		reg = <0>;
+ 
+@@ -1831,7 +1831,8 @@ &spi19 {
+ 
+ 	/* Synaptics TouchComm controller; wiring from the downstream DT */
+ 	touchscreen@0 {
+-		compatible = "syna,tcm-spi";
++		compatible = "syna,s3910";
++		panel = <&nx809j_panel>;
+ 		reg = <0>;
+ 		spi-max-frequency = <10000000>;
+ 
+-- 
+2.56.0
+

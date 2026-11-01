@@ -1,0 +1,58 @@
+From c8bdf66afa818f32d1d0e4c872a9004f0c7c7e45 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 17:11:09 +0100
+Subject: [PATCH] Input: synaptics-tcm-spi: report rate from the device tree
+
+syna,report-rate sets the report rate code the driver applies at every
+panel-on. The sysfs report_rate attribute still overrides it.
+
+(cherry picked from commit ba93b224bf4b9e9333ce29a58f7918cf88fc4f75)
+---
+ drivers/input/touchscreen/synaptics_tcm_spi.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/input/touchscreen/synaptics_tcm_spi.c b/drivers/input/touchscreen/synaptics_tcm_spi.c
+index 7d944652b9ae..71f12b18a966 100644
+--- a/drivers/input/touchscreen/synaptics_tcm_spi.c
++++ b/drivers/input/touchscreen/synaptics_tcm_spi.c
+@@ -55,6 +55,7 @@
+ #include <linux/pm.h>
+ #include <linux/pm_wakeirq.h>
+ #include <linux/pm_wakeup.h>
++#include <linux/property.h>
+ #include <drm/drm_panel.h>
+ 
+ #include "synaptics_tcm_gesture.h"
+@@ -189,7 +190,7 @@ struct syna_tcm {
+ 	u32 gesture_errors;
+ 	u64 mode_us;
+ 	/* Report rate code set with the panel on, 0 = firmware default.
+-	 * Protected by reset_lock.
++	 * Starts from syna,report-rate. Protected by reset_lock.
+ 	 */
+ 	u16 report_rate;
+ 	struct touchscreen_properties prop;
+@@ -1538,6 +1539,7 @@ static int syna_tcm_probe(struct spi_device *spi)
+ {
+ 	struct device *dev = &spi->dev;
+ 	struct syna_tcm *ts;
++	u32 report_rate = 0;
+ 	int error;
+ 
+ 	if (spi->controller->flags & SPI_CONTROLLER_HALF_DUPLEX)
+@@ -1556,6 +1558,12 @@ static int syna_tcm_probe(struct spi_device *spi)
+ 	ts->panel_off = ts->has_panel;
+ 	spi_set_drvdata(spi, ts);
+ 
++	device_property_read_u32(dev, "syna,report-rate", &report_rate);
++	if (report_rate > U16_MAX)
++		return dev_err_probe(dev, -EINVAL, "invalid report rate %u\n",
++				     report_rate);
++	ts->report_rate = report_rate;
++
+ 	error = devm_mutex_init(dev, &ts->reset_lock);
+ 	if (error)
+ 		return error;
+-- 
+2.56.0
+
