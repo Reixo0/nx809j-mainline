@@ -1,0 +1,32 @@
+#!/bin/sh
+# Log the cell connection to /var/log/nx809j-cell/, one file a day, keeping
+# KEEP_DAYS: network changes and rejects as they happen, and a full status
+# every INTERVAL seconds. Stays on the phone: it has no IMEI or number, but the
+# operator and times do say where it has been.
+INTERVAL=${INTERVAL:-60}
+KEEP_DAYS=${KEEP_DAYS:-14}
+DIR=/var/log/nx809j-cell
+today() { echo "$DIR/cell-$(date -u +%Y%m%d).log"; }
+
+# Restarted when it ends: dmailctl exits if the modem restarts
+watch_changes() {
+  while :; do
+    dmailctl watch 2>&1 | while IFS= read -r line; do
+      echo "$line" >> "$(today)"
+    done
+    sleep 10
+  done
+}
+watch_changes &
+trap 'kill $! 2>/dev/null; exit 0' TERM INT
+
+while :; do
+  {
+    echo "--- $(date -u +%FT%TZ)"
+    dmailctl status 2>&1
+    ip -o route show default
+  } >> "$(today)"
+  find "$DIR" -name 'cell-*.log' -mtime +"$KEEP_DAYS" -delete
+  sleep "$INTERVAL" &
+  wait $!
+done

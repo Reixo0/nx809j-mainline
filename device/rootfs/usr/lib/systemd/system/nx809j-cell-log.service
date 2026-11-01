@@ -1,0 +1,15 @@
+# Keeps a log of the cell connection without a PC: not enabled by default.
+#   sudo systemctl enable --now nx809j-cell-log
+# Logs: /var/log/nx809j-cell/
+[Unit]
+Description=Log of the cell connection
+After=dmail.service
+
+[Service]
+ExecStart=/usr/bin/nx809j-cell-log
+LogsDirectory=nx809j-cell
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
