@@ -1,0 +1,16 @@
+# The "Arch Linux (known good)" boot entry (nx809j-mark-good) boots a saved
+# kernel whose modules may since have been replaced: mount the modules saved
+# with it over the current ones before anything loads a module.
+[Unit]
+Description=Modules of the known-good kernel
+DefaultDependencies=no
+ConditionKernelCommandLine=nx809j.modules=good
+Before=systemd-udevd.service systemd-modules-load.service sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'r=$(uname -r); mount --bind "/usr/lib/modules-good/$r" "/usr/lib/modules/$r"'
+
+[Install]
+WantedBy=sysinit.target

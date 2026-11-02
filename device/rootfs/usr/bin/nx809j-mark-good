@@ -1,0 +1,40 @@
+#!/bin/sh
+# Keep the running kernel as the known-good fallback: its Image and DTB go to
+# /boot/nx809j/good, its modules to /usr/lib/modules-good, and systemd-boot
+# gets an "Arch Linux (known good)" entry that boots them. Copying the Image
+# alone is not enough: the display driver and most others are modules, and the
+# next kernel install replaces them. nx809j.modules=good on that entry makes
+# nx809j-good-modules.service mount the saved modules over the current ones.
+# Run on a kernel that has been tested, booted from the default entry.
+set -eu
+[ "$(id -u)" = 0 ] || exec sudo -n "$0" "$@"
+B=/boot/nx809j
+L=/boot/loader/entries
+R=$(uname -r)
+if grep -qw nx809j.modules=good /proc/cmdline; then
+	echo "running the known-good kernel already; nothing to keep" >&2
+	exit 1
+fi
+# The installed Image must be the one running: an Image installed since boot
+# would be kept with the running kernel's modules.
+if ! grep -aqF "$(uname -v)" "$B/Image"; then
+	echo "$B/Image is not the running kernel ($(uname -v)); reboot into it first" >&2
+	exit 1
+fi
+mkdir -p "$B/good" /usr/lib/modules-good
+cp "$B/Image" "$B/good/Image.new"
+cp "$B/kaanapali-nubia-nx809j.dtb" "$B/good/kaanapali-nubia-nx809j.dtb.new"
+mv "$B/good/Image.new" "$B/good/Image"
+mv "$B/good/kaanapali-nubia-nx809j.dtb.new" "$B/good/kaanapali-nubia-nx809j.dtb"
+rm -rf "/usr/lib/modules-good/$R.new"
+cp -a "/usr/lib/modules/$R" "/usr/lib/modules-good/$R.new"
+rm -rf "/usr/lib/modules-good/$R"
+mv "/usr/lib/modules-good/$R.new" "/usr/lib/modules-good/$R"
+sed -e 's/^title .*/title   Arch Linux (known good)/' \
+    -e 's|/nx809j/Image|/nx809j/good/Image|' \
+    -e 's|/nx809j/kaanapali-nubia-nx809j.dtb|/nx809j/good/kaanapali-nubia-nx809j.dtb|' \
+    -e '/^options/s/$/ nx809j.modules=good/' \
+    "$L/nx809j.conf" > "$L/nx809j-good.conf.new"
+mv "$L/nx809j-good.conf.new" "$L/nx809j-good.conf"
+sync
+echo "kept $(uname -v | cut -d' ' -f1) as the known-good kernel ($L/nx809j-good.conf)"
