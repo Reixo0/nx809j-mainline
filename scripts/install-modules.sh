@@ -13,6 +13,12 @@ SRC=$ROOT/out/modules/lib/modules/$REL
 
 running=$(ssh "$HOST" uname -r)
 [[ $running == "$REL" ]] || echo "note: phone runs $running, installing $REL"
+# On the known-good boot entry the saved modules are mounted over this
+# directory, and replacing it would overwrite them
+if ssh "$HOST" mountpoint -q "/usr/lib/modules/$REL"; then
+  echo "the phone runs the known-good entry; reboot into the default one first" >&2
+  exit 1
+fi
 
 # Replace the whole directory so modules dropped from the config don't linger
 tar -C "$SRC/.." --owner=0 --group=0 -czf - "$REL" | ssh "$HOST" "
