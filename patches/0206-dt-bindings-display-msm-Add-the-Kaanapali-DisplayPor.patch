@@ -1,0 +1,48 @@
+From e29051cf2377f68e7384e683dd2f8cd739437ff3 Mon Sep 17 00:00:00 2001
+From: Victor Fuentes <victor@vlinkz.dev>
+Date: Wed, 29 Jul 2026 01:07:31 -0700
+Subject: [PATCH] dt-bindings: display/msm: Add the Kaanapali DisplayPort
+ controller
+
+It is compatible with SM8650.
+
+Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
+---
+ .../devicetree/bindings/display/msm/dp-controller.yaml    | 1 +
+ .../bindings/display/msm/qcom,kaanapali-mdss.yaml         | 8 ++++++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/display/msm/dp-controller.yaml b/Documentation/devicetree/bindings/display/msm/dp-controller.yaml
+index 094a6383bb77..76ab05bd225a 100644
+--- a/Documentation/devicetree/bindings/display/msm/dp-controller.yaml
++++ b/Documentation/devicetree/bindings/display/msm/dp-controller.yaml
+@@ -68,6 +68,7 @@ properties:
+       - items:
+           - enum:
+               - qcom,eliza-dp
++              - qcom,kaanapali-dp
+               - qcom,sm8750-dp
+           - const: qcom,sm8650-dp
+ 
+diff --git a/Documentation/devicetree/bindings/display/msm/qcom,kaanapali-mdss.yaml b/Documentation/devicetree/bindings/display/msm/qcom,kaanapali-mdss.yaml
+index 9f935defd6b1..ccaaee8bdc74 100644
+--- a/Documentation/devicetree/bindings/display/msm/qcom,kaanapali-mdss.yaml
++++ b/Documentation/devicetree/bindings/display/msm/qcom,kaanapali-mdss.yaml
+@@ -48,6 +48,14 @@ patternProperties:
+       compatible:
+         const: qcom,kaanapali-dpu
+ 
++  "^displayport-controller@[0-9a-f]+$":
++    type: object
++    additionalProperties: true
++    properties:
++      compatible:
++        contains:
++          const: qcom,kaanapali-dp
++
+   "^dsi@[0-9a-f]+$":
+     type: object
+     additionalProperties: true
+-- 
+2.56.0
+

@@ -1,0 +1,84 @@
+From 6f364a42ab566ce77ed2ec1a631921c73308e91e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 12:45:10 +0100
+Subject: [PATCH] arm64: dts: qcom: nx809j: enable DisplayPort over USB-C
+
+Enable the DP controller with all four link rates and make the WCD9395
+USB-SS switch the SBU mux, so it routes DP AUX in alt mode, as the stock
+device tree does (qcom,dp-aux-switch points at the same switch).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 29 ++++++++++++++++++-
+ 1 file changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index aa78c82bc8d4..4244362e0622 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -282,6 +282,7 @@ port@2 {
+ 					reg = <2>;
+ 
+ 					pmic_glink_sbu: endpoint {
++						remote-endpoint = <&wcd_usbss_sbu_mux>;
+ 					};
+ 				};
+ 			};
+@@ -1478,7 +1479,10 @@ &gpu_zap_shader {
+ &i2c3 {
+ 	status = "okay";
+ 
+-	/* Only passes USB 2.0 through and carries the 3.5 mm jack's mic/ground */
++	/*
++	 * Passes USB 2.0 through and carries the 3.5 mm jack's mic/ground; in
++	 * DisplayPort alt mode it routes DP AUX to the SBU lines, as stock.
++	 */
+ 	wcd_usbss: typec-mux@e {
+ 		compatible = "qcom,wcd9395-usbss", "qcom,wcd9390-usbss";
+ 		reg = <0x0e>;
+@@ -1486,12 +1490,21 @@ wcd_usbss: typec-mux@e {
+ 		vdd-supply = <&vreg_l15b_1p8>;
+ 
+ 		qcom,headset-jack;
++		mode-switch;
+ 		orientation-switch;
+ 
+ 		ports {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+ 
++			port@0 {
++				reg = <0>;
++
++				wcd_usbss_sbu_mux: endpoint {
++					remote-endpoint = <&pmic_glink_sbu>;
++				};
++			};
++
+ 			port@1 {
+ 				reg = <1>;
+ 
+@@ -1593,6 +1606,20 @@ &mdss {
+ 	status = "okay";
+ };
+ 
++/*
++ * DisplayPort alt mode on the USB-C port: hot-plug from the charger firmware
++ * through pmic_glink, the DP lanes on the combo PHY, AUX on the SBU lines
++ * through the WCD9395 USB-SS switch. All four link rates; stock caps the
++ * pixel clock at 675 MHz.
++ */
++&mdss_dp0 {
++	status = "okay";
++};
++
++&mdss_dp0_out {
++	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
++};
++
+ &mdss_dsi0 {
+ 	vdda-supply = <&vreg_l1d_1p2>;
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,36 @@
+From 65c5ae2066300f04c72cdd3e1a359c8b02999c6b Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 12:45:10 +0100
+Subject: [PATCH] usb: typec: mux: wcd939x-usbss: restore the jack routing
+ after a mode change
+
+On a headset jack board the switch carries the jack's mic and ground
+outside of DisplayPort, but a mux state change (DP leaving, or a plain
+SAFE/USB transition) programmed the regular USB-C routing and left the
+jack without its mic. Program the jack routing again unless DP is active.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/usb/typec/mux/wcd939x-usbss.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/typec/mux/wcd939x-usbss.c b/drivers/usb/typec/mux/wcd939x-usbss.c
+index c8c21512d71d..4ddb388d0ecb 100644
+--- a/drivers/usb/typec/mux/wcd939x-usbss.c
++++ b/drivers/usb/typec/mux/wcd939x-usbss.c
+@@ -723,7 +723,11 @@ static int wcd939x_usbss_mux_set(struct typec_mux_dev *mux,
+ 		else
+ 			usbss->svid = 0; // No SVID
+ 
+-		ret = wcd939x_usbss_set(usbss);
++		/* Outside DP, a headset jack board keeps its jack routing */
++		if (usbss->hsj && !usbss->dp_active)
++			ret = wcd939x_usbss_hsj_set(usbss);
++		else
++			ret = wcd939x_usbss_set(usbss);
+ 	}
+ 
+ 	mutex_unlock(&usbss->lock);
+-- 
+2.56.0
+

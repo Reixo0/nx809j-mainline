@@ -1,0 +1,41 @@
+From 3602900365122844a8db7ecac98b0b9cfd322715 Mon Sep 17 00:00:00 2001
+From: Victor Fuentes <victor@vlinkz.dev>
+Date: Wed, 29 Jul 2026 19:26:08 -0700
+Subject: [PATCH] drm/msm/dp: keep AUX usable across HPD transitions
+
+A modeset during an HPD pulse failed link training with -ENXIO. Also
+bail out when the sink is gone and ignore repeated plug events.
+
+Signed-off-by: Victor Fuentes <victor@vlinkz.dev>
+---
+ drivers/gpu/drm/msm/dp/dp_display.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_display.c b/drivers/gpu/drm/msm/dp/dp_display.c
+index 348eb6967abf..5b3934674b15 100644
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -423,6 +423,8 @@ static int msm_dp_hpd_plug_handle(struct msm_dp_display_private *dp)
+ 			dp->link->sink_count);
+ 
+ 	guard(mutex)(&dp->plugged_lock);
++	if (dp->plugged)
++		return 0;
+ 
+ 	ret = pm_runtime_resume_and_get(&pdev->dev);
+ 	if (ret) {
+@@ -655,6 +657,11 @@ static int msm_dp_display_prepare_link(struct msm_dp_display_private *dp)
+ 	if (dp->link->sink_count == 0)
+ 		return -ENOTCONN;
+ 
++	if (!dp->plugged)
++		return -ENOTCONN;
++
++	msm_dp_aux_enable_xfers(dp->aux, true);
++
+ 	if (!msm_dp_display->power_on) {
+ 		msm_dp_display_host_phy_init(dp);
+ 		force_link_train = true;
+-- 
+2.56.0
+

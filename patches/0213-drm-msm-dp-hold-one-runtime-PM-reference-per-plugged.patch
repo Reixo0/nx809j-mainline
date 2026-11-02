@@ -1,0 +1,77 @@
+From 432faa8365e5fe011f1434600fd11fc016014e34 Mon Sep 17 00:00:00 2001
+From: Joonhoe Kim <26rote@gmail.com>
+Date: Sun, 27 Sep 2026 11:59:56 +0000
+Subject: [PATCH] drm/msm/dp: hold one runtime PM reference per plugged state
+
+The plug handler takes a runtime PM reference every time it runs and
+sets dp->plugged; the unplug handler drops a single reference when
+dp->plugged is set. But the plug handler runs more than once per
+plug: the Type-C side repeats "connected" notifications, and
+msm_dp_bridge_detect() also marks the sink plugged and keeps the
+reference it took, again on every detect while the sink stays
+connected. Every extra reference is leaked on unplug.
+
+On a Lenovo TB323FU (SM8850, DP over the USB-C port via pmic_glink
+altmode) the DP controller's usage count reached 28-34 after a few
+plugs (rpm_usage tracepoint), so the controller never runtime-suspended
+after the TV was unplugged. It in turn kept the MDSS core GDSC on while
+all displays were off -- a power drain, and the condition that exposed
+a DPU split-encoder teardown bug on the same device.
+
+Make the plugged state own exactly one reference: the plug handler
+only takes it when the sink was not plugged yet, and detect() returns
+its own reference when the plugged state already holds one, or drops
+both when it finds the sink gone.
+
+With this the count stays at 1-3 while a TV is connected, the
+controller suspends 3-4 s after unplug, MDSS suspends and its GDSC
+powers off on DPMS off, and replug (after 20 s and quick) still brings
+the picture back.
+
+Assisted-by: LLM [Claude Code]
+
+[mzak: ported to the iceland q89b tree: the plug-handler half is already there
+ (msm_dp_hpd_plug_handle() returns early while dp->plugged is set), so only
+ the msm_dp_bridge_detect() half is applied]
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+---
+ drivers/gpu/drm/msm/dp/dp_display.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_display.c b/drivers/gpu/drm/msm/dp/dp_display.c
+index a82738e7cb7d..37cd8ba5b079 100644
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -934,6 +934,7 @@ enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
+ 	u8 dpcd[DP_RECEIVER_CAP_SIZE];
+ 	struct drm_dp_desc desc;
+ 	bool phy_deinit;
++	bool was_plugged;
+ 	int ret;
+ 
+ 	dp = to_dp_bridge(bridge)->msm_dp_display;
+@@ -947,6 +948,7 @@ enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
+ 		return status;
+ 	}
+ 
++	was_plugged = priv->plugged;
+ 	phy_deinit = msm_dp_display_host_phy_init(priv);
+ 
+ 	msm_dp_aux_enable_xfers(priv->aux, true);
+@@ -997,6 +999,12 @@ enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
+ 		}
+ 
+ 		pm_runtime_put_sync(&dp->pdev->dev);
++		/* the sink is gone: drop the plugged state's reference too */
++		if (was_plugged)
++			pm_runtime_put_sync(&dp->pdev->dev);
++	} else if (was_plugged) {
++		/* the plugged state already holds its reference */
++		pm_runtime_put_sync(&dp->pdev->dev);
+ 	}
+ 
+ 	return status;
+-- 
+2.56.0
+

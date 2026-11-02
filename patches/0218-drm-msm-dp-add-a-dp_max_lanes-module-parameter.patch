@@ -1,0 +1,77 @@
+From 1512ba0dcf1aa7c8a453f60f7a4a71b46425ec67 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Mon, 19 Oct 2026 06:46:26 +0300
+Subject: [PATCH] drm/msm/dp: add a dp_max_lanes module parameter
+
+A test of the two-lane case should not need a pin assignment D sink or
+a new DTB. Add msm.dp_max_lanes: 1, 2 or 4 limits DisplayPort to that
+many lanes, as if the PHY routed no more to the connector; 0, the
+default, leaves the PHY and DT limits alone. It is read with the link
+capabilities, so a change made through sysfs applies from the next plug
+on. The link capabilities log line shows the value.
+
+A debugging aid for the iceland kernel, not meant for upstream.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/dp/dp_panel.c | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_panel.c b/drivers/gpu/drm/msm/dp/dp_panel.c
+index 82641b9494de..6accf441a03a 100644
+--- a/drivers/gpu/drm/msm/dp/dp_panel.c
++++ b/drivers/gpu/drm/msm/dp/dp_panel.c
+@@ -13,12 +13,18 @@
+ #include <drm/drm_print.h>
+ 
+ #include <linux/io.h>
++#include <linux/moduleparam.h>
+ #include <linux/phy/phy.h>
+ #include <linux/types.h>
+ #include <asm/byteorder.h>
+ 
+ #define DP_INTF_CONFIG_DATABUS_WIDEN     BIT(4)
+ 
++static unsigned int dp_max_lanes;
++module_param(dp_max_lanes, uint, 0600);
++MODULE_PARM_DESC(dp_max_lanes,
++		 "limit DisplayPort to 1, 2 or 4 lanes from the next plug on (0 = as the PHY and DT allow, default)");
++
+ struct msm_dp_panel_private {
+ 	struct device *dev;
+ 	struct drm_device *drm_dev;
+@@ -108,7 +114,14 @@ u32 msm_dp_stream_reg(enum msm_dp_stream_id id, u32 reg)
+  */
+ static int msm_dp_panel_routed_lanes(struct msm_dp_panel_private *panel)
+ {
+-	return phy_get_bus_width(panel->phy);
++	int lanes = phy_get_bus_width(panel->phy);
++	unsigned int max = READ_ONCE(dp_max_lanes);
++
++	/* The module parameter can pretend that fewer lanes are routed */
++	if ((max == 1 || max == 2 || max == 4) && (lanes <= 0 || (int)max < lanes))
++		lanes = max;
++
++	return lanes;
+ }
+ 
+ /**
+@@ -393,11 +406,12 @@ int msm_dp_panel_read_link_caps(struct msm_dp_panel *msm_dp_panel,
+ 	}
+ 
+ 	drm_info(connector->dev,
+-		 "[CONNECTOR:%d:%s] sink %u lanes @ %u kHz, PHY %d lanes, DT %u lanes @ %u kHz: link up to %u lanes @ %u kHz\n",
++		 "[CONNECTOR:%d:%s] sink %u lanes @ %u kHz, PHY %d lanes, DT %u lanes @ %u kHz, dp_max_lanes %u: link up to %u lanes @ %u kHz\n",
+ 		 connector->base.id, connector->name,
+ 		 drm_dp_max_lane_count(msm_dp_panel->dpcd),
+-		 drm_dp_max_link_rate(msm_dp_panel->dpcd), panel->routed_lanes,
++		 drm_dp_max_link_rate(msm_dp_panel->dpcd), phy_get_bus_width(panel->phy),
+ 		 panel->link->max_dp_lanes, panel->link->max_dp_link_rate,
++		 READ_ONCE(dp_max_lanes),
+ 		 msm_dp_panel->link_info.num_lanes, msm_dp_panel->link_info.rate);
+ 
+ 	if (drm_dp_is_branch(msm_dp_panel->dpcd)) {
+-- 
+2.56.0
+
