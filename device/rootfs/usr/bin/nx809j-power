@@ -1,0 +1,95 @@
+#!/usr/bin/python3
+# Measure battery drain over a period, sleep included.
+#
+# Usage: nx809j-power [seconds]   (default 300)
+#
+# The battery current can only be sampled while the phone is awake, so the
+# average over the whole period, suspend included, comes from the battery
+# level. The fuel gauge reports it in whole percent (about 67 mAh), so that
+# average needs hours to mean anything. Run it on battery: on a charger the
+# numbers are the net charge.
+import os
+import sys
+import time
+
+BAT = "/sys/class/power_supply/qcom-battmgr-bat/"
+STATS = "/sys/kernel/debug/qcom_stats/"
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def num(path):
+    v = read(path)
+    return int(v) if v is not None else None
+
+
+def sleep_counts():
+    out = {}
+    for name in ("aosd", "cxsd", "ddr"):
+        text = read(STATS + name) or ""
+        for line in text.splitlines():
+            if line.startswith("Count:"):
+                out[name] = int(line.split()[1])
+    return out
+
+
+def snapshot():
+    return {
+        "wall": time.time(),
+        "boot": time.clock_gettime(time.CLOCK_BOOTTIME),
+        "mono": time.clock_gettime(time.CLOCK_MONOTONIC),
+        "level": num(BAT + "capacity"),
+        "suspends": num("/sys/power/suspend_stats/success"),
+        "sleep": sleep_counts(),
+    }
+
+
+def main():
+    period = int(sys.argv[1]) if len(sys.argv) > 1 else 300
+    if read("/sys/class/power_supply/qcom-battmgr-usb/online") == "1":
+        print("note: a charger is connected, so this is the net charge")
+    start = snapshot()
+    samples = []
+    while time.clock_gettime(time.CLOCK_BOOTTIME) - start["boot"] < period:
+        cur = num(BAT + "current_now")
+        volt = num(BAT + "voltage_now")
+        if cur is not None and volt is not None:
+            samples.append((cur, volt))
+        time.sleep(2)
+    end = snapshot()
+
+    elapsed = end["boot"] - start["boot"]
+    asleep = elapsed - (end["mono"] - start["mono"])
+    print(f"period      {elapsed:7.0f} s, asleep {asleep:.0f} s "
+          f"({100 * asleep / elapsed:.0f} %), "
+          f"{end['suspends'] - start['suspends']} suspends")
+    if samples:
+        # The battery current is negative while discharging
+        cur = -sum(c for c, _ in samples) / len(samples) / 1000
+        volt = sum(v for _, v in samples) / len(samples) / 1e6
+        print(f"awake       {cur:7.0f} mA, {cur * volt:.0f} mW drain "
+              f"(average of {len(samples)} samples)")
+    full = num(BAT + "charge_full")
+    if start["level"] is not None and end["level"] is not None and full:
+        drop = start["level"] - end["level"]
+        if drop >= 2:
+            step = full / 100000
+            print(f"overall     {drop * step / elapsed * 3600:7.1f} mA drain "
+                  f"({drop} % used, +/- {step / elapsed * 3600:.0f} mA)")
+        else:
+            print(f"overall     battery level dropped {drop} %, "
+                  "too little for an average")
+    for name in ("aosd", "cxsd", "ddr"):
+        if name in start["sleep"] and name in end["sleep"]:
+            print(f"{name:11} {end['sleep'][name] - start['sleep'][name]:7d} entries")
+
+
+if os.geteuid() != 0:
+    sys.exit("run as root (the sleep counters are in debugfs)")
+main()
