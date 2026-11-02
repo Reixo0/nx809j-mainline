@@ -1,0 +1,4 @@
+# NX809J: an ADSP restart (SSR) hangs on the clock framework lock and takes
+# storage down with it, so leave a crashed ADSP (audio, sensors) down until
+# the next reboot.
+ACTION=="add", SUBSYSTEM=="remoteproc", ATTR{name}=="adsp", ATTR{recovery}="disabled"
