@@ -58,6 +58,9 @@ for p in "$ARM_OUT"/*; do
 done
 ln -s "$ARM_OUT/clang_x64/gen_snapshot" "$VIEW/out/$ARM_NAME/gen_snapshot"
 assemble() {  # application directory, output
+  # assemble keeps an old icon subset, without icons added since, unless
+  # the font is gone
+  rm -f "$2/flutter_assets/fonts/MaterialIcons-Regular.otf"
   (cd "$W/denial/$1"
    "$FLUTTER" pub get --enforce-lockfile
    "$FLUTTER" assemble --local-engine-src-path="$VIEW" --local-engine=$ARM_NAME \
