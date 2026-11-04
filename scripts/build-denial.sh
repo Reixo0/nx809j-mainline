@@ -19,10 +19,13 @@ JOBS=${JOBS:-$(($(nproc) * 4 / 5))}
 OUT=$W/work; CC_DIR=$OUT/cc
 mkdir -p "$OUT" "$CC_DIR"
 
-clone() {  # name branch
-  [[ -d $W/$1 ]] || git clone --branch "$2" "https://github.com/denialwm/$1.git" "$W/$1"
+clone() {  # owner name branch
+  [[ -d $W/$2 ]] || git clone --branch "$3" "https://github.com/$1/$2.git" "$W/$2"
 }
-clone denial dev; clone phonewave main; clone denial-apps main; clone gpui-touch main
+# Denial, Phonewave and the apps are our forks: their main carries this phone's
+# changes. gpui-touch is used as upstream has it.
+clone Reixo0 denial main; clone Reixo0 phonewave main; clone Reixo0 denial-apps main
+clone denialwm gpui-touch main
 
 export DENIAL_BUILD_JOBS=$JOBS
 export DENIAL_USER_CACHE=$HOME/.cache/denial
