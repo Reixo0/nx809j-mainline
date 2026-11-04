@@ -1,0 +1,111 @@
+From 7d65f558e150ed42356f03de08c7fb02e70800cd Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 19:11:04 +0100
+Subject: [PATCH] misc: fastrpc: wait for an interrupted invoke instead of
+ sending it again
+
+A signal interrupts a user invoke's wait after the DSP got the request,
+and the ioctl restarts. The freezer does this to every waiting FastRPC
+client on each system suspend. fastrpc_internal_invoke() then allocates a
+new context and sends the request again, while the DSP still owns the
+first one. For the adsp_listener of a user PD (hexagonrpcd answering the
+audio PD) the DSP then sees two "next" requests from one thread, and its
+next listener call fails an assertion and crashes the ADSP:
+
+  EF:audio_process:...:listener_hexagon.c:326:Assertion prevCtx == notify failed
+
+On the RedMagic 11 Pro this hit the first call after any suspend, when
+call setup goes through the listener.
+
+Keep the interrupted context marked, and when the same thread restarts
+the same invoke, wait for that context again, with the new argument
+array, instead of sending a duplicate. The downstream driver does the
+same.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/misc/fastrpc.c | 40 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/drivers/misc/fastrpc.c b/drivers/misc/fastrpc.c
+index 76d469e5204a..245b333837e2 100644
+--- a/drivers/misc/fastrpc.c
++++ b/drivers/misc/fastrpc.c
+@@ -275,6 +275,8 @@ struct fastrpc_invoke_ctx {
+ 	bool is_work_done;
+ 	/* process updates poll memory instead of glink response */
+ 	bool is_polled;
++	/* a signal interrupted the wait; the DSP still owns the request */
++	bool interrupted;
+ 	struct kref refcount;
+ 	struct list_head node; /* list of ctxs */
+ 	struct completion work;
+@@ -1355,6 +1357,36 @@ static int fastrpc_wait_for_completion(struct fastrpc_invoke_ctx *ctx,
+ 	return fastrpc_wait_for_response(ctx, kernel);
+ }
+ 
++/*
++ * A signal, also the freezer's on suspend, can interrupt a user invoke after
++ * the DSP got the request, and the ioctl then restarts. Sending the request
++ * again would leave the DSP with two from one thread: a user PD's
++ * adsp_listener then fails its next request ("prevCtx == notify" in
++ * listener_hexagon.c) and the DSP crashes. Wait for the interrupted context
++ * instead, as the downstream driver does.
++ */
++static struct fastrpc_invoke_ctx *
++fastrpc_context_restore_interrupted(struct fastrpc_user *fl, u32 handle, u32 sc,
++				    struct fastrpc_invoke_args *args)
++{
++	struct fastrpc_invoke_ctx *ctx = NULL, *ictx;
++
++	spin_lock(&fl->lock);
++	list_for_each_entry(ictx, &fl->pending, node) {
++		if (ictx->interrupted && ictx->pid == current->pid &&
++		    ictx->sc == sc && ictx->msg.handle == handle) {
++			ictx->interrupted = false;
++			/* The arguments of the restarted ioctl, same contents */
++			ictx->args = args;
++			ctx = ictx;
++			break;
++		}
++	}
++	spin_unlock(&fl->lock);
++
++	return ctx;
++}
++
+ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
+ 				   u32 handle, u32 sc,
+ 				   struct fastrpc_invoke_args *args)
+@@ -1375,6 +1407,12 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
+ 		return -EPERM;
+ 	}
+ 
++	if (!kernel) {
++		ctx = fastrpc_context_restore_interrupted(fl, handle, sc, args);
++		if (ctx)
++			goto wait;
++	}
++
+ 	ctx = fastrpc_context_alloc(fl, kernel, sc, args);
+ 	if (IS_ERR(ctx))
+ 		return PTR_ERR(ctx);
+@@ -1397,6 +1435,7 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
+ 	if (handle > FASTRPC_MAX_STATIC_HANDLE && fl->pd == USER_PD && fl->poll_mode)
+ 		ctx->is_polled = true;
+ 
++wait:
+ 	err = fastrpc_wait_for_completion(ctx, kernel);
+ 	if (err)
+ 		goto bail;
+@@ -1424,6 +1463,7 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
+ 
+ 	if (err == -ERESTARTSYS) {
+ 		spin_lock(&fl->lock);
++		ctx->interrupted = true;
+ 		list_for_each_entry_safe(buf, b, &fl->mmaps, node) {
+ 			list_del(&buf->node);
+ 			list_add_tail(&buf->node, &fl->cctx->invoke_interrupted_mmaps);
+-- 
+2.56.0
+

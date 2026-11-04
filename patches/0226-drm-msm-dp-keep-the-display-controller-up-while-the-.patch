@@ -1,0 +1,78 @@
+From 7af8fe6f6db2cc1934fcc66cd1a3ade703598077 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 16:36:37 +0100
+Subject: [PATCH] drm/msm/dp: keep the display controller up while the DP
+ controller is
+
+With a command mode panel switched off the display controller runtime
+suspends, and AUX transfers from the DP controller then time out: a
+monitor plugged in while the phone's screen was off hung detection for
+up to half a minute, with the compositor stuck in GETCONNECTOR, every
+DPCD read failing with -ETIMEDOUT.
+
+Link the DP controller to the display controller for runtime PM so the
+display controller resumes whenever the DP controller does.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/dp/dp_display.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_display.c b/drivers/gpu/drm/msm/dp/dp_display.c
+index f1a75a4b2238..28331b05c322 100644
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -56,6 +56,9 @@ struct msm_dp_display_private {
+ 	bool phy_initialized;
+ 	bool audio_supported;
+ 
++	/* keeps the display controller up while this controller is up */
++	struct device_link *dpu_link;
++
+ 	struct mutex plugged_lock;
+ 	bool plugged;
+ 	/* unplugged while the stream was on: retrain on the next plug */
+@@ -308,6 +311,18 @@ static int msm_dp_display_bind(struct device *dev, struct device *master,
+ 
+ 	dp->drm_dev = drm;
+ 	dp->aux->drm_dev = drm;
++
++	/*
++	 * AUX transfers time out while the display controller is runtime
++	 * suspended, as it is with a command mode panel switched off: a
++	 * monitor plugged in then hangs its detection. Resume the display
++	 * controller whenever this controller resumes.
++	 */
++	dp->dpu_link = device_link_add(dev, drm->dev,
++				       DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME);
++	if (!dp->dpu_link)
++		dev_warn(dev, "failed to link to the display controller\n");
++
+ 	rc = msm_dp_aux_register(dp->aux);
+ 	if (rc) {
+ 		DRM_ERROR("DRM DP AUX register failed\n");
+@@ -316,6 +331,10 @@ static int msm_dp_display_bind(struct device *dev, struct device *master,
+ 
+ 	return 0;
+ end:
++	if (dp->dpu_link) {
++		device_link_del(dp->dpu_link);
++		dp->dpu_link = NULL;
++	}
+ 	return rc;
+ }
+ 
+@@ -329,6 +348,10 @@ static void msm_dp_display_unbind(struct device *dev, struct device *master,
+ 	of_dp_aux_depopulate_bus(dp->aux);
+ 
+ 	msm_dp_aux_unregister(dp->aux);
++	if (dp->dpu_link) {
++		device_link_del(dp->dpu_link);
++		dp->dpu_link = NULL;
++	}
+ 	dp->drm_dev = NULL;
+ 	dp->aux->drm_dev = NULL;
+ 	priv->kms->dp[dp->id] = NULL;
+-- 
+2.56.0
+

@@ -1,0 +1,521 @@
+From ef74d464aeee4e60c08dc003a94c5959a7bf80eb Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 27 Oct 2026 22:24:09 +0100
+Subject: [PATCH] misc: add Goodix ultrasonic fingerprint control for NX809J
+
+Add power, reset and interrupt control for the GUM5228 ultrasonic stack
+identified in NX809J's stock fingerprint init configuration. Keep the SPI
+bus under QTEE ownership; biometric commands use the signed goodixfp64
+trusted application through /dev/tee0.
+
+Wire reset GPIO 215, IRQ GPIO 99 and the PM8010-M L7 supply from the stock
+device tree. Match the stock module's rising-edge interrupt and 10 ms
+reset-low / 5 ms recovery sequence. Expose a root-only, exclusive-open
+control node with interrupt polling, power-off on close and suspend
+blocking while the sensor is powered.
+
+Enable the driver in NX809J's configuration and document the binding and
+native UAPI. No Android netlink, input injection or panel callbacks are
+needed for this initial platform-control interface.
+
+Validation: strict checkpatch passes; the configuration audit adds only
+GOODIX_TEE_FP=y; the NX809J DTB compiles through devices-build. The full
+kernel build is blocked by unrelated missing mpss_mem, q6_mpss_dtb_mem,
+dsm_partition_1_mem and dsm_partition_2_mem references when building
+kaanapali-oneplus-iceland.dtb. Hardware validation awaits a reboot; the
+phone has not been flashed or rebooted.
+
+Assisted-by: LLM
+(cherry picked from commit 5c9fbb6c26c953b50e11d3d6d4d7df41f07940bf)
+---
+ .../bindings/misc/goodix,gum5228.yaml         |  42 +++
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  |  17 +
+ drivers/misc/Kconfig                          |   9 +
+ drivers/misc/Makefile                         |   1 +
+ drivers/misc/goodix-tee-fp.c                  | 328 ++++++++++++++++++
+ include/uapi/linux/goodix_tee_fp.h            |  27 ++
+ 6 files changed, 424 insertions(+)
+ create mode 100644 Documentation/devicetree/bindings/misc/goodix,gum5228.yaml
+ create mode 100644 drivers/misc/goodix-tee-fp.c
+ create mode 100644 include/uapi/linux/goodix_tee_fp.h
+
+diff --git a/Documentation/devicetree/bindings/misc/goodix,gum5228.yaml b/Documentation/devicetree/bindings/misc/goodix,gum5228.yaml
+new file mode 100644
+index 000000000000..1d10b8ff3680
+--- /dev/null
++++ b/Documentation/devicetree/bindings/misc/goodix,gum5228.yaml
+@@ -0,0 +1,42 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/misc/goodix,gum5228.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Goodix GUM5228 ultrasonic fingerprint platform control
++
++maintainers:
++  - Doctor Logix <doctor.logix@gmail.com>
++
++description: |
++  Power, reset and interrupt wiring for a Goodix ultrasonic fingerprint
++  sensor. The secure world owns the SPI bus; biometric commands go to
++  the signed trusted application through the TEE subsystem.
++
++properties:
++  compatible:
++    const: goodix,gum5228
++
++  reset-gpios:
++    maxItems: 1
++    description: Active-low sensor reset.
++
++  interrupt-gpios:
++    maxItems: 1
++    description: Active-high sensor interrupt, sampled on the rising edge.
++
++  vdd-supply:
++    description: Sensor analog supply.
++
++  pinctrl-0: true
++  pinctrl-names:
++    const: default
++
++required:
++  - compatible
++  - reset-gpios
++  - interrupt-gpios
++  - vdd-supply
++
++additionalProperties: false
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 40b37f111be9..36c9e6119356 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -46,6 +46,16 @@ aliases {
+ 		serial1 = &uart18;
+ 	};
+ 
++	fingerprint {
++		compatible = "goodix,gum5228";
++		reset-gpios = <&tlmm 215 GPIO_ACTIVE_LOW>;
++		interrupt-gpios = <&tlmm 99 GPIO_ACTIVE_HIGH>;
++		vdd-supply = <&vreg_l7m_2p8>;
++
++		pinctrl-0 = <&fingerprint_reset_default>;
++		pinctrl-names = "default";
++	};
++
+ 	wcd939x: audio-codec {
+ 		compatible = "qcom,wcd9395-codec", "qcom,wcd9390-codec";
+ 
+@@ -1962,6 +1972,13 @@ cam_uw_reset_default: cam-uw-reset-default-state {
+ 		bias-disable;
+ 	};
+ 
++	fingerprint_reset_default: fingerprint-reset-default-state {
++		pins = "gpio215";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-disable;
++	};
++
+ 	disp_reset_active: disp-reset-active-state {
+ 		pins = "gpio98";
+ 		function = "gpio";
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index c40e89cc5724..1d43b1b90b82 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -601,4 +601,13 @@ source "drivers/misc/keba/Kconfig"
+ source "drivers/misc/amd-sbi/Kconfig"
+ source "drivers/misc/rp1/Kconfig"
+ source "drivers/misc/issei/Kconfig"
++
++config GOODIX_TEE_FP
++	tristate "Goodix ultrasonic fingerprint platform control"
++	depends on OF && GPIOLIB && REGULATOR
++	help
++	  Power, reset and interrupt control for Goodix ultrasonic sensors
++	  whose SPI bus belongs to QTEE. Biometric commands use the signed
++	  trusted application; this is not a complete fingerprint HAL.
++
+ endmenu
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 7cc3d615d37a..da966269368b 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -72,3 +72,4 @@ obj-y				+= amd-sbi/
+ obj-$(CONFIG_MISC_RP1)		+= rp1/
+ obj-$(CONFIG_INTEL_SSEI)	+= issei/
+ obj-$(CONFIG_TC9564_PCI)	+= tc9564-pci.o
++obj-$(CONFIG_GOODIX_TEE_FP)	+= goodix-tee-fp.o
+diff --git a/drivers/misc/goodix-tee-fp.c b/drivers/misc/goodix-tee-fp.c
+new file mode 100644
+index 000000000000..772cfaf78bab
+--- /dev/null
++++ b/drivers/misc/goodix-tee-fp.c
+@@ -0,0 +1,328 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Goodix ultrasonic fingerprint platform control. QTEE owns the SPI bus.
++ * Reset timing and IRQ polarity follow NX809J's zte_fingerprint module.
++ */
++#include <linux/atomic.h>
++#include <linux/delay.h>
++#include <linux/fs.h>
++#include <linux/goodix_tee_fp.h>
++#include <linux/gpio/consumer.h>
++#include <linux/interrupt.h>
++#include <linux/kref.h>
++#include <linux/miscdevice.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/poll.h>
++#include <linux/regulator/consumer.h>
++#include <linux/slab.h>
++#include <linux/uaccess.h>
++
++struct goodix_fp {
++	struct miscdevice misc;
++	struct mutex lock; /* Serializes control, close and removal. */
++	struct kref ref;
++	struct gpio_desc *reset, *interrupt;
++	struct regulator *vdd;
++	wait_queue_head_t wait;
++	atomic_t sequence;
++	u32 seen, reset_sequence;
++	int irq;
++	bool opened, powered, removed;
++};
++
++static void goodix_fp_free(struct kref *ref)
++{
++	kfree(container_of(ref, struct goodix_fp, ref));
++}
++
++static void goodix_fp_reset(struct goodix_fp *fp)
++{
++	/* Stock gf_hw_reset: physical low for 10 ms, then high for 5 ms. */
++	gpiod_set_value_cansleep(fp->reset, 1);
++	usleep_range(10000, 10100);
++	gpiod_set_value_cansleep(fp->reset, 0);
++	usleep_range(5000, 6000);
++	fp->reset_sequence++;
++}
++
++static int goodix_fp_power_on(struct goodix_fp *fp)
++{
++	int ret;
++
++	if (fp->powered)
++		return 0;
++	ret = regulator_enable(fp->vdd);
++	if (ret)
++		return ret;
++	goodix_fp_reset(fp);
++	fp->powered = true;
++	enable_irq(fp->irq);
++	return 0;
++}
++
++static int goodix_fp_power_off(struct goodix_fp *fp)
++{
++	int ret;
++
++	if (!fp->powered)
++		return 0;
++	disable_irq(fp->irq);
++	gpiod_set_value_cansleep(fp->reset, 1);
++	ret = regulator_disable(fp->vdd);
++	if (ret) {
++		enable_irq(fp->irq);
++		return ret;
++	}
++	fp->powered = false;
++	return 0;
++}
++
++static irqreturn_t goodix_fp_irq(int irq, void *data)
++{
++	struct goodix_fp *fp = data;
++
++	atomic_inc(&fp->sequence);
++	wake_up_interruptible(&fp->wait);
++	return IRQ_HANDLED;
++}
++
++static int goodix_fp_open(struct inode *inode, struct file *file)
++{
++	struct goodix_fp *fp = container_of(file->private_data,
++					   struct goodix_fp, misc);
++	int ret = 0;
++
++	mutex_lock(&fp->lock);
++	if (fp->removed) {
++		ret = -ENODEV;
++	} else if (fp->opened) {
++		ret = -EBUSY;
++	} else {
++		fp->opened = true;
++		fp->seen = atomic_read(&fp->sequence);
++		kref_get(&fp->ref);
++		file->private_data = fp;
++	}
++	mutex_unlock(&fp->lock);
++	return ret ? ret : nonseekable_open(inode, file);
++}
++
++static int goodix_fp_release(struct inode *inode, struct file *file)
++{
++	struct goodix_fp *fp = file->private_data;
++	int ret = 0;
++
++	mutex_lock(&fp->lock);
++	if (!fp->removed)
++		ret = goodix_fp_power_off(fp);
++	fp->opened = false;
++	mutex_unlock(&fp->lock);
++	kref_put(&fp->ref, goodix_fp_free);
++	return ret;
++}
++
++static long goodix_fp_ioctl(struct file *file, unsigned int cmd,
++			    unsigned long arg)
++{
++	struct goodix_fp *fp = file->private_data;
++	struct goodix_fp_state state;
++	int ret = 0;
++
++	mutex_lock(&fp->lock);
++	if (fp->removed) {
++		ret = -ENODEV;
++		goto out;
++	}
++	switch (cmd) {
++	case GOODIX_FP_IOC_ENABLE_POWER:
++		ret = goodix_fp_power_on(fp);
++		break;
++	case GOODIX_FP_IOC_DISABLE_POWER:
++		ret = goodix_fp_power_off(fp);
++		break;
++	case GOODIX_FP_IOC_RESET:
++		if (!fp->powered)
++			ret = -EHOSTDOWN;
++		else
++			goodix_fp_reset(fp);
++		break;
++	case GOODIX_FP_IOC_GET_STATE:
++		state = (struct goodix_fp_state) {
++			.version = 1,
++			.powered = fp->powered,
++			.irq_sequence = atomic_read(&fp->sequence),
++			.reset_sequence = fp->reset_sequence,
++			.irq_level = gpiod_get_value_cansleep(fp->interrupt),
++		};
++		if (state.irq_level < 0)
++			ret = state.irq_level;
++		else if (copy_to_user((void __user *)arg, &state, sizeof(state)))
++			ret = -EFAULT;
++		break;
++	default:
++		ret = -ENOTTY;
++	}
++ out:
++	mutex_unlock(&fp->lock);
++	return ret;
++}
++
++static ssize_t goodix_fp_read(struct file *file, char __user *buf,
++			      size_t count, loff_t *offset)
++{
++	struct goodix_fp *fp = file->private_data;
++	u32 sequence;
++	int ret;
++
++	if (count < sizeof(sequence))
++		return -EINVAL;
++	if (READ_ONCE(fp->removed))
++		return -ENODEV;
++	if (atomic_read(&fp->sequence) == READ_ONCE(fp->seen)) {
++		if (file->f_flags & O_NONBLOCK)
++			return -EAGAIN;
++		ret = wait_event_interruptible(fp->wait,
++					       READ_ONCE(fp->removed) ||
++					       atomic_read(&fp->sequence) != READ_ONCE(fp->seen));
++		if (ret)
++			return ret;
++	}
++	if (READ_ONCE(fp->removed))
++		return -ENODEV;
++	sequence = atomic_read(&fp->sequence);
++	if (copy_to_user(buf, &sequence, sizeof(sequence)))
++		return -EFAULT;
++	WRITE_ONCE(fp->seen, sequence);
++	return sizeof(sequence);
++}
++
++static __poll_t goodix_fp_poll(struct file *file, poll_table *wait)
++{
++	struct goodix_fp *fp = file->private_data;
++
++	poll_wait(file, &fp->wait, wait);
++	if (READ_ONCE(fp->removed))
++		return EPOLLHUP | EPOLLERR;
++	if (atomic_read(&fp->sequence) != READ_ONCE(fp->seen))
++		return EPOLLIN | EPOLLRDNORM;
++	return 0;
++}
++
++static const struct file_operations goodix_fp_fops = {
++	.owner = THIS_MODULE,
++	.open = goodix_fp_open,
++	.release = goodix_fp_release,
++	.unlocked_ioctl = goodix_fp_ioctl,
++	.compat_ioctl = compat_ptr_ioctl,
++	.read = goodix_fp_read,
++	.poll = goodix_fp_poll,
++};
++
++static int goodix_fp_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct goodix_fp *fp;
++	int ret;
++
++	fp = kzalloc_obj(*fp);
++	if (!fp)
++		return -ENOMEM;
++	mutex_init(&fp->lock);
++	kref_init(&fp->ref);
++	init_waitqueue_head(&fp->wait);
++	atomic_set(&fp->sequence, 0);
++	fp->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(fp->reset)) {
++		ret = PTR_ERR(fp->reset);
++		goto fail;
++	}
++	fp->interrupt = devm_gpiod_get(dev, "interrupt", GPIOD_IN);
++	if (IS_ERR(fp->interrupt)) {
++		ret = PTR_ERR(fp->interrupt);
++		goto fail;
++	}
++	fp->vdd = devm_regulator_get(dev, "vdd");
++	if (IS_ERR(fp->vdd)) {
++		ret = PTR_ERR(fp->vdd);
++		goto fail;
++	}
++	fp->irq = gpiod_to_irq(fp->interrupt);
++	if (fp->irq < 0) {
++		ret = fp->irq;
++		goto fail;
++	}
++	/* Stock gf_open requests IRQF_TRIGGER_RISING | IRQF_ONESHOT. */
++	ret = devm_request_irq(dev, fp->irq, goodix_fp_irq,
++			       IRQF_TRIGGER_RISING | IRQF_NO_AUTOEN,
++			       dev_name(dev), fp);
++	if (ret)
++		goto fail;
++	fp->misc = (struct miscdevice) {
++		.minor = MISC_DYNAMIC_MINOR,
++		.name = "goodix_fp",
++		.fops = &goodix_fp_fops,
++		.parent = dev,
++		.mode = 0600,
++	};
++	ret = misc_register(&fp->misc);
++	if (ret) {
++		devm_free_irq(dev, fp->irq, fp);
++		goto fail;
++	}
++	platform_set_drvdata(pdev, fp);
++	return 0;
++ fail:
++	kref_put(&fp->ref, goodix_fp_free);
++	return dev_err_probe(dev, ret, "Goodix platform setup failed\n");
++}
++
++static void goodix_fp_remove(struct platform_device *pdev)
++{
++	struct goodix_fp *fp = platform_get_drvdata(pdev);
++
++	misc_deregister(&fp->misc);
++	mutex_lock(&fp->lock);
++	fp->removed = true;
++	if (goodix_fp_power_off(fp))
++		dev_err(&pdev->dev, "Failed to disable fingerprint supply\n");
++	mutex_unlock(&fp->lock);
++	wake_up_interruptible(&fp->wait);
++	devm_free_irq(&pdev->dev, fp->irq, fp);
++	kref_put(&fp->ref, goodix_fp_free);
++}
++
++static int goodix_fp_suspend(struct device *dev)
++{
++	struct goodix_fp *fp = dev_get_drvdata(dev);
++	int ret;
++
++	mutex_lock(&fp->lock);
++	/* Retained sensor sleep and wake-on-finger need separate validation. */
++	ret = fp->powered ? -EBUSY : 0;
++	mutex_unlock(&fp->lock);
++	return ret;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(goodix_fp_pm_ops, goodix_fp_suspend, NULL);
++
++static const struct of_device_id goodix_fp_of_match[] = {
++	{ .compatible = "goodix,gum5228" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, goodix_fp_of_match);
++
++static struct platform_driver goodix_fp_driver = {
++	.probe = goodix_fp_probe,
++	.remove = goodix_fp_remove,
++	.driver = {
++		.name = "goodix-tee-fp",
++		.of_match_table = goodix_fp_of_match,
++		.pm = pm_sleep_ptr(&goodix_fp_pm_ops),
++	},
++};
++module_platform_driver(goodix_fp_driver);
++
++MODULE_DESCRIPTION("Goodix ultrasonic fingerprint platform control");
++MODULE_LICENSE("GPL");
+diff --git a/include/uapi/linux/goodix_tee_fp.h b/include/uapi/linux/goodix_tee_fp.h
+new file mode 100644
+index 000000000000..cacd947b722f
+--- /dev/null
++++ b/include/uapi/linux/goodix_tee_fp.h
+@@ -0,0 +1,27 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _UAPI_LINUX_GOODIX_TEE_FP_H
++#define _UAPI_LINUX_GOODIX_TEE_FP_H
++
++#include <linux/ioctl.h>
++#include <linux/types.h>
++
++/* Power and reset numbers match the stock Goodix control ABI. No SPI or
++ * biometric data passes through this node. Closing it removes power.
++ * read() returns an interrupt sequence (__u32); poll() waits for changes.
++ */
++#define GOODIX_FP_IOC_RESET         _IO('g', 2)
++#define GOODIX_FP_IOC_ENABLE_POWER  _IO('g', 7)
++#define GOODIX_FP_IOC_DISABLE_POWER _IO('g', 8)
++
++struct goodix_fp_state {
++	__u32 version;
++	__u32 powered;
++	__u32 irq_sequence;
++	__u32 reset_sequence;
++	__s32 irq_level;
++	__u32 reserved;
++};
++
++#define GOODIX_FP_IOC_GET_STATE _IOR('G', 0, struct goodix_fp_state)
++
++#endif
+-- 
+2.56.0
+

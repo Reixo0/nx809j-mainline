@@ -205,25 +205,26 @@ Notes:
 
 - [x] Boots, framebuffer console visible (via shim, boot_a)
 - [x] RTC: the PMIC counter is read only from Linux; the UTC offset lives in 4 bytes of SDAM2 (0x7c, patch 0040), stored by the NTP sync / `hwclock -w`, so the clock is right from boot and RTC alarms wake from suspend
-- [x] Suspend: s2idle (`mem_sleep_default=s2idle`), woken by the power key or an RTC alarm; Wi-Fi, Bluetooth and the ADSP resume. PSCI "deep" returns at once on this firmware
+- [x] Suspend: s2idle (`mem_sleep_default=s2idle`), woken by the power key or an RTC alarm; Wi-Fi, Bluetooth and the ADSP resume. PSCI "deep" returns at once on this firmware. Messages on the modem's GLINK edge, such as an incoming call, wake the system (patch 0223). FastRPC waits again for an invoke the freezer interrupted instead of sending it twice, which crashed the audio DSP on the first call after a suspend (patch 0222)
 - [x] UFS: all LUNs and partitions enumerate (nothing mounted yet)
 - [x] USB gadget networking, shell via `scripts/phone-sh.py`
 - [x] cpufreq via SCMI (cpucp mailbox built in): 384 MHz-3.63 GHz / 768 MHz-4.40 GHz, plus 4.51 and 4.61 GHz boost steps on the prime cores (enabled at boot by a tmpfiles entry; under sustained load the CPU firmware soon lowers the limit to about 4.26 GHz, at 38 °C)
 - [ ] pm8010 (SPMI1 SID 0xc/0xd) and pmd802x (SID 4) don't answer on SPMI
 - [x] Buttons: power + volume down (PMIC PON, `POWER_RESET_QCOM_PON=y`), volume up (GPIO 101), game slider (GPIO 97, `SW_PEN_INSERTED`, 1 = down)
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
-- [x] Battery/charger via battmgr, USB-C via UCSI
+- [x] Battery/charger via battmgr, USB-C via UCSI. Battery power is worked out from voltage and current (patch 0224); `nx809j-power` measures drain over a period, sleep included
 - [x] USB-C data roles (patches 0041-0059): pmic-glink/UCSI switches the controller between device mode (USB network shell to the PC) and host mode (game controllers, drives) on its own. SuperSpeed works: an NVMe enclosure enumerates at 10 Gbit/s and reads at about 530 MB/s. Needs a USB 3 cable; the cable in the box is USB 2 only, so the PC link stays at 480 Mbit/s. The GCC pipe clock input of the USB3 PHY was missing from `kaanapali.dtsi` (patch 0058). exFAT and NTFS (ntfs3) are modules
 - [x] postmarketOS Plasma Mobile: rootfs in `super` (linux_root, dm-init) or over NBD from the PC; internet via the PC
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [x] Display: 60, 90, 120 and 144 Hz modes (patches 0060-0066), picked in Settings → Display; the panel gets 144 frames per second (vkmark). The msm DSI host sized the DSC link of this 10 bpc command mode panel 30/24 too slow, which held every rate to ~60 frames per second (patch 0065). Browsers (Qt WebEngine) still animate at 60
+- [x] External display over USB-C (patches 0219-0221, 0226-0228): DisplayPort alternate mode with audio. A display plugged in while the panel is off comes up (the DP PHY is released when the DP controller suspends, and the display controller stays up while DP is), and a stopping command mode encoder releases its DSC
 - [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407), with CLX and limits enabled as upstream. GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
-- [x] Fan and liquid cooling pump (patches 0108-0109): the fan is a 25 kHz PWM fan on a PMH0101 LPG channel (output inverted at PMIC GPIO9, L8B supply, tachometer on GPIO211, 3 pulses per turn), driven by mainline `pwm-fan` (about 22,000 RPM at full speed). The micropump is an Awinic AWP1921 piezo driver on I2C5 (0x44); our `awp1921` driver follows the stock register sequence and has the stock off/low/mid/high levels. Both are cooling devices of the prime core and GPU thermal zones: fan levels 1-5 from 45 to 65 °C, pump low/mid/high from 50 to 60 °C, 4 °C hysteresis. Manual control: hwmon `pwm1` or `cooling_device*/cur_state`
+- [x] Fan and liquid cooling pump (patches 0108-0109): the fan is a 25 kHz PWM fan on a PMH0101 LPG channel (output inverted at PMIC GPIO9, L8B supply, tachometer on GPIO211, 3 pulses per turn), driven by mainline `pwm-fan` (about 22,000 RPM at full speed). The micropump is an Awinic AWP1921 piezo driver on I2C5 (0x44); our `awp1921` driver follows the stock register sequence and has the stock off/low/mid/high levels. Both are cooling devices of the prime core and GPU thermal zones: fan levels 1-5 from 45 to 65 °C, pump low/mid/high from 50 to 60 °C, 4 °C hysteresis. Manual control: hwmon `pwm1` or `cooling_device*/cur_state`. The CPU clusters also throttle passively from 90 °C (patch 0225, from linux-perpetua)
 - [ ] Haptics (AW86320), shoulder triggers, LEDs (aw22xxx: logo, shoulders, fan)
 - [x] Wi-Fi: Qualcomm "peach" (WCN7880, PCI 17cb:110e) on PCIe0 with ath12k (patches 0017-0021): window register 0x3278, aux_ucode + QDSS trace config download, cold boot calibration (8.3 s at boot), RF rail voltages from downstream, its own REO/TCL register offsets and 32-bit TLVs (QCC2072 HAL). Connects with WPA2 through NetworkManager; ~475 Mbit/s down / 280 Mbit/s up on a 5 GHz LAN. Firmware is not in linux-firmware: `scripts/install-wifi-firmware.sh` copies the phone's own files (dumped from Android's /vendor/firmware_mnt/image/peach) into ath12k/PEACH/hw2.0
-- [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl
+- [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl. Earbuds play music over A2DP (AAC) with `BT_RFCOMM` and `INPUT_UINPUT`; the device files keep them in music mode and keep their output awake for 2 minutes of silence
 - [x] Speakers (patches 0067-0073): two Awinic AW88461 amplifiers on i2c_hub_3, fed from primary MI2S data line SD1 (SD0 carries their feedback), stock tuning from `aw882xx_acf.bin`. Sound card "Nubia-NX809J", our topology, and a UCM profile in the device package, so PipeWire and Plasma show a speaker output with working volume. 32-bit streams play silence on the speakers, so their stream is 16-bit
 - [x] Microphone (patches 0074-0088): the WCD9395 codec on SoundWire (RX swr1, TX swr2, as on the MTP), bottom mic = analog AMIC4, a "Mic" input in the UCM profile. The other analog inputs: AMIC3 (back or side) and AMIC5 (weak) pick up sound, AMIC1 does not
 - [x] Headphones (patches 0089-0102): the WCD9395 headphone amplifier in HPH PCM (HiFi) mode, as stock, over SoundWire port 9 (HPH PCM patches from the KONKR Pocket FIT / SM8750 work, see Credits). It needed the SoundWire stream synchronization point period programmed (patch 0094) and a 24-bit RX codec DMA (patch 0095; 16-bit delivers nothing). The headphone stream is 32-bit, so software volume keeps the low bits: with 16-bit, low volume crackled. A class-H fix (patch 0102) removed background static. Plugging and unplugging switches between the Headphones and Speaker outputs on its own. Use the PipeWire audio backend (`apk add postmarketos-base-ui-audio-backend-pipewire`, which replaces the PulseAudio one): it picks the 32-bit format on its own
@@ -237,11 +238,13 @@ Notes:
 - [x] Voice calls with speech both ways: dmail, callaudio, Fluence served to the ADSP's audio PD (`device/README.md`, Voice call profile), speakers only
 - [ ] SMS sending, GPS
 - [ ] Cameras
+- [ ] Fingerprint: the Goodix ultrasonic sensor powers up, resets and raises interrupts through `/dev/goodix_fp` (patches 0229-0230, from linux-perpetua), but enrolment needs the KeyMint trusted app set up for the boot, which only Android's bootloader does; booting through Mu-Silicium skips it
 
 ## Credits
 
 - Doctor Logix's [linux-perpetua](https://github.com/denialwm/linux-perpetua)
-  for the cameras, fan ramp and haptics, and
+  for the cameras, fan ramp, haptics, CPU passive cooling, the Goodix
+  fingerprint control driver and finger detection in raw touch frames, and
   [Denial](https://github.com/denialwm/denial),
   [Phonewave](https://github.com/denialwm/phonewave) and
   [denial-apps](https://github.com/denialwm/denial-apps) for the shell, device

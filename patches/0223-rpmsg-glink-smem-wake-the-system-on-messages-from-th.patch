@@ -1,0 +1,85 @@
+From 01fe6ddec7534d2c864f5dfa11531b34a79708ba Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 12:42:44 +0100
+Subject: [PATCH] rpmsg: glink: smem: wake the system on messages from the
+ remote
+
+The GLINK SMEM interrupt stays enabled across suspend (IRQF_NO_SUSPEND),
+but nothing wakes the system for it: in s2idle a message from the modem,
+such as an incoming call, is only read on the next wakeup.
+
+On an edge whose glink-edge node has "wakeup-source", call
+pm_system_wakeup() from the interrupt. On Kaanapali enable it for the modem
+edge only: the ADSP edge is too chatty to wake the system for.
+
+A wakeup source on the edge's device would also allow switching it from
+userspace, but removing it with that device on a remoteproc stop oopsed in
+device_del() of its class device, and every shutdown hung.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi |  1 +
+ drivers/rpmsg/qcom_glink_smem.c         | 14 ++++++++++++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index 928acbabc24f..dc20e57a7669 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -3137,6 +3137,7 @@ IPCC_MPROC_SIGNAL_GLINK_QMP
+ 						IPCC_MPROC_SIGNAL_GLINK_QMP>;
+ 
+ 				qcom,remote-pid = <1>;
++				wakeup-source;
+ 
+ 				label = "mpss";
+ 			};
+diff --git a/drivers/rpmsg/qcom_glink_smem.c b/drivers/rpmsg/qcom_glink_smem.c
+index 35bb03e67ae8..d80db077c57f 100644
+--- a/drivers/rpmsg/qcom_glink_smem.c
++++ b/drivers/rpmsg/qcom_glink_smem.c
+@@ -10,6 +10,7 @@
+ #include <linux/of_irq.h>
+ #include <linux/interrupt.h>
+ #include <linux/platform_device.h>
++#include <linux/suspend.h>
+ #include <linux/mailbox_client.h>
+ #include <linux/mfd/syscon.h>
+ #include <linux/slab.h>
+@@ -45,6 +46,8 @@ struct qcom_glink_smem {
+ 	struct mbox_chan *mbox_chan;
+ 
+ 	u32 remote_pid;
++	/* Messages from the remote wake the system (DT "wakeup-source") */
++	bool wakeup;
+ };
+ 
+ struct glink_smem_pipe {
+@@ -212,6 +215,15 @@ static irqreturn_t qcom_glink_smem_intr(int irq, void *data)
+ {
+ 	struct qcom_glink_smem *smem = data;
+ 
++	/*
++	 * The IRQ stays enabled during suspend, but a message from the remote
++	 * (e.g. an incoming call from the modem) has to resume the system
++	 * before anyone can act on it. No wakeup source object: removed with
++	 * the edge's device on a remoteproc stop, it oopsed in device_del().
++	 */
++	if (smem->wakeup)
++		pm_system_wakeup();
++
+ 	qcom_glink_native_rx(smem->glink);
+ 
+ 	return IRQ_HANDLED;
+@@ -311,6 +323,8 @@ struct qcom_glink_smem *qcom_glink_smem_register(struct device *parent,
+ 		goto err_put_dev;
+ 	}
+ 
++	smem->wakeup = of_property_read_bool(smem->dev.of_node, "wakeup-source");
++
+ 	smem->irq = of_irq_get(smem->dev.of_node, 0);
+ 	ret = devm_request_irq(&smem->dev, smem->irq, qcom_glink_smem_intr,
+ 			       IRQF_NO_SUSPEND | IRQF_NO_AUTOEN,
+-- 
+2.56.0
+

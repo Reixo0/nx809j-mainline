@@ -1,0 +1,48 @@
+From fcd65ba21d8c45204fe2f06aca7e543e588bfa00 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 16:50:28 +0100
+Subject: [PATCH] drm/msm/dp: let the PHY go when the DP controller suspends
+
+The display subsystem powers off with a command mode panel switched off,
+and the DP controller loses its state with it. Runtime suspend
+deinitialized the controller but left the PHY marked initialized, so
+the next plug did not set it up again and every AUX transfer timed out:
+a monitor plugged in while the phone's screen was off hung detection
+for half a minute.
+
+A DP controller only runtime suspends with nothing plugged in, so exit
+the PHY on suspend for DP as for eDP; detection and the plug handler set
+it up again.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/dp/dp_display.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_display.c b/drivers/gpu/drm/msm/dp/dp_display.c
+index 28331b05c322..0c3f72185b2b 100644
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -1590,10 +1590,16 @@ static int msm_dp_pm_runtime_suspend(struct device *dev)
+ 
+ 	disable_irq(dp->irq);
+ 
+-	if (dp->msm_dp_display.is_edp) {
+-		msm_dp_display_host_phy_exit(dp);
++	/*
++	 * The controller loses its state while the display subsystem is
++	 * powered off, as with a command mode panel switched off. A PHY left
++	 * marked initialized would then not be set up again on the next
++	 * plug, and every AUX transfer would time out. A DP controller only
++	 * suspends with nothing plugged in, so let the PHY go as well.
++	 */
++	msm_dp_display_host_phy_exit(dp);
++	if (dp->msm_dp_display.is_edp)
+ 		msm_dp_aux_hpd_disable(dp->aux);
+-	}
+ 	msm_dp_display_host_deinit(dp);
+ 
+ 	return 0;
+-- 
+2.56.0
+

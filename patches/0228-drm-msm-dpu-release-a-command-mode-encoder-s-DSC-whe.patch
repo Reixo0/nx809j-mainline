@@ -1,0 +1,82 @@
+From cd4bdb68e3f7fb310e8b1f1fba208afb20c91f93 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 16:50:28 +0100
+Subject: [PATCH] drm/msm/dpu: release a command mode encoder's DSC when it
+ stops
+
+A command mode encoder left its DSC bound to its pingpong when it
+stopped. The next pipeline given that pingpong, such as a DisplayPort
+monitor enabled while the panel was off, sent its pixels into the stale
+DSC and never completed a frame.
+
+Unbind and disable the DSC on disable; it is set up again on the next
+enable and kickoff. Unlike the full pipeline cleanup video mode does,
+the CTL and mixers are left alone: resetting them as the panel stopped
+left the RM692H5 with a corrupted, stale frame on the next screen on.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c   | 19 +++++++++++++++++++
+ .../gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h  |  2 ++
+ .../drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c  |  2 ++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index aaff4e9c876f..9dbca27627e2 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -2256,6 +2256,25 @@ static void dpu_encoder_unprep_dsc(struct dpu_encoder_virt *dpu_enc)
+  * dpu_encoder_helper_phys_cleanup - helper to cleanup dpu pipeline
+  * @phys_enc: Pointer to physical encoder structure
+  */
++/**
++ * dpu_encoder_helper_release_dsc - unbind the encoder's DSC blocks from
++ *	their pingpongs and turn them off
++ * @phys_enc: Pointer to physical encoder structure
++ *
++ * A command mode encoder keeps its CTL and mixers when it stops, but a DSC
++ * left bound to a pingpong takes the pixels of the next pipeline given that
++ * pingpong, such as a DisplayPort monitor enabled while the panel is off,
++ * and that pipeline never completes a frame. The DSC is set up again on the
++ * next enable and kickoff.
++ */
++void dpu_encoder_helper_release_dsc(struct dpu_encoder_phys *phys_enc)
++{
++	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(phys_enc->parent);
++
++	if (dpu_enc->dsc && dpu_enc->cur_master == phys_enc)
++		dpu_encoder_unprep_dsc(dpu_enc);
++}
++
+ void dpu_encoder_helper_phys_cleanup(struct dpu_encoder_phys *phys_enc)
+ {
+ 	struct dpu_hw_ctl *ctl = phys_enc->hw_ctl;
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+index 61b22d949454..d119e136ef2c 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+@@ -333,6 +333,8 @@ int dpu_encoder_helper_wait_for_irq(struct dpu_encoder_phys *phys_enc,
+ 
+ void dpu_encoder_helper_phys_cleanup(struct dpu_encoder_phys *phys_enc);
+ 
++void dpu_encoder_helper_release_dsc(struct dpu_encoder_phys *phys_enc);
++
+ void dpu_encoder_helper_phys_setup_cwb(struct dpu_encoder_phys *phys_enc,
+ 				       bool enable);
+ 
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
+index 45079ee59cf6..f81937406a8c 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c
+@@ -575,6 +575,8 @@ static void dpu_encoder_phys_cmd_disable(struct dpu_encoder_phys *phys_enc)
+ 		ctl->ops.update_pending_flush_intf(ctl, phys_enc->hw_intf->idx);
+ 	}
+ 
++	dpu_encoder_helper_release_dsc(phys_enc);
++
+ 	phys_enc->enable_state = DPU_ENC_DISABLED;
+ }
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,181 @@
+From e27c1d60012bb9194f32e8e452af3bd1a6289575 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 3 Nov 2026 00:56:43 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali: CPU passive cooling for every
+ board
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The SoC thermal zones carry only hot and critical trips at 120 and
+125 °C, and the SCMI cpufreq firmware does not hold the cores below
+them: the RedMagic 11 Pro ran its prime cores past 105 °C with the fan
+on. Throttle each cluster from its CPU, LLC and QMX sensors at a
+temperature every board sets before it includes kaanapali.dtsi, with
+5 °C of hysteresis and 250 ms polling while passive.
+
+The RedMagic 11 Pro and the OnePlus Pad 4 throttle at 90 °C, the
+developer's limit; under an all-core and GPU load the RedMagic held its
+prime cores at 86-88 °C. The Pad 4's own trips move into the shared
+file. The MTP and QRD take the 105 °C thermal HAL trip of the RedMagic's
+stock device tree.
+
+[Reixo: the OnePlus Pad 4 is not in this tree, so its part is left out]
+(cherry picked from commit 8bd03159587a0882d9938e91a4762e4870cacd3f)
+---
+ .../boot/dts/qcom/kaanapali-cpu-cooling.dtsi  | 76 +++++++++++++++++++
+ arch/arm64/boot/dts/qcom/kaanapali-mtp.dts    |  6 ++
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  |  8 ++
+ arch/arm64/boot/dts/qcom/kaanapali-qrd.dts    |  6 ++
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi       |  2 +
+ 5 files changed, 98 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/qcom/kaanapali-cpu-cooling.dtsi
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-cpu-cooling.dtsi b/arch/arm64/boot/dts/qcom/kaanapali-cpu-cooling.dtsi
+new file mode 100644
+index 000000000000..fff1a2c5b5a5
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/kaanapali-cpu-cooling.dtsi
+@@ -0,0 +1,76 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * CPU passive cooling for every kaanapali board.
++ *
++ * The SoC thermal zones only carry hot and critical trips at 120 and
++ * 125 °C, and the SCMI cpufreq firmware does not hold the cores below
++ * them: a fan-cooled board ran its prime cores at full clock past 105 °C.
++ * Throttle each cluster from any of its CPU, LLC and QMX sensors at
++ * KAANAPALI_CPU_PASSIVE_MC with 5 °C of hysteresis, polling those zones
++ * every 250 ms while passive.
++ *
++ * There is no default: every board defines KAANAPALI_CPU_PASSIVE_MC, in
++ * millidegrees, before it includes kaanapali.dtsi, with a value tuned on
++ * that hardware, and says in a comment where the value came from. One zone
++ * can be tuned further by overriding its trip label.
++ *
++ * To find the value for a new board, ask its developer, or start from the
++ * stock Android configuration: the trips of the cpu-*, cpullc-* and qmx-*
++ * zones in the stock device tree (usually a thermal HAL trip and
++ * emergency core pauses well above 100 °C), and the vendor's
++ * /vendor/etc/thermal-engine.conf or thermal HAL configuration, which
++ * often throttle on skin sensors instead. Then confirm the value with a
++ * load test on the device.
++ */
++
++#ifndef KAANAPALI_CPU_PASSIVE_MC
++#error "KAANAPALI_CPU_PASSIVE_MC is not set: this board has no tuned CPU throttle temperature. Ask the device's developer for the value, or derive it from the stock Android trip points (cpu-*, cpullc-*, qmx-* thermal zones in the stock device tree, /vendor/etc/thermal-engine.conf or the thermal HAL config), then add '#define KAANAPALI_CPU_PASSIVE_MC <millidegrees>', with a comment on its source, above the board file's include of kaanapali.dtsi. See kaanapali-cpu-cooling.dtsi."
++#endif
++
++#define CPU_PASSIVE(LABEL, CLUSTER)					\
++	polling-delay-passive = <250>;					\
++	trips {								\
++		LABEL: passive {					\
++			temperature = <KAANAPALI_CPU_PASSIVE_MC>;	\
++			hysteresis = <5000>;				\
++			type = "passive";				\
++		};							\
++	};								\
++	cooling-maps {							\
++		cpu-map {						\
++			trip = <&LABEL>;				\
++			cooling-device = <CLUSTER THERMAL_NO_LIMIT THERMAL_NO_LIMIT>; \
++		};							\
++	};
++
++&{/thermal-zones/cpullc-0-0-thermal} { CPU_PASSIVE(cpullc_0_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpullc-0-1-thermal} { CPU_PASSIVE(cpullc_0_1_thermal_passive, &cpu0) };
++&{/thermal-zones/qmx-0-0-thermal} { CPU_PASSIVE(qmx_0_0_thermal_passive, &cpu0) };
++&{/thermal-zones/qmx-0-1-thermal} { CPU_PASSIVE(qmx_0_1_thermal_passive, &cpu0) };
++&{/thermal-zones/qmx-0-2-thermal} { CPU_PASSIVE(qmx_0_2_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-0-0-thermal} { CPU_PASSIVE(cpu_0_0_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-0-1-thermal} { CPU_PASSIVE(cpu_0_0_1_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-1-0-thermal} { CPU_PASSIVE(cpu_0_1_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-1-1-thermal} { CPU_PASSIVE(cpu_0_1_1_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-2-0-thermal} { CPU_PASSIVE(cpu_0_2_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-2-1-thermal} { CPU_PASSIVE(cpu_0_2_1_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-3-0-thermal} { CPU_PASSIVE(cpu_0_3_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-3-1-thermal} { CPU_PASSIVE(cpu_0_3_1_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-4-0-thermal} { CPU_PASSIVE(cpu_0_4_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-4-1-thermal} { CPU_PASSIVE(cpu_0_4_1_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-5-0-thermal} { CPU_PASSIVE(cpu_0_5_0_thermal_passive, &cpu0) };
++&{/thermal-zones/cpu-0-5-1-thermal} { CPU_PASSIVE(cpu_0_5_1_thermal_passive, &cpu0) };
++
++&{/thermal-zones/cpullc-1-0-thermal} { CPU_PASSIVE(cpullc_1_0_thermal_passive, &cpu6) };
++&{/thermal-zones/cpullc-1-1-thermal} { CPU_PASSIVE(cpullc_1_1_thermal_passive, &cpu6) };
++&{/thermal-zones/qmx-1-0-thermal} { CPU_PASSIVE(qmx_1_0_thermal_passive, &cpu6) };
++&{/thermal-zones/qmx-1-1-thermal} { CPU_PASSIVE(qmx_1_1_thermal_passive, &cpu6) };
++&{/thermal-zones/qmx-1-2-thermal} { CPU_PASSIVE(qmx_1_2_thermal_passive, &cpu6) };
++&{/thermal-zones/qmx-1-3-thermal} { CPU_PASSIVE(qmx_1_3_thermal_passive, &cpu6) };
++&{/thermal-zones/qmx-1-4-thermal} { CPU_PASSIVE(qmx_1_4_thermal_passive, &cpu6) };
++&{/thermal-zones/cpu-1-0-0-thermal} { CPU_PASSIVE(cpu_1_0_0_thermal_passive, &cpu6) };
++&{/thermal-zones/cpu-1-0-1-thermal} { CPU_PASSIVE(cpu_1_0_1_thermal_passive, &cpu6) };
++&{/thermal-zones/cpu-1-1-0-thermal} { CPU_PASSIVE(cpu_1_1_0_thermal_passive, &cpu6) };
++&{/thermal-zones/cpu-1-1-1-thermal} { CPU_PASSIVE(cpu_1_1_1_thermal_passive, &cpu6) };
++
++#undef CPU_PASSIVE
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-mtp.dts b/arch/arm64/boot/dts/qcom/kaanapali-mtp.dts
+index 9eb02fd09dab..5891832c5375 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-mtp.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-mtp.dts
+@@ -9,6 +9,12 @@
+ #include <dt-bindings/input/linux-event-codes.h>
+ #include <dt-bindings/leds/common.h>
+ #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++/*
++ * CPU throttle temperature for kaanapali-cpu-cooling.dtsi, not tuned on
++ * this reference board: 105 °C is the thermal HAL trip on these zones in
++ * the stock Android device tree of a QRD-derived phone (RedMagic 11 Pro).
++ */
++#define KAANAPALI_CPU_PASSIVE_MC 105000
+ #include "kaanapali.dtsi"
+ 
+ #include "pm8010-kaanapali.dtsi"     /* SPMI1: SID-12/13   */
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 37eada94a408..40b37f111be9 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -13,6 +13,14 @@
+ #include <dt-bindings/media/video-interfaces.h>
+ #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+ #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++/*
++ * CPU throttle temperature for kaanapali-cpu-cooling.dtsi. Stock throttles
++ * on skin-msm-therm from 43 °C and pauses the prime cores only at 112 and
++ * 114 °C; with the fan alone the prime cores passed 105 °C while gaming.
++ * 90 °C is the developer's limit; under an all-core and GPU load it held the
++ * prime cores at 86-88 °C (devices169).
++ */
++#define KAANAPALI_CPU_PASSIVE_MC 90000
+ #include "kaanapali.dtsi"
+ 
+ #include "pm8010-kaanapali.dtsi"     /* SPMI1: SID-12/13   */
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-qrd.dts b/arch/arm64/boot/dts/qcom/kaanapali-qrd.dts
+index f6b02223f4df..24e4d047da58 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-qrd.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-qrd.dts
+@@ -9,6 +9,12 @@
+ #include <dt-bindings/input/linux-event-codes.h>
+ #include <dt-bindings/leds/common.h>
+ #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++/*
++ * CPU throttle temperature for kaanapali-cpu-cooling.dtsi, not tuned on
++ * this reference board: 105 °C is the thermal HAL trip on these zones in
++ * the stock Android device tree of a QRD-derived phone (RedMagic 11 Pro).
++ */
++#define KAANAPALI_CPU_PASSIVE_MC 105000
+ #include "kaanapali.dtsi"
+ 
+ #include "pm8010-kaanapali.dtsi"     /* SPMI1: SID-12/13   */
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index dc20e57a7669..9de8bc00de75 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -8781,3 +8781,5 @@ tpdm_modem2_out: endpoint {
+ 		};
+ 	};
+ };
++
++#include "kaanapali-cpu-cooling.dtsi"
+-- 
+2.56.0
+
