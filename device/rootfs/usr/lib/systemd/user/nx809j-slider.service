@@ -1,0 +1,13 @@
+# The game mode slider's action, as Phone Settings sets it (nx809j-slider).
+[Unit]
+Description=Game mode slider actions
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/nx809j-slider
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

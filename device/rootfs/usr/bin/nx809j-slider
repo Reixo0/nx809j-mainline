@@ -1,0 +1,183 @@
+#!/usr/bin/python3
+"""Do what Phone Settings says when the game mode slider moves.
+
+The slider is a switch in gpio-keys (SW_PEN_INSERTED, on while slid on).
+~/.config/denial/slider.json picks what it does, read at every move:
+
+  {"action": "flashlight" | "camera" | "app" | "none", "app": "<desktop id>"}
+
+Slid on turns the flashlight on or opens the app; slid off turns it off or
+closes it. Native apps open from their desktop entry's Exec on Denial's
+Wayland socket and close by stopping their processes; Android apps close
+through Droidloom.
+"""
+import json
+import os
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+import evdev
+from evdev import ecodes as e
+
+CAMERA = "org.denialwm.Camera.desktop"
+LEDS = Path("/sys/class/leds")
+# Of each flash LED's 255: about 120 mA of the 500 mA it may take. At about
+# 300 mA each the phone reset 10 s in (2026-11-07)
+TORCH = 60
+DROIDLOOM = "/run/droidloom/control.sock"
+
+
+def config():
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    try:
+        return json.loads((base / "denial" / "slider.json").read_text())
+    except (OSError, ValueError):
+        return {"action": "flashlight"}
+
+
+def flashlight(on):
+    for led in LEDS.glob("*:flash-*"):
+        try:
+            (led / "brightness").write_text(str(TORCH if on else 0))
+        except OSError as error:
+            print(f"nx809j-slider: {led.name}: {error}", file=sys.stderr)
+
+
+def desktop_entry(app_id):
+    home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    dirs = [home] + [
+        Path(d) for d in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":") if d
+    ]
+    for d in dirs:
+        path = d / "applications" / app_id
+        if path.is_file():
+            entry = {}
+            section = None
+            for line in path.read_text(errors="replace").splitlines():
+                line = line.strip()
+                if line.startswith("["):
+                    section = line
+                elif section == "[Desktop Entry]" and "=" in line:
+                    key, value = line.split("=", 1)
+                    entry.setdefault(key.strip(), value.strip())
+            return entry
+    return None
+
+
+def command(entry):
+    """The entry's Exec as arguments, without its field codes."""
+    words = shlex.split(entry.get("Exec", ""))
+    return [w for w in words if not (len(w) == 2 and w.startswith("%"))]
+
+
+def android_package(words):
+    """The package a droidloomctl launch opens, if it is one."""
+    if words and os.path.basename(words[0]) == "droidloomctl" and "launch" in words:
+        rest = words[words.index("launch") + 1:]
+        return rest[0] if rest else None
+    return None
+
+
+def wayland_env():
+    env = dict(os.environ)
+    runtime = env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    if "WAYLAND_DISPLAY" not in env:
+        sockets = sorted(
+            p.name for p in Path(runtime).glob("wayland-*") if not p.name.endswith(".lock")
+        )
+        if sockets:
+            env["WAYLAND_DISPLAY"] = sockets[0]
+    return env
+
+
+def open_app(app_id):
+    entry = desktop_entry(app_id)
+    if not entry:
+        print(f"nx809j-slider: no app {app_id}", file=sys.stderr)
+        return
+    words = command(entry)
+    if words:
+        subprocess.Popen(
+            words,
+            env=wayland_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+
+def close_app(app_id):
+    entry = desktop_entry(app_id)
+    if not entry:
+        return
+    words = command(entry)
+    package = android_package(words)
+    if package:
+        request = {"command": "application_action", "package": package, "user": 0, "action": "stop"}
+        try:
+            with socket.socket(socket.AF_UNIX) as sock:
+                sock.settimeout(10)
+                sock.connect(DROIDLOOM)
+                sock.sendall(json.dumps(request).encode())
+                sock.shutdown(socket.SHUT_WR)
+                sock.recv(65536)
+        except OSError as error:
+            print(f"nx809j-slider: stopping {package}: {error}", file=sys.stderr)
+        return
+    if not words:
+        return
+    binary = os.path.realpath(
+        words[0] if os.path.isabs(words[0]) else (shutil.which(words[0]) or words[0])
+    )
+    uid = os.getuid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != uid:
+                continue
+            if os.path.realpath(f"/proc/{pid}/exe") == binary:
+                os.kill(int(pid), signal.SIGTERM)
+        except OSError:
+            continue
+
+
+def act(on):
+    settings = config()
+    action = settings.get("action", "flashlight")
+    if action == "flashlight":
+        flashlight(on)
+    elif action in ("camera", "app"):
+        app_id = CAMERA if action == "camera" else settings.get("app")
+        if app_id:
+            (open_app if on else close_app)(app_id)
+
+
+def find_slider():
+    for path in evdev.list_devices():
+        dev = evdev.InputDevice(path)
+        if e.SW_PEN_INSERTED in dev.capabilities().get(e.EV_SW, []):
+            return dev
+        dev.close()
+    return None
+
+
+def main():
+    slider = find_slider()
+    if not slider:
+        print("nx809j-slider: no slider", file=sys.stderr)
+        return 1
+    for ev in slider.read_loop():
+        if ev.type == e.EV_SW and ev.code == e.SW_PEN_INSERTED:
+            act(bool(ev.value))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

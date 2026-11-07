@@ -1,1 +1,2 @@
 enable denial-polkit-agent.service
+enable nx809j-slider.service

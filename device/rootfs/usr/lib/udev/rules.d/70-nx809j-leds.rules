@@ -2,3 +2,5 @@
 # Lights settings. The pattern trigger's files (hw_pattern, repeat) appear
 # when the trigger is set, announced by a change event.
 SUBSYSTEM=="leds", KERNEL=="rgb:*", ACTION=="add|change", RUN+="/bin/sh -c 'cd /sys%p && for f in brightness multi_intensity trigger hw_pattern repeat; do [ -e $$f ] && chgrp video $$f && chmod g+w $$f; done; true'"
+# The rear flash's torch, for the slider's flashlight (nx809j-slider).
+SUBSYSTEM=="leds", KERNEL=="*:flash-*", ACTION=="add|change", RUN+="/bin/sh -c 'chgrp video /sys%p/brightness && chmod g+w /sys%p/brightness; true'"

@@ -1,0 +1,59 @@
+From e3451343780a472745c488ac7dbef3405bc1426e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 12:51:03 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: enable the rear
+ flash
+
+The PMH0101 flash drives a warm and a cool white LED on two channels
+each, with the downstream limits (500 mA torch, 2 A flash for 1.28 s).
+Downstream also lists both together as a third LED, which would share
+their channels in the mainline driver; userspace lights both instead.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 29 +++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 1fb9a9d31912..16b1f2e23e1c 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1898,6 +1898,35 @@ rgb_reset_default: rgb-reset-default-state {
+ 	};
+ };
+ 
++&pmh0101_flash {
++	status = "okay";
++
++	/*
++	 * The rear flash: a warm and a cool white LED, two channels each, with
++	 * the downstream limits. Downstream also lists both together as a third
++	 * LED, which would share their channels; light both instead.
++	 */
++	led-0 {
++		function = LED_FUNCTION_FLASH;
++		function-enumerator = <0>;
++		color = <LED_COLOR_ID_YELLOW>;
++		led-sources = <1>, <4>;
++		led-max-microamp = <500000>;
++		flash-max-microamp = <2000000>;
++		flash-max-timeout-us = <1280000>;
++	};
++
++	led-1 {
++		function = LED_FUNCTION_FLASH;
++		function-enumerator = <1>;
++		color = <LED_COLOR_ID_WHITE>;
++		led-sources = <2>, <3>;
++		led-max-microamp = <500000>;
++		flash-max-microamp = <2000000>;
++		flash-max-timeout-us = <1280000>;
++	};
++};
++
+ &pmh0101_pwm {
+ 	status = "okay";
+ };
+-- 
+2.56.0
+

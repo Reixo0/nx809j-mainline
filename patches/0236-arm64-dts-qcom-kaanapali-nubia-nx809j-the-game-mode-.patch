@@ -1,0 +1,38 @@
+From 37cf8bd5a0aa475ab3b1cec9225c64cd3e3c9235 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 12:51:03 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: the game mode
+ slider is active low
+
+GPIO 97 reads low while the slider is on, so the switch reported the
+opposite of its position.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 414ac2f54ddb..1fb9a9d31912 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -252,13 +252,14 @@ key-volume-up {
+ 		/*
+ 		 * Game mode slider. Downstream reads GPIO 97 (and its complement
+ 		 * on GPIO 174) and reports it as SW_PEN_INSERTED for lack of a
+-		 * better code; kept the same for now.
++		 * better code; kept the same for now. GPIO 97 is low while the
++		 * slider is on.
+ 		 */
+ 		switch-game-mode {
+ 			label = "Game Mode Switch";
+ 			linux,input-type = <EV_SW>;
+ 			linux,code = <SW_PEN_INSERTED>;
+-			gpios = <&tlmm 97 GPIO_ACTIVE_HIGH>;
++			gpios = <&tlmm 97 GPIO_ACTIVE_LOW>;
+ 			debounce-interval = <30>;
+ 		};
+ 	};
+-- 
+2.56.0
+
