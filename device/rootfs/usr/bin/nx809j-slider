@@ -4,7 +4,8 @@
 The slider is a switch in gpio-keys (SW_PEN_INSERTED, on while slid on).
 ~/.config/denial/slider.json picks what it does, read at every move:
 
-  {"action": "flashlight" | "camera" | "app" | "none", "app": "<desktop id>"}
+  {"action": "flashlight" | "camera" | "app" | "none", "app": "<desktop id>",
+   "strength": 0.05-1}
 
 Slid on turns the flashlight on or opens the app; slid off turns it off or
 closes it. Native apps open from their desktop entry's Exec on Denial's
@@ -26,9 +27,10 @@ from evdev import ecodes as e
 
 CAMERA = "org.denialwm.Camera.desktop"
 LEDS = Path("/sys/class/leds")
-# Of each flash LED's 255: about 120 mA of the 500 mA it may take. At about
-# 300 mA each the phone reset 10 s in (2026-11-07)
-TORCH = 60
+# The torch level at full strength, of each flash LED's 255: about 300 mA of
+# the 500 mA it may take, the most tried so far. Phone Settings maps strength
+# the same way; 0.4 (level 60) unless set.
+TORCH_MAX = 150
 DROIDLOOM = "/run/droidloom/control.sock"
 
 
@@ -40,10 +42,16 @@ def config():
         return {"action": "flashlight"}
 
 
-def flashlight(on):
+def torch_level(strength):
+    strength = min(max(float(strength), 0.0), 1.0)
+    return round(1 + strength * (TORCH_MAX - 1))
+
+
+def flashlight(on, strength):
+    level = torch_level(strength) if on else 0
     for led in LEDS.glob("*:flash-*"):
         try:
-            (led / "brightness").write_text(str(TORCH if on else 0))
+            (led / "brightness").write_text(str(level))
         except OSError as error:
             print(f"nx809j-slider: {led.name}: {error}", file=sys.stderr)
 
@@ -152,7 +160,7 @@ def act(on):
     settings = config()
     action = settings.get("action", "flashlight")
     if action == "flashlight":
-        flashlight(on)
+        flashlight(on, settings.get("strength", 0.4))
     elif action in ("camera", "app"):
         app_id = CAMERA if action == "camera" else settings.get("app")
         if app_id:
