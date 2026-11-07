@@ -43,6 +43,10 @@ ExecStart=/usr/lib/denial/native/deniald --device /dev/dri/by-path/platform-9801
 Environment=DENIAL_SETTINGS_BINARY=/usr/lib/denial/settings/denial-settings
 AmbientCapabilities=CAP_SYS_NICE
 LimitRTPRIO=10
+# Each client buffer, fence and screen capture in flight holds descriptors.
+# Captures taken while a client was slow once queued past the default 1024,
+# and deniald stops when its event loop cannot open one.
+LimitNOFILE=16384:524288
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15
