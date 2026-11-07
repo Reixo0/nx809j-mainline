@@ -1,0 +1,5 @@
+# NX809J: each shoulder trigger is a one-button input device (aw9620x-key).
+# nx809j-triggers merges them into one gamepad, so games don't see them as two
+# controllers, and is started once the second one is up.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Left shoulder trigger|Right shoulder trigger", ENV{ID_INPUT_JOYSTICK}=""
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Right shoulder trigger", ACTION=="add", TAG+="systemd", ENV{SYSTEMD_WANTS}+="nx809j-triggers.service"

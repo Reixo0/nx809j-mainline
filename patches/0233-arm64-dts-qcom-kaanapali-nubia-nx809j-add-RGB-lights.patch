@@ -1,0 +1,131 @@
+From 0664027e1e69c5ec013fcece8324308f8a7c054d Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 11:09:44 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: add RGB lights and
+ shoulder triggers
+
+The AW22127 on i2c5 (reset on PMH0101 GPIO13) drives the logo and the
+"game mode" light. An AW96205 on i2c9 and one on i2c20 (interrupts on
+GPIO200 and GPIO201, supply L9B) sit under the left and right shoulder
+triggers and report BTN_TL and BTN_TR.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 87 +++++++++++++++++++
+ 1 file changed, 87 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 36c9e6119356..0c000b079b2b 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1562,6 +1562,72 @@ micropump: micropump@44 {
+ 		pinctrl-0 = <&micropump_en_default>;
+ 		pinctrl-names = "default";
+ 	};
++
++	led-controller@6a {
++		compatible = "awinic,aw22127";
++		reg = <0x6a>;
++		reset-gpios = <&pmh0101_gpios 13 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&rgb_reset_default>;
++		pinctrl-names = "default";
++
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		/* The RedMagic logo next to the cameras */
++		multi-led@0 {
++			reg = <0>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "logo";
++		};
++
++		/* The "game mode" light */
++		multi-led@1 {
++			reg = <1>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "gamemode";
++		};
++	};
++};
++
++
++/*
++ * Shoulder triggers: an Awinic AW96205 capacitive sensor under each, the
++ * downstream "nubia_tgk_aw_sar" (trigger game keys). Both take the vendor's
++ * register file; the program in their flash is left alone.
++ */
++&i2c9 {
++	status = "okay";
++
++	trigger@13 {
++		compatible = "awinic,aw96205";
++		reg = <0x13>;
++		interrupts-extended = <&tlmm 200 IRQ_TYPE_EDGE_FALLING>;
++		vcc-supply = <&vreg_l9b_2p9>;
++		firmware-name = "qcom/kaanapali/nubia/nx809j/aw9620x_reg_0.bin";
++		label = "Left shoulder trigger";
++		linux,code = <BTN_TL>;
++
++		pinctrl-0 = <&trigger_left_int_default>;
++		pinctrl-names = "default";
++	};
++};
++
++&i2c20 {
++	status = "okay";
++
++	trigger@12 {
++		compatible = "awinic,aw96205";
++		reg = <0x12>;
++		interrupts-extended = <&tlmm 201 IRQ_TYPE_EDGE_FALLING>;
++		vcc-supply = <&vreg_l9b_2p9>;
++		firmware-name = "qcom/kaanapali/nubia/nx809j/aw9620x_reg_1.bin";
++		label = "Right shoulder trigger";
++		linux,code = <BTN_TR>;
++
++		pinctrl-0 = <&trigger_right_int_default>;
++		pinctrl-names = "default";
++	};
+ };
+ 
+ &i2c_hub_3 {
+@@ -1777,6 +1843,13 @@ micropump_en_default: micropump-en-default-state {
+ 		power-source = <0>;
+ 		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
+ 	};
++
++	rgb_reset_default: rgb-reset-default-state {
++		pins = "gpio13";
++		function = "normal";
++		power-source = <0>;
++		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
++	};
+ };
+ 
+ &pmh0101_pwm {
+@@ -2141,6 +2214,20 @@ wlan_en: wlan-en-state {
+ 		drive-strength = <8>;
+ 		bias-pull-down;
+ 	};
++
++	trigger_left_int_default: trigger-left-int-default-state {
++		pins = "gpio200";
++		function = "gpio";
++		drive-strength = <6>;
++		bias-pull-up;
++	};
++
++	trigger_right_int_default: trigger-right-int-default-state {
++		pins = "gpio201";
++		function = "gpio";
++		drive-strength = <6>;
++		bias-pull-up;
++	};
+ };
+ 
+ &uart7 {
+-- 
+2.56.0
+

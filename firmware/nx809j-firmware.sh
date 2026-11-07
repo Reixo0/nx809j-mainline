@@ -96,6 +96,8 @@ cp "$src/soccp.mbn" "$src/soccp_dtb.mbn" "$STAGE/$DEV/"
 cp "$FW_VENDOR/gen80200_zap.mbn" "$STAGE/$DEV/"
 # Speaker amplifiers' tuning
 cp "$FW_VENDOR/aw882xx_acf.bin" "$STAGE/$DEV/aw88461_acf.bin"
+# Shoulder triggers' register files
+cp "$FW_VENDOR/aw9620x_reg_0.bin" "$FW_VENDOR/aw9620x_reg_1.bin" "$STAGE/$DEV/"
 
 # The modem loads these over tqftpserv from next to modem.mbn: its MBN
 # configuration (modem_pr), OEM software (modem_oem) and their manifest

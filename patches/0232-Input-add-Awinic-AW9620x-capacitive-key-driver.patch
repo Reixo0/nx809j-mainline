@@ -1,0 +1,347 @@
+From cad5a33c3ec3282c72b6e60f1f2172130f999956 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 11:09:44 +0100
+Subject: [PATCH] Input: add Awinic AW9620x capacitive key driver
+
+The AW9620x (AW96203/5/8) capacitive proximity sensors run a program
+from their own flash. The NX809J (RedMagic 11 Pro) has an AW96205 under
+each shoulder trigger. Bring the chip up (soft reset, wait for the
+program's start flag, load the vendor register file given by
+firmware-name) and report channel 0's first threshold as one key.
+
+Register protocol from Awinic's GPL aw_sar driver: 16-bit addresses and
+32-bit values, big endian on the wire. The touch state is read where the
+vendor NX809J driver reads it (0x1a18). The register file is a 60-byte
+header, a record count and 6-byte little-endian records, checksummed by
+the byte sum from offset 4. The driver never writes the chip's flash.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/input/misc/Kconfig       |  12 ++
+ drivers/input/misc/Makefile      |   1 +
+ drivers/input/misc/aw9620x-key.c | 278 +++++++++++++++++++++++++++++++
+ 3 files changed, 291 insertions(+)
+ create mode 100644 drivers/input/misc/aw9620x-key.c
+
+diff --git a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+index 169768e3d5bb..28fe2909cf25 100644
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -112,6 +112,18 @@ config INPUT_ATC260X_ONKEY
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called atc260x-onkey.
+ 
++config INPUT_AW9620X_KEY
++	tristate "Awinic AW9620x capacitive sensor as a key"
++	depends on I2C
++	depends on OF
++	select REGMAP_I2C
++	help
++	  Say Y here to use an Awinic AW9620x capacitive sensor as a key,
++	  such as the shoulder triggers of the Nubia RedMagic 11 Pro.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called aw9620x-key.
++
+ config INPUT_ATMEL_CAPTOUCH
+ 	tristate "Atmel Capacitive Touch Button Driver"
+ 	depends on OF
+diff --git a/drivers/input/misc/Makefile b/drivers/input/misc/Makefile
+index 1339619f0769..0b9268c5b064 100644
+--- a/drivers/input/misc/Makefile
++++ b/drivers/input/misc/Makefile
+@@ -22,6 +22,7 @@ obj-$(CONFIG_INPUT_ARIZONA_HAPTICS)	+= arizona-haptics.o
+ obj-$(CONFIG_INPUT_ATC260X_ONKEY)	+= atc260x-onkey.o
+ obj-$(CONFIG_INPUT_ATI_REMOTE2)		+= ati_remote2.o
+ obj-$(CONFIG_INPUT_ATLAS_BTNS)		+= atlas_btns.o
++obj-$(CONFIG_INPUT_AW9620X_KEY)	+= aw9620x-key.o
+ obj-$(CONFIG_INPUT_ATMEL_CAPTOUCH)	+= atmel_captouch.o
+ obj-$(CONFIG_INPUT_AW86927)		+= aw86927.o
+ obj-$(CONFIG_INPUT_BBNSM_PWRKEY)	+= nxp-bbnsm-pwrkey.o
+diff --git a/drivers/input/misc/aw9620x-key.c b/drivers/input/misc/aw9620x-key.c
+new file mode 100644
+index 000000000000..c783064e90f5
+--- /dev/null
++++ b/drivers/input/misc/aw9620x-key.c
+@@ -0,0 +1,278 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Awinic AW9620x capacitive sensor as a key
++ *
++ * The AW9620x family (AW96203, AW96205, AW96208) are capacitive proximity
++ * ("SAR") sensors with a small MCU running a program from the chip's own
++ * flash. Phones also use them as touch keys: the Nubia NX809J (RedMagic 11
++ * Pro) has one AW96205 under each shoulder trigger. This driver reports
++ * channel 0's first threshold as one key.
++ *
++ * Register protocol from Awinic's GPL aw_sar driver: 16-bit register
++ * addresses with 32-bit values, both big endian on the wire. The chip's
++ * configuration comes from the vendor's register file (firmware-name), a
++ * 60-byte header, a record count and 6-byte records (address, value; little
++ * endian), checksummed by the byte sum from offset 4.
++ *
++ * The driver never writes the chip's flash.
++ */
++
++#include <linux/bits.h>
++#include <linux/delay.h>
++#include <linux/firmware.h>
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regmap.h>
++#include <linux/regulator/consumer.h>
++#include <linux/unaligned.h>
++
++#define AW9620X_REG_FWVER	0x1a0c
++#define AW9620X_REG_STAT	0x1a18
++#define AW9620X_REG_CMD		0x4408
++#define AW9620X_REG_IRQSRC	0x4410
++#define AW9620X_REG_MCFG	0x4444
++#define AW9620X_REG_FLASH_WAKE	0x4700
++#define AW9620X_REG_CHIPID	0xff00
++#define AW9620X_REG_HOSTCTRL	0xff10
++#define AW9620X_REG_RSTNALL	0xff18
++#define AW9620X_REG_ACCESSEN	0xff20
++
++#define AW9620X_CHIPID_MASK	GENMASK(31, 4)
++#define AW9620X_CHIPID		0x20226200
++#define AW9620X_ACCESSEN_OPEN	0x3c00f091
++#define AW9620X_FLASH_WAKE_ON	0x110
++#define AW9620X_FLASH_WAKE_OFF	0x102
++#define AW9620X_RSTNALL_RESET	0x3c
++#define AW9620X_HOSTCTRL_EN	BIT(0)
++#define AW9620X_CMD_ACTIVE	1
++#define AW9620X_CMD_SLEEP	2
++#define AW9620X_IRQ_INIT_OVER	BIT(0)
++/* channel 0 past its first threshold, where the vendor driver reads it */
++#define AW9620X_STAT_CH0_TH0	BIT(0)
++
++#define AW9620X_POWER_ON_MS	25
++#define AW9620X_MCFG_MS		20
++#define AW9620X_INIT_WAIT_MS	100
++
++#define AW9620X_BIN_CHIP	0x18
++#define AW9620X_BIN_COUNT	0x3c
++#define AW9620X_BIN_RECORDS	0x40
++#define AW9620X_BIN_RECORD_LEN	6
++
++struct aw9620x {
++	struct device *dev;
++	struct regmap *regmap;
++	struct input_dev *input;
++	unsigned int code;
++};
++
++static const struct regmap_config aw9620x_regmap = {
++	.reg_bits = 16,
++	.val_bits = 32,
++	.max_register = 0xffff,
++};
++
++static int aw9620x_reset(struct aw9620x *aw)
++{
++	struct regmap *rm = aw->regmap;
++	unsigned int irqsrc;
++	int ret;
++
++	ret = regmap_write(rm, AW9620X_REG_ACCESSEN, AW9620X_ACCESSEN_OPEN);
++	ret = ret ?: regmap_write(rm, AW9620X_REG_FLASH_WAKE, AW9620X_FLASH_WAKE_ON);
++	if (ret)
++		return ret;
++	usleep_range(1000, 2000);
++
++	ret = regmap_write(rm, AW9620X_REG_MCFG, 0);
++	if (ret)
++		return ret;
++	msleep(AW9620X_MCFG_MS);
++
++	ret = regmap_write(rm, AW9620X_REG_RSTNALL, AW9620X_RSTNALL_RESET);
++	if (ret)
++		return ret;
++	msleep(AW9620X_POWER_ON_MS);
++
++	ret = regmap_write(rm, AW9620X_REG_FLASH_WAKE, AW9620X_FLASH_WAKE_OFF);
++	if (ret)
++		return ret;
++
++	/* The program flags its start in IRQSRC */
++	return regmap_read_poll_timeout(rm, AW9620X_REG_IRQSRC, irqsrc,
++					irqsrc & AW9620X_IRQ_INIT_OVER, 1000,
++					AW9620X_INIT_WAIT_MS * 1000);
++}
++
++static int aw9620x_load_config(struct aw9620x *aw, const char *name)
++{
++	const struct firmware *fw;
++	const u8 *rec;
++	u32 count, sum = 0;
++	size_t i;
++	int ret;
++
++	ret = request_firmware(&fw, name, aw->dev);
++	if (ret)
++		return dev_err_probe(aw->dev, ret, "loading %s\n", name);
++
++	ret = -EINVAL;
++	if (fw->size < AW9620X_BIN_RECORDS ||
++	    memcmp(fw->data + AW9620X_BIN_CHIP, "AW9620", 6)) {
++		dev_err(aw->dev, "%s: not an AW9620x register file\n", name);
++		goto out;
++	}
++	count = get_unaligned_le32(fw->data + AW9620X_BIN_COUNT);
++	if (count > (fw->size - AW9620X_BIN_RECORDS) / AW9620X_BIN_RECORD_LEN) {
++		dev_err(aw->dev, "%s: %u records don't fit\n", name, count);
++		goto out;
++	}
++	for (i = 4; i < fw->size; i++)
++		sum += fw->data[i];
++	if (sum != get_unaligned_le32(fw->data)) {
++		dev_err(aw->dev, "%s: bad checksum\n", name);
++		goto out;
++	}
++
++	rec = fw->data + AW9620X_BIN_RECORDS;
++	for (i = 0; i < count; i++, rec += AW9620X_BIN_RECORD_LEN) {
++		ret = regmap_write(aw->regmap, get_unaligned_le16(rec),
++				   get_unaligned_le32(rec + 2));
++		if (ret) {
++			dev_err(aw->dev, "%s: writing record %zu: %d\n", name, i, ret);
++			goto out;
++		}
++	}
++	ret = 0;
++out:
++	release_firmware(fw);
++	return ret;
++}
++
++static void aw9620x_report(struct aw9620x *aw)
++{
++	unsigned int stat;
++
++	if (regmap_read(aw->regmap, AW9620X_REG_STAT, &stat))
++		return;
++	input_report_key(aw->input, aw->code, stat & AW9620X_STAT_CH0_TH0);
++	input_sync(aw->input);
++}
++
++static irqreturn_t aw9620x_irq(int irq, void *data)
++{
++	struct aw9620x *aw = data;
++	unsigned int irqsrc;
++
++	/* Reading IRQSRC clears it */
++	if (regmap_read(aw->regmap, AW9620X_REG_IRQSRC, &irqsrc))
++		return IRQ_NONE;
++	aw9620x_report(aw);
++
++	return IRQ_HANDLED;
++}
++
++static void aw9620x_sleep(void *data)
++{
++	struct aw9620x *aw = data;
++
++	regmap_write(aw->regmap, AW9620X_REG_CMD, AW9620X_CMD_SLEEP);
++}
++
++static int aw9620x_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	const char *fw_name, *label;
++	unsigned int id, ver, irqsrc;
++	struct aw9620x *aw;
++	int ret;
++
++	aw = devm_kzalloc(dev, sizeof(*aw), GFP_KERNEL);
++	if (!aw)
++		return -ENOMEM;
++	aw->dev = dev;
++
++	ret = device_property_read_u32(dev, "linux,code", &aw->code);
++	if (ret)
++		return dev_err_probe(dev, ret, "linux,code\n");
++	ret = device_property_read_string(dev, "firmware-name", &fw_name);
++	if (ret)
++		return dev_err_probe(dev, ret, "firmware-name\n");
++	if (device_property_read_string(dev, "label", &label))
++		label = "AW9620x key";
++
++	aw->regmap = devm_regmap_init_i2c(client, &aw9620x_regmap);
++	if (IS_ERR(aw->regmap))
++		return PTR_ERR(aw->regmap);
++
++	ret = devm_regulator_get_enable(dev, "vcc");
++	if (ret)
++		return dev_err_probe(dev, ret, "vcc\n");
++	msleep(AW9620X_POWER_ON_MS);
++
++	ret = regmap_read(aw->regmap, AW9620X_REG_CHIPID, &id);
++	if (ret)
++		return dev_err_probe(dev, ret, "reading chip ID\n");
++	if ((id & AW9620X_CHIPID_MASK) != AW9620X_CHIPID)
++		return dev_err_probe(dev, -ENODEV, "chip ID 0x%08x, not an AW9620x\n", id);
++
++	ret = aw9620x_reset(aw);
++	if (ret)
++		return dev_err_probe(dev, ret, "starting the chip\n");
++
++	ret = aw9620x_load_config(aw, fw_name);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(aw->regmap, AW9620X_REG_HOSTCTRL, AW9620X_HOSTCTRL_EN);
++	ret = ret ?: regmap_write(aw->regmap, AW9620X_REG_CMD, AW9620X_CMD_ACTIVE);
++	ret = ret ?: regmap_read(aw->regmap, AW9620X_REG_IRQSRC, &irqsrc);
++	ret = ret ?: regmap_read(aw->regmap, AW9620X_REG_FWVER, &ver);
++	if (ret)
++		return dev_err_probe(dev, ret, "activating the chip\n");
++	ret = devm_add_action_or_reset(dev, aw9620x_sleep, aw);
++	if (ret)
++		return ret;
++
++	aw->input = devm_input_allocate_device(dev);
++	if (!aw->input)
++		return -ENOMEM;
++	aw->input->name = label;
++	aw->input->id.bustype = BUS_I2C;
++	input_set_capability(aw->input, EV_KEY, aw->code);
++
++	ret = input_register_device(aw->input);
++	if (ret)
++		return dev_err_probe(dev, ret, "registering input\n");
++
++	ret = devm_request_threaded_irq(dev, client->irq, NULL, aw9620x_irq,
++					IRQF_ONESHOT, dev_name(dev), aw);
++	if (ret)
++		return dev_err_probe(dev, ret, "requesting IRQ\n");
++
++	aw9620x_report(aw);
++	dev_info(dev, "chip 0x%08x, program 0x%08x\n", id, ver);
++
++	return 0;
++}
++
++static const struct of_device_id aw9620x_of_match[] = {
++	{ .compatible = "awinic,aw96205" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, aw9620x_of_match);
++
++static struct i2c_driver aw9620x_driver = {
++	.driver = {
++		.name = "aw9620x-key",
++		.of_match_table = aw9620x_of_match,
++	},
++	.probe = aw9620x_probe,
++};
++module_i2c_driver(aw9620x_driver);
++
++MODULE_DESCRIPTION("Awinic AW9620x capacitive sensor as a key");
++MODULE_LICENSE("GPL");
+-- 
+2.56.0
+

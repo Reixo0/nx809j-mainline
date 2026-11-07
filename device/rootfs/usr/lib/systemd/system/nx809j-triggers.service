@@ -1,0 +1,10 @@
+# The shoulder triggers as one gamepad (nx809j-triggers). Started by
+# 70-nx809j-triggers.rules once the right trigger's input device appears.
+[Unit]
+Description=Shoulder triggers as a gamepad
+
+[Service]
+ExecStartPre=-/usr/bin/modprobe uinput
+ExecStart=/usr/bin/nx809j-triggers
+Restart=on-failure
+RestartSec=2

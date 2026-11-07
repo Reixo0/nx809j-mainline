@@ -60,6 +60,11 @@ done
 echo "qcom/kaanapali/Nubia-NX809J-tplg.bin:$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin"
 echo "$DEV/aw88461_acf.bin:$ROOT/dump/firmware/vendor_firmware/aw882xx_acf.bin"
 
+# Shoulder triggers: the AW96205 sensors' register files
+for i in 0 1; do
+  echo "$DEV/aw9620x_reg_$i.bin:$ROOT/dump/firmware/vendor_firmware/aw9620x_reg_$i.bin"
+done
+
 # Voice calls: the profile built from the phone's ACDB (device/README.md).
 # Vendor data, only on machines that generated it.
 if [[ -f $ROOT/dump/vendor-audio/nx809j-voice.bin ]]; then
