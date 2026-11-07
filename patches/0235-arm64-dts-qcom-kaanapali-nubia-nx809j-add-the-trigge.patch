@@ -1,0 +1,100 @@
+From 96d82b07cfbedeb104ae2147819ada1b9bf4c0fc Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 12:27:42 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: add the trigger and
+ fan lights
+
+Describe all of the AW22127's lights by effect task and unit: the left
+and right trigger lights, the four fan zones, the logo and the "game
+mode" light. Run I2C5 in fast mode as downstream does (its LED node asks
+for 400 kHz); at 100 kHz a command took long enough to show as a blank.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 55 +++++++++++++++++--
+ 1 file changed, 50 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 0c000b079b2b..414ac2f54ddb 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1551,6 +1551,9 @@ wcd_usbss_headset_out: endpoint {
+ };
+ 
+ &i2c5 {
++	/* Fast mode, as downstream: the LED chip takes a command a byte at a time */
++	clock-frequency = <400000>;
++
+ 	status = "okay";
+ 
+ 	micropump: micropump@44 {
+@@ -1571,19 +1574,61 @@ led-controller@6a {
+ 		pinctrl-0 = <&rgb_reset_default>;
+ 		pinctrl-names = "default";
+ 
+-		#address-cells = <1>;
++		#address-cells = <2>;
+ 		#size-cells = <0>;
+ 
++		/* reg: the program's effect task, then the unit in that task */
++		multi-led@0,0 {
++			reg = <0 0>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "trigger-left";
++		};
++
++		multi-led@0,1 {
++			reg = <0 1>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "trigger-right";
++		};
++
++		/* The fan's four zones */
++		multi-led@1,0 {
++			reg = <1 0>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "fan";
++			function-enumerator = <1>;
++		};
++
++		multi-led@1,1 {
++			reg = <1 1>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "fan";
++			function-enumerator = <2>;
++		};
++
++		multi-led@1,2 {
++			reg = <1 2>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "fan";
++			function-enumerator = <3>;
++		};
++
++		multi-led@1,3 {
++			reg = <1 3>;
++			color = <LED_COLOR_ID_RGB>;
++			function = "fan";
++			function-enumerator = <4>;
++		};
++
+ 		/* The RedMagic logo next to the cameras */
+-		multi-led@0 {
+-			reg = <0>;
++		multi-led@2,0 {
++			reg = <2 0>;
+ 			color = <LED_COLOR_ID_RGB>;
+ 			function = "logo";
+ 		};
+ 
+ 		/* The "game mode" light */
+-		multi-led@1 {
+-			reg = <1>;
++		multi-led@2,1 {
++			reg = <2 1>;
+ 			color = <LED_COLOR_ID_RGB>;
+ 			function = "gamemode";
+ 		};
+-- 
+2.56.0
+
