@@ -22,6 +22,7 @@ local changes.
 | `callaudio.service.d/wait-card.conf` | callaudio waits for the sound card, which comes up after the user session |
 | `/usr/lib/dmail/modem-setup` | What dmail runs before talking to the modem: here it only checks that our services started it |
 | `iio-sensor-proxy.service.d/nx809j.conf` | 3 s stop timeout: the Qualcomm sensor backend waits for a sensor hub that never answers (no hexagonrpcd) and held shutdown for 90 s |
+| `nx809j-keep-pstore` + `systemd-pstore.service.d/nx809j.conf` | systemd-pstore moves the previous boot's ramoops log to `/var/lib/systemd/pstore` under the same name each boot; this keeps a copy per boot in `saved/<time>-<boot id>/` (the crashed boot is the one before), the last 10 |
 | `nx809j-reboot-linux` (+ "Reboot to Linux" launcher) | Dual boot: arms the Canoe boot manager's boot-once record for Linux in `misc`, then reboots (see `uefi/README.md`); needs passwordless sudo when run as a user |
 | `80-nx809j.preset` | Which of these services (and rmtfs, tqftpserv) systemd enables. ModemManager is left to you: the Arch image uses dmail (`phonewave-nx809j`) instead, and the two conflict |
 

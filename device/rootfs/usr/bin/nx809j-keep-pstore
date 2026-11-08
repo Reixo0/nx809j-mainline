@@ -1,0 +1,18 @@
+#!/bin/sh
+# Run after systemd-pstore: it moves the previous boot's ramoops log to
+# /var/lib/systemd/pstore under the same name every time, so a crash log is
+# gone after the next reboot. Keep a copy per boot in saved/<time>-<boot id>
+# (the boot that found it; the crashed one is the boot before) and the last 10.
+set -eu
+P=/var/lib/systemd/pstore
+last=$(ls -1d "$P"/saved/*/ 2>/dev/null | tail -n 1)
+dir=$P/saved/$(date +%Y%m%d-%H%M%S)-$(cut -c1-8 /proc/sys/kernel/random/boot_id)
+for f in "$P"/*; do
+	[ -f "$f" ] || continue
+	# A cold reset loses the RAM and leaves the old file: already saved. (No
+	# RTC, so the clock can't tell; the boot's time is set from the network.)
+	[ -n "$last" ] && cmp -s "$f" "$last/${f##*/}" && continue
+	mkdir -p "$dir"
+	cp -p "$f" "$dir/"
+done
+ls -1d "$P"/saved/*/ 2>/dev/null | head -n -10 | xargs -r rm -rf
