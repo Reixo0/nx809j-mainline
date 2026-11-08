@@ -1,0 +1,269 @@
+#!/usr/bin/python3
+"""GPS for geoclue: the modem's location service as NMEA on a Unix socket.
+
+The GNSS engine lives in the modem and speaks QMI LOC over QRTR. While at
+least one client (geoclue) is connected to /run/nx809j-gnss/nmea.sock, this
+runs a 1 Hz location session and writes a GGA and an RMC sentence for every
+fix; with no client the session stops and the receiver is off.
+
+What the modem wants, found the hard way:
+- The engine lock comes set to "all" (Android's location switch) and every
+  session then ends with "engine locked": set it to none first.
+- Event registration is refused (InvalidArgument) unless it names client
+  type 3, and the client revision is Android's IDL minor version, 177.
+- The modem sends no NMEA itself (NMEA_PROVIDER=0 on Android): the
+  sentences are built here from the position reports.
+"""
+
+import grp
+import os
+import selectors
+import socket
+import struct
+import sys
+import time
+
+AF_QIPCRTR = 42
+QRTR_PORT_CTRL = 0xfffffffe
+QRTR_TYPE_NEW_SERVER = 4
+QRTR_TYPE_NEW_LOOKUP = 10
+LOC_SERVICE = 16
+
+LOC_INFORM_CLIENT_REVISION = 0x20
+LOC_REG_EVENTS = 0x21
+LOC_START = 0x22
+LOC_STOP = 0x23
+LOC_POSITION_REPORT = 0x24
+LOC_SET_ENGINE_LOCK = 0x3a
+
+LOC_EVENT_POSITION_REPORT = 0x1
+LOC_LOCK_NONE = 1
+LOC_CLIENT_REVISION = 177
+LOC_CLIENT_TYPE = 3
+SESSION_ID = 1
+
+SOCKET_DIR = '/run/nx809j-gnss'
+SOCKET_PATH = SOCKET_DIR + '/nmea.sock'
+# A running session that reports nothing for this long is started again
+# (the modem restarted, or the request got lost).
+STALL_SECONDS = 30
+
+
+def log(*args):
+    print(*args, file=sys.stderr, flush=True)
+
+
+def tlv(t, fmt, *values):
+    b = struct.pack('<' + fmt, *values)
+    return struct.pack('<BH', t, len(b)) + b
+
+
+def parse_tlvs(b):
+    out = {}
+    while len(b) >= 3:
+        t, n = struct.unpack('<BH', b[:3])
+        out[t] = b[3:3 + n]
+        b = b[3 + n:]
+    return out
+
+
+def nmea(body):
+    cs = 0
+    for c in body.encode():
+        cs ^= c
+    return '$%s*%02X\r\n' % (body, cs)
+
+
+def coord(value, width):
+    deg = int(abs(value))
+    minutes = (abs(value) - deg) * 60
+    return '%0*d%07.4f' % (width, deg, minutes)
+
+
+def sentences(t):
+    """GGA and RMC for a position report, or nothing without a fix."""
+    status = struct.unpack('<I', t[0x01])[0] if 0x01 in t else None
+    if status != 0 or 0x10 not in t or 0x11 not in t:
+        return ''
+    lat = struct.unpack('<d', t[0x10])[0]
+    lon = struct.unpack('<d', t[0x11])[0]
+    f = lambda k: struct.unpack('<f', t[k][:4])[0] if k in t else None
+    if 0x25 in t:
+        utc = struct.unpack('<Q', t[0x25])[0] / 1000
+    else:
+        utc = time.time()
+    tm = time.gmtime(utc)
+    hms = time.strftime('%H%M%S', tm) + ('%.2f' % (utc % 1))[1:]
+    dmy = time.strftime('%d%m%y', tm)
+    lat_s = '%s,%s' % (coord(lat, 2), 'N' if lat >= 0 else 'S')
+    lon_s = '%s,%s' % (coord(lon, 3), 'E' if lon >= 0 else 'W')
+
+    used = t[0x2c][0] if 0x2c in t and t[0x2c] else 0
+    hdop = struct.unpack('<f', t[0x24][4:8])[0] if 0x24 in t and len(t[0x24]) >= 8 else None
+    if hdop is None:
+        # geoclue turns HDOP into accuracy; fall back on the reported one.
+        unc = f(0x12)
+        hdop = unc / 5 if unc else 1.0
+    alt_msl = f(0x1b)
+    alt_ell = f(0x1a)
+    if alt_msl is not None:
+        alt = '%.1f,M' % alt_msl
+        sep = '%.1f,M' % (alt_ell - alt_msl) if alt_ell is not None else ','
+    else:
+        alt = ',' if alt_ell is None else '%.1f,M' % alt_ell
+        sep = ','
+    gga = 'GPGGA,%s,%s,%s,1,%02d,%.1f,%s,%s,,' % (hms, lat_s, lon_s, used, hdop, alt, sep)
+
+    speed = f(0x18)
+    heading = f(0x20)
+    rmc = 'GPRMC,%s,A,%s,%s,%s,%s,%s,,,A' % (
+        hms, lat_s, lon_s,
+        '' if speed is None else '%.2f' % (speed * 1.943844),
+        '' if heading is None else '%.1f' % heading,
+        dmy)
+    return nmea(gga) + nmea(rmc)
+
+
+class Loc:
+    """A QMI LOC client over QRTR."""
+
+    def __init__(self):
+        self.sock = socket.socket(AF_QIPCRTR, socket.SOCK_DGRAM)
+        self.txn = 0
+        self.server = self.lookup()
+
+    def lookup(self):
+        self.sock.sendto(struct.pack('<5I', QRTR_TYPE_NEW_LOOKUP, LOC_SERVICE, 0, 0, 0),
+                         (1, QRTR_PORT_CTRL))
+        end = time.monotonic() + 5
+        while time.monotonic() < end:
+            self.sock.settimeout(max(0.1, end - time.monotonic()))
+            try:
+                b, _ = self.sock.recvfrom(4096)
+            except socket.timeout:
+                break
+            if len(b) < 20:
+                continue
+            cmd, service, _, node, port = struct.unpack('<5I', b[:20])
+            if cmd == QRTR_TYPE_NEW_SERVER and service == LOC_SERVICE and port:
+                return (node, port)
+        raise OSError('no QMI LOC service')
+
+    def send(self, msg, body):
+        self.txn = (self.txn + 1) & 0xffff or 1
+        self.sock.sendto(struct.pack('<BHHH', 0, self.txn, msg, len(body)) + body, self.server)
+
+    def start(self):
+        self.send(LOC_SET_ENGINE_LOCK, tlv(0x01, 'I', LOC_LOCK_NONE))
+        self.send(LOC_INFORM_CLIENT_REVISION, tlv(0x01, 'I', LOC_CLIENT_REVISION))
+        self.send(LOC_REG_EVENTS, tlv(0x01, 'Q', LOC_EVENT_POSITION_REPORT) +
+                  tlv(0x11, 'I', LOC_CLIENT_TYPE))
+        # Periodic, high accuracy, intermediate reports, every 1000 ms
+        self.send(LOC_START, tlv(0x01, 'B', SESSION_ID) + tlv(0x10, 'I', 1) +
+                  tlv(0x11, 'I', 3) + tlv(0x12, 'I', 1) + tlv(0x13, 'I', 1000))
+        self.sock.setblocking(False)
+
+    def stop(self):
+        try:
+            self.send(LOC_STOP, tlv(0x01, 'B', SESSION_ID))
+        except OSError:
+            pass
+        self.sock.close()
+
+    def read(self):
+        """Position reports received so far, as TLV dicts."""
+        reports = []
+        while True:
+            try:
+                b, addr = self.sock.recvfrom(65536)
+            except BlockingIOError:
+                return reports
+            if addr[1] == QRTR_PORT_CTRL or len(b) < 7:
+                continue
+            flags, _, msg, n = struct.unpack('<BHHH', b[:7])
+            t = parse_tlvs(b[7:7 + n])
+            if flags == 2 and 0x02 in t:
+                result, error = struct.unpack('<HH', t[0x02][:4])
+                if result:
+                    log('LOC request %#x failed: error %d' % (msg, error))
+            elif flags == 4 and msg == LOC_POSITION_REPORT:
+                reports.append(t)
+
+
+def main():
+    os.makedirs(SOCKET_DIR, exist_ok=True)
+    try:
+        os.unlink(SOCKET_PATH)
+    except FileNotFoundError:
+        pass
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(SOCKET_PATH)
+    # Only geoclue reads it: apps get location through geoclue's permissions.
+    try:
+        os.chown(SOCKET_PATH, 0, grp.getgrnam('geoclue').gr_gid)
+        os.chmod(SOCKET_PATH, 0o660)
+    except KeyError:
+        os.chmod(SOCKET_PATH, 0o600)
+    server.listen(4)
+
+    sel = selectors.DefaultSelector()
+    sel.register(server, selectors.EVENT_READ)
+    clients = set()
+    loc = None
+    last_report = 0
+
+    while True:
+        timeout = 1 if loc else None
+        for key, _ in sel.select(timeout):
+            s = key.fileobj
+            if s is server:
+                c, _ = server.accept()
+                clients.add(c)
+                sel.register(c, selectors.EVENT_READ)
+            elif loc and s is loc.sock:
+                for report in loc.read():
+                    last_report = time.monotonic()
+                    out = sentences(report).encode()
+                    for c in list(clients):
+                        try:
+                            c.sendall(out)
+                        except OSError:
+                            sel.unregister(c)
+                            clients.discard(c)
+                            c.close()
+            else:
+                # Clients don't talk; readable means gone.
+                try:
+                    data = s.recv(256)
+                except OSError:
+                    data = b''
+                if not data:
+                    sel.unregister(s)
+                    clients.discard(s)
+                    s.close()
+
+        if clients and (not loc or time.monotonic() - last_report > STALL_SECONDS):
+            if loc:
+                log('no position reports for %d s, restarting the session' % STALL_SECONDS)
+                sel.unregister(loc.sock)
+                loc.stop()
+                loc = None
+            try:
+                loc = Loc()
+                loc.start()
+                sel.register(loc.sock, selectors.EVENT_READ)
+                last_report = time.monotonic()
+                log('location session started')
+            except OSError as e:
+                log('cannot start a location session: %s' % e)
+                loc = None
+                time.sleep(5)
+        elif not clients and loc:
+            sel.unregister(loc.sock)
+            loc.stop()
+            loc = None
+            log('location session stopped')
+
+
+if __name__ == '__main__':
+    main()

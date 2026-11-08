@@ -7,3 +7,4 @@ enable tqftpserv.service
 enable nx809j-audio-hexagonrpcd.service
 enable nx809j-good-modules.service
 enable systemd-pstore.service
+enable nx809j-gnss.service

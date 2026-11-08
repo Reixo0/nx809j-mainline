@@ -23,6 +23,8 @@ local changes.
 | `/usr/lib/dmail/modem-setup` | What dmail runs before talking to the modem: here it only checks that our services started it |
 | `iio-sensor-proxy.service.d/nx809j.conf` | 3 s stop timeout: the Qualcomm sensor backend waits for a sensor hub that never answers (no hexagonrpcd) and held shutdown for 90 s |
 | `nx809j-keep-pstore` + `systemd-pstore.service.d/nx809j.conf` | systemd-pstore moves the previous boot's ramoops log to `/var/lib/systemd/pstore` under the same name each boot; this keeps a copy per boot in `saved/<time>-<boot id>/` (the crashed boot is the one before), the last 10 |
+| `nx809j-gnss` (+ service) | GPS: while geoclue is connected to `/run/nx809j-gnss/nmea.sock`, runs a location session on the modem (QMI LOC) and writes NMEA for every fix; idle otherwise. Unlocks the GNSS engine, which comes locked |
+| `share/nx809j/geoclue.conf`, `tmpfiles.d/nx809j-geoclue.conf` | geoclue's NMEA source set to that socket, linked into `/etc/geoclue/conf.d` (geoclue reads no other place) |
 | `nx809j-reboot-linux` (+ "Reboot to Linux" launcher) | Dual boot: arms the Canoe boot manager's boot-once record for Linux in `misc`, then reboots (see `uefi/README.md`); needs passwordless sudo when run as a user |
 | `80-nx809j.preset` | Which of these services (and rmtfs, tqftpserv) systemd enables. ModemManager is left to you: the Arch image uses dmail (`phonewave-nx809j`) instead, and the two conflict |
 
@@ -44,6 +46,7 @@ The services above need these from the distribution:
 | Reading persist (MAC, BT address) | `e2fsprogs-extra` (debugfs) | `e2fsprogs` |
 | Bluetooth address | `bluez-btmgmt` | `bluez-utils` |
 | Vulkan on the Adreno 840 | `mesa-vulkan-freedreno` | `vulkan-freedreno` |
+| GPS for apps | `geoclue` | `geoclue` |
 | Audio | PipeWire (`postmarketos-base-ui-audio-backend-pipewire`) | `pipewire`, `wireplumber`, `alsa-ucm-conf` |
 
 On postmarketOS, `device-nubia-nx809j` installs `rootfs/` (packed by

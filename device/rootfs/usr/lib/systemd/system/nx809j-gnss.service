@@ -1,0 +1,13 @@
+# GPS as NMEA on /run/nx809j-gnss/nmea.sock for geoclue. Idle until geoclue
+# connects; the receiver only runs while it does.
+[Unit]
+Description=GPS from the modem for geoclue
+After=rmtfs.service
+
+[Service]
+ExecStart=/usr/libexec/nx809j-gnss
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
