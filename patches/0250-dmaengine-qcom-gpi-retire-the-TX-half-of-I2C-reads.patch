@@ -1,0 +1,109 @@
+From 8903ef701c83046881d7e8d9a1f8ce5dcc3c0643 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 22:28:19 +0100
+Subject: [PATCH] dmaengine: qcom: gpi: retire the TX half of I2C reads
+
+For an I2C read the GENI driver queues a TX descriptor holding the
+config and GO TREs, linked to the RX side and without IEOT, so it never
+raises an event of its own. Its ring slots were only freed when a later
+write completed, and the descriptor stayed at the head of the TX vchan
+list, so that write's completion was credited to it. About 31 reads in
+a row with no write (an NFC controller notifying while polling, or the
+wake-up NACK retries) fill the 64-slot TX ring, after which every
+transfer fails and the error path resets channels shared with other
+serial engines on the same controller.
+
+Mark these linked TX descriptors and retire them, advancing the TX ring
+read pointer, when the RX completion of the same transfer arrives.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/dma/qcom/gpi.c | 44 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+
+diff --git a/drivers/dma/qcom/gpi.c b/drivers/dma/qcom/gpi.c
+index c41bfac65ddf..0c7a0df07036 100644
+--- a/drivers/dma/qcom/gpi.c
++++ b/drivers/dma/qcom/gpi.c
+@@ -527,6 +527,12 @@ struct gpi_desc {
+ 	struct gchan *gchan;
+ 	struct gpi_tre tre[MAX_TRE];
+ 	u32 num_tre;
++	/*
++	 * No TRE of this descriptor raises an event: the TX half of an I2C
++	 * read, whose GO TRE links to the RX channel. It is done when that
++	 * read completes.
++	 */
++	bool linked;
+ };
+ 
+ static const u32 GPII_CHAN_DIR[MAX_CHANNELS_PER_GPII] = {
+@@ -910,6 +916,36 @@ static irqreturn_t gpi_handle_irq(int irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
++/*
++ * An RX completion finishes the I2C read it belongs to, and with it the TX
++ * descriptor the read was started from, which raises no event of its own.
++ * Retire such descriptors at the head of the TX channel: free their TREs,
++ * which nothing else would until a later write completed (a run of reads
++ * fills the ring), and drop them, so the next TX event completes the
++ * descriptor it is for. Their callback is not run; the read's is.
++ */
++static void gpi_retire_linked_tx(struct gpii *gpii)
++{
++	struct gchan *tx = &gpii->gchan[GPI_TX_CHAN];
++	struct virt_dma_desc *vd;
++	struct gpi_desc *desc;
++	unsigned long flags;
++
++	spin_lock_irqsave(&tx->vc.lock, flags);
++	while ((vd = vchan_next_desc(&tx->vc))) {
++		desc = to_gpi_desc(vd);
++		if (!desc->linked || !desc->db)
++			break;
++		tx->ch_ring.rp = desc->db;
++		list_del(&vd->node);
++		kfree(desc);
++	}
++	spin_unlock_irqrestore(&tx->vc.lock, flags);
++
++	/* make sure rp updates are immediately visible to all cores */
++	smp_wmb();
++}
++
+ /* process DMA Immediate completion data events */
+ static void gpi_process_imed_data_event(struct gchan *gchan,
+ 					struct immediate_data_event *imed_event)
+@@ -990,6 +1026,9 @@ static void gpi_process_imed_data_event(struct gchan *gchan,
+ 	spin_unlock_irqrestore(&gchan->vc.lock, flags);
+ 	kfree(gpi_desc);
+ 	gpi_desc = NULL;
++
++	if (chid == GPI_RX_CHAN)
++		gpi_retire_linked_tx(gpii);
+ }
+ 
+ /* processing transfer completion events */
+@@ -1069,6 +1108,9 @@ static void gpi_process_xfer_compl_event(struct gchan *gchan,
+ 	spin_unlock_irqrestore(&gchan->vc.lock, flags);
+ 	kfree(gpi_desc);
+ 	gpi_desc = NULL;
++
++	if (chid == GPI_RX_CHAN)
++		gpi_retire_linked_tx(gpii);
+ }
+ 
+ /* process all events */
+@@ -1674,6 +1716,8 @@ static int gpi_create_i2c_tre(struct gchan *chan, struct gpi_desc *desc,
+ 			tre->dword[3] |= u32_encode_bits(1, TRE_FLAGS_CHAIN);
+ 	}
+ 
++	desc->linked = i2c->op == I2C_WRITE && i2c->multi_msg;
++
+ 	if (i2c->op == I2C_READ || i2c->multi_msg == false) {
+ 		/* create the DMA TRE */
+ 		tre = &desc->tre[tre_idx];
+-- 
+2.56.0
+

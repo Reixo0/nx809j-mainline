@@ -1,0 +1,403 @@
+From 3a2c5d9606a5ac6532695946edc7b2b2246aec4e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 22:28:19 +0100
+Subject: [PATCH] nfc: st54l: add a raw NCI device for userspace stacks
+
+Android's NFC stack speaks NCI itself. Offer /dev/nfc-nci, one NCI
+packet per read or write, as an alternative owner of the controller to
+the kernel's NCI core: whichever opens first holds it until it closes.
+Opening powers the controller and switches it to NFC mode; closing
+powers it off. Proprietary debug notifications are dropped.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/nfc/st54l-i2c.c | 266 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 257 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/nfc/st54l-i2c.c b/drivers/nfc/st54l-i2c.c
+index 83a69c2f1253..0b6f00c9e4fa 100644
+--- a/drivers/nfc/st54l-i2c.c
++++ b/drivers/nfc/st54l-i2c.c
+@@ -11,8 +11,15 @@
+  *
+  * Out of reset the controller is in a mode without RF. A proprietary
+  * command turns NFC on; the controller then resets itself and needs
+- * CORE_INIT again. Its PLL runs from a clock the board feeds it, which has
+- * to be on while the controller is.
++ * CORE_INIT again. The mode is kept across resets once set, and the last
++ * byte of each CORE_RESET_NTF says whether it is on. Its PLL runs from a
++ * clock the board feeds it, which has to be on while the controller is.
++ *
++ * The controller serves either the kernel's NCI stack (nfc0) or, while that
++ * is down, /dev/nfc-nci: one NCI packet per read() or write(), for a
++ * userspace NCI stack such as Android's. Opening it powers the controller
++ * and turns NFC mode on if it is off; the stack then resets and initialises
++ * it itself. Closing it powers the controller off.
+  */
+ 
+ #include <linux/clk.h>
+@@ -21,9 +28,15 @@
+ #include <linux/gpio/consumer.h>
+ #include <linux/i2c.h>
+ #include <linux/interrupt.h>
++#include <linux/miscdevice.h>
+ #include <linux/module.h>
++#include <linux/mutex.h>
+ #include <linux/nfc.h>
+ #include <linux/of.h>
++#include <linux/poll.h>
++#include <linux/skbuff.h>
++#include <linux/uaccess.h>
++#include <linux/wait.h>
+ 
+ #include <net/nfc/nci.h>
+ #include <net/nfc/nci_core.h>
+@@ -45,6 +58,13 @@ static const u8 st54l_nfc_mode_on[] = { 0x02, 0x01 };
+ 
+ static const u8 st54l_core_init_v2[] = { 0x00, 0x00 };
+ 
++/* The last byte of CORE_RESET_NTF while NFC mode is on */
++#define ST54L_RESET_NTF_LEN	(NCI_CTRL_HDR_SIZE + 0x1f)
++#define ST54L_MODE_NFC		0x01
++
++/* Packets /dev/nfc-nci holds for a reader that is behind */
++#define ST54L_RAW_QUEUE		64
++
+ /* Firmware debug traces, sent while it polls when traces are on */
+ #define ST54L_PROP_DEBUG_NTF	0x02
+ 
+@@ -53,16 +73,32 @@ static const u8 st54l_core_init_v2[] = { 0x00, 0x00 };
+ 			 NFC_PROTO_ISO14443_B_MASK | NFC_PROTO_ISO15693_MASK | \
+ 			 NFC_PROTO_NFC_DEP_MASK)
+ 
++enum st54l_owner {
++	ST54L_FREE,
++	ST54L_NCI,
++	ST54L_RAW,
++};
++
+ struct st54l {
+ 	struct i2c_client *client;
+ 	struct nci_dev *ndev;
+ 	struct gpio_desc *reset;
+ 	struct clk *clk;
+ 
+-	/* The controller is out of reset and its packets go to the core */
++	/* Who has the controller; changed under lock */
++	struct mutex lock;
++	enum st54l_owner owner;
++
++	/* The controller is out of reset and its packets go to the owner */
+ 	bool running;
+-	/* A CORE_RESET_NTF arrived */
++	/* A CORE_RESET_NTF arrived, and its last byte */
+ 	struct completion reset_ntf;
++	u8 mode;
++
++	/* /dev/nfc-nci: packets for its reader */
++	struct miscdevice misc;
++	struct sk_buff_head raw_rx;
++	wait_queue_head_t raw_wait;
+ };
+ 
+ static int st54l_recv(struct st54l *st, u8 *buf, int len)
+@@ -140,8 +176,11 @@ static irqreturn_t st54l_irq(int irq, void *data)
+ 	oid = nci_opcode_oid(nci_opcode(skb->data));
+ 
+ 	if (mt == NCI_MT_NTF_PKT && gid == NCI_GID_CORE &&
+-	    oid == nci_opcode_oid(NCI_OP_CORE_RESET_NTF))
++	    oid == nci_opcode_oid(NCI_OP_CORE_RESET_NTF)) {
++		if (skb->len == ST54L_RESET_NTF_LEN)
++			st->mode = skb->data[skb->len - 1];
+ 		complete(&st->reset_ntf);
++	}
+ 
+ 	if (!st->running ||
+ 	    (mt == NCI_MT_NTF_PKT && gid == NCI_GID_PROPRIETARY &&
+@@ -150,6 +189,18 @@ static irqreturn_t st54l_irq(int irq, void *data)
+ 		return IRQ_HANDLED;
+ 	}
+ 
++	if (st->owner == ST54L_RAW) {
++		if (skb_queue_len(&st->raw_rx) >= ST54L_RAW_QUEUE) {
++			dev_warn_ratelimited(&st->client->dev,
++					     "/dev/nfc-nci reader behind, packet dropped\n");
++			kfree_skb(skb);
++		} else {
++			skb_queue_tail(&st->raw_rx, skb);
++			wake_up_interruptible(&st->raw_wait);
++		}
++		return IRQ_HANDLED;
++	}
++
+ 	nci_recv_frame(st->ndev, skb);
+ 
+ 	return IRQ_HANDLED;
+@@ -162,16 +213,15 @@ static void st54l_power_off(struct st54l *st)
+ 	clk_disable_unprepare(st->clk);
+ }
+ 
+-static int st54l_open(struct nci_dev *ndev)
++/* Out of reset, with its greeting gone; its packets still go nowhere */
++static int st54l_power_on(struct st54l *st)
+ {
+-	struct st54l *st = nci_get_drvdata(ndev);
+ 	int ret;
+ 
+ 	ret = clk_prepare_enable(st->clk);
+ 	if (ret)
+ 		return ret;
+ 
+-	/* Out of reset it says hello; that greeting is not for the core */
+ 	reinit_completion(&st->reset_ntf);
+ 	gpiod_set_value_cansleep(st->reset, 1);
+ 	usleep_range(5000, 6000);
+@@ -183,6 +233,42 @@ static int st54l_open(struct nci_dev *ndev)
+ 
+ 	/* Let the rest of its greeting pass */
+ 	msleep(20);
++
++	return 0;
++}
++
++static int st54l_take(struct st54l *st, enum st54l_owner owner)
++{
++	guard(mutex)(&st->lock);
++
++	if (st->owner != ST54L_FREE)
++		return -EBUSY;
++	st->owner = owner;
++
++	return 0;
++}
++
++static void st54l_release(struct st54l *st)
++{
++	guard(mutex)(&st->lock);
++
++	st->owner = ST54L_FREE;
++}
++
++static int st54l_open(struct nci_dev *ndev)
++{
++	struct st54l *st = nci_get_drvdata(ndev);
++	int ret;
++
++	ret = st54l_take(st, ST54L_NCI);
++	if (ret)
++		return ret;
++
++	ret = st54l_power_on(st);
++	if (ret) {
++		st54l_release(st);
++		return ret;
++	}
+ 	st->running = true;
+ 
+ 	return 0;
+@@ -190,7 +276,10 @@ static int st54l_open(struct nci_dev *ndev)
+ 
+ static int st54l_close(struct nci_dev *ndev)
+ {
+-	st54l_power_off(nci_get_drvdata(ndev));
++	struct st54l *st = nci_get_drvdata(ndev);
++
++	st54l_power_off(st);
++	st54l_release(st);
+ 
+ 	return 0;
+ }
+@@ -260,6 +349,148 @@ static const struct nci_ops st54l_ops = {
+ 	.n_prop_ops = ARRAY_SIZE(st54l_prop_ops),
+ };
+ 
++/*
++ * NFC mode on for /dev/nfc-nci, as post_setup does for the core: CORE_INIT,
++ * the mode command, and the reset that follows. Its answers are dropped.
++ */
++static int st54l_raw_nfc_mode(struct st54l *st)
++{
++	static const u8 core_init[] = { 0x20, 0x01, 0x02, 0x00, 0x00 };
++	static const u8 mode_on[] = { 0x2f, ST54L_PROP_NFC_MODE, 0x02, 0x02, 0x01 };
++	int ret;
++
++	ret = st54l_send_buf(st, core_init, sizeof(core_init));
++	if (ret)
++		return ret;
++	msleep(50);
++
++	reinit_completion(&st->reset_ntf);
++	ret = st54l_send_buf(st, mode_on, sizeof(mode_on));
++	if (ret)
++		return ret;
++	if (!wait_for_completion_timeout(&st->reset_ntf,
++					 msecs_to_jiffies(ST54L_MODE_TIMEOUT_MS)))
++		return -ETIMEDOUT;
++	msleep(20);
++
++	return st->mode == ST54L_MODE_NFC ? 0 : -EIO;
++}
++
++static int st54l_raw_open(struct inode *inode, struct file *file)
++{
++	struct st54l *st = container_of(file->private_data, struct st54l, misc);
++	int ret;
++
++	ret = st54l_take(st, ST54L_RAW);
++	if (ret)
++		return ret;
++
++	ret = st54l_power_on(st);
++	if (ret)
++		goto err_release;
++
++	if (st->mode != ST54L_MODE_NFC) {
++		ret = st54l_raw_nfc_mode(st);
++		if (ret) {
++			dev_err(&st->client->dev, "NFC mode not on: %d\n", ret);
++			st54l_power_off(st);
++			goto err_release;
++		}
++	}
++
++	skb_queue_purge(&st->raw_rx);
++	st->running = true;
++	file->private_data = st;
++
++	return 0;
++
++err_release:
++	st54l_release(st);
++	return ret;
++}
++
++static int st54l_raw_release(struct inode *inode, struct file *file)
++{
++	struct st54l *st = file->private_data;
++
++	st54l_power_off(st);
++	skb_queue_purge(&st->raw_rx);
++	st54l_release(st);
++
++	return 0;
++}
++
++static ssize_t st54l_raw_read(struct file *file, char __user *buf, size_t count,
++			      loff_t *ppos)
++{
++	struct st54l *st = file->private_data;
++	struct sk_buff *skb;
++	ssize_t ret;
++
++	for (;;) {
++		skb = skb_dequeue(&st->raw_rx);
++		if (skb)
++			break;
++		if (file->f_flags & O_NONBLOCK)
++			return -EAGAIN;
++		ret = wait_event_interruptible(st->raw_wait,
++					       !skb_queue_empty(&st->raw_rx));
++		if (ret)
++			return ret;
++	}
++
++	if (count < skb->len) {
++		skb_queue_head(&st->raw_rx, skb);
++		return -EMSGSIZE;
++	}
++
++	ret = copy_to_user(buf, skb->data, skb->len) ? -EFAULT : skb->len;
++	kfree_skb(skb);
++
++	return ret;
++}
++
++static ssize_t st54l_raw_write(struct file *file, const char __user *buf,
++			       size_t count, loff_t *ppos)
++{
++	struct st54l *st = file->private_data;
++	u8 packet[NCI_CTRL_HDR_SIZE + NCI_MAX_PAYLOAD_SIZE];
++	int ret;
++
++	if (count < NCI_CTRL_HDR_SIZE || count > sizeof(packet))
++		return -EINVAL;
++	if (copy_from_user(packet, buf, count))
++		return -EFAULT;
++	if (packet[2] != count - NCI_CTRL_HDR_SIZE)
++		return -EINVAL;
++
++	ret = st54l_send_buf(st, packet, count);
++
++	return ret ? ret : count;
++}
++
++static __poll_t st54l_raw_poll(struct file *file, poll_table *wait)
++{
++	struct st54l *st = file->private_data;
++	__poll_t mask = EPOLLOUT | EPOLLWRNORM;
++
++	poll_wait(file, &st->raw_wait, wait);
++	if (!skb_queue_empty(&st->raw_rx))
++		mask |= EPOLLIN | EPOLLRDNORM;
++
++	return mask;
++}
++
++static const struct file_operations st54l_raw_fops = {
++	.owner = THIS_MODULE,
++	.open = st54l_raw_open,
++	.release = st54l_raw_release,
++	.read = st54l_raw_read,
++	.write = st54l_raw_write,
++	.poll = st54l_raw_poll,
++	.llseek = noop_llseek,
++};
++
+ static int st54l_probe(struct i2c_client *client)
+ {
+ 	struct device *dev = &client->dev;
+@@ -272,6 +503,9 @@ static int st54l_probe(struct i2c_client *client)
+ 
+ 	st->client = client;
+ 	init_completion(&st->reset_ntf);
++	mutex_init(&st->lock);
++	skb_queue_head_init(&st->raw_rx);
++	init_waitqueue_head(&st->raw_wait);
+ 	i2c_set_clientdata(client, st);
+ 
+ 	/* Held in reset until the device is opened */
+@@ -302,8 +536,20 @@ static int st54l_probe(struct i2c_client *client)
+ 		goto err_free;
+ 	}
+ 
++	st->misc.minor = MISC_DYNAMIC_MINOR;
++	st->misc.name = "nfc-nci";
++	st->misc.fops = &st54l_raw_fops;
++	st->misc.parent = dev;
++	ret = misc_register(&st->misc);
++	if (ret) {
++		dev_err_probe(dev, ret, "could not register /dev/nfc-nci\n");
++		goto err_unregister;
++	}
++
+ 	return 0;
+ 
++err_unregister:
++	nci_unregister_device(st->ndev);
+ err_free:
+ 	nci_free_device(st->ndev);
+ 	return ret;
+@@ -313,8 +559,10 @@ static void st54l_remove(struct i2c_client *client)
+ {
+ 	struct st54l *st = i2c_get_clientdata(client);
+ 
++	misc_deregister(&st->misc);
+ 	nci_unregister_device(st->ndev);
+ 	nci_free_device(st->ndev);
++	skb_queue_purge(&st->raw_rx);
+ }
+ 
+ static const struct of_device_id st54l_of_match[] = {
+-- 
+2.56.0
+

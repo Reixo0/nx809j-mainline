@@ -1,0 +1,50 @@
+From 87c3c45077faf13d022e0f031f81439169b65a47 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:18:02 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: hand the Wi-Fi link
+ to the ADSP in suspend
+
+The ADSP offers the pcie_drv channel: when the Wi-Fi chip is armed for
+wake-on-WLAN, let it hold the PCIe 0 link through system suspend while
+the host's clocks and votes drop.
+
+Move WAKE# from the Root Port to the controller, which arms it only
+while the Wi-Fi chip is armed for wake. On the Root Port the PCI core
+armed it for every suspend, and a Wi-Fi chip powered off with the link
+drags it low, waking the system at once.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 16b1f2e23e1c..758b2d7af4eb 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1805,6 +1805,14 @@ &mdss_dsi0_phy {
+ };
+ 
+ &pcie0 {
++	/*
++	 * The ADSP holds the Wi-Fi link through suspend. WAKE# belongs to the
++	 * controller, which arms it only while the Wi-Fi chip is armed for
++	 * wake: an unarmed chip is powered off in suspend and drags it low.
++	 */
++	qcom,drv-supported;
++	wake-gpios = <&tlmm 104 GPIO_ACTIVE_LOW>;
++
+ 	pinctrl-0 = <&pcie0_default_state>;
+ 	pinctrl-names = "default";
+ 
+@@ -1819,7 +1827,6 @@ &pcie0_phy {
+ };
+ 
+ &pcie_port0 {
+-	wake-gpios = <&tlmm 104 GPIO_ACTIVE_LOW>;
+ 	reset-gpios = <&tlmm 102 GPIO_ACTIVE_LOW>;
+ 
+ 	wifi@0 {
+-- 
+2.56.0
+

@@ -1,0 +1,32 @@
+From f850e2f4d4512f89554b87c2fbc4cf7489edbdea Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:18:02 +0100
+Subject: [PATCH] clk: qcom: gcc-kaanapali: keep the PCIe 0 PHY powered for
+ PCIe DRV
+
+While the ADSP holds the Wi-Fi link in L1.2 through system suspend
+(PCIe DRV), the PCIe 0 PHY keeps its registers: mark its GDSC
+ACTIVE_WAKEUP so it stays on in the wakeup path, as on SM8550.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/clk/qcom/gcc-kaanapali.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/clk/qcom/gcc-kaanapali.c b/drivers/clk/qcom/gcc-kaanapali.c
+index 3f0e76685881..dc895424277f 100644
+--- a/drivers/clk/qcom/gcc-kaanapali.c
++++ b/drivers/clk/qcom/gcc-kaanapali.c
+@@ -3157,7 +3157,8 @@ static struct gdsc gcc_pcie_0_phy_gdsc = {
+ 		.name = "gcc_pcie_0_phy_gdsc",
+ 	},
+ 	.pwrsts = PWRSTS_RET_ON,
+-	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE | VOTABLE,
++	/* Stays on while the ADSP holds the Wi-Fi link through suspend. */
++	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE | VOTABLE | ACTIVE_WAKEUP,
+ };
+ 
+ static struct gdsc gcc_ufs_mem_phy_gdsc = {
+-- 
+2.56.0
+

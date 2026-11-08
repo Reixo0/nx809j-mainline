@@ -1,0 +1,46 @@
+From 52acd47448b46644fc9807f5ab04d40b84f4f6cd Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 11:40:28 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: don't hand the
+ Wi-Fi link to the ADSP
+
+On Kaanapali the vendor kernel hands the PCIe link to CESTA (pcie_crm,
+the PCIe state machine and PDC), not to the ADSP. The ADSP acks the
+pcie_drv hand-off but doesn't hold the link: with wake-on-WLAN armed
+the phone reset into EDL about 20 s into sleep, once the Wi-Fi chip
+woke the link with the host's clocks and votes gone.
+
+Drop qcom,drv-supported until CESTA is supported. WAKE# stays on the
+controller.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index d7ac83dc22b4..81aba9a7db90 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1813,11 +1813,14 @@ &mdss_dsi0_phy {
+ 
+ &pcie0 {
+ 	/*
+-	 * The ADSP holds the Wi-Fi link through suspend. WAKE# belongs to the
+-	 * controller, which arms it only while the Wi-Fi chip is armed for
+-	 * wake: an unarmed chip is powered off in suspend and drags it low.
++	 * WAKE# belongs to the controller, which arms it only while the Wi-Fi
++	 * chip is armed for wake: an unarmed chip is powered off in suspend
++	 * and drags it low.
++	 *
++	 * No qcom,drv-supported: on Kaanapali the link is handed over to CESTA
++	 * (pcie_crm), not the ADSP. The ADSP acks the hand-off but doesn't
++	 * hold the link, and the phone resets once the Wi-Fi chip wakes it.
+ 	 */
+-	qcom,drv-supported;
+ 	wake-gpios = <&tlmm 104 GPIO_ACTIVE_LOW>;
+ 
+ 	pinctrl-0 = <&pcie0_default_state>;
+-- 
+2.56.0
+

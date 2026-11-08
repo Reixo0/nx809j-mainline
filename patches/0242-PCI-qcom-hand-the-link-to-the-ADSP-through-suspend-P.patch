@@ -1,0 +1,589 @@
+From f108dc6130dcd46604856240badc5582a335bc6c Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sat, 31 Oct 2026 01:42:10 +0100
+Subject: [PATCH] PCI: qcom: hand the link to the ADSP through suspend (PCIe
+ DRV)
+
+A Wi-Fi chip armed for wake-on-WLAN needs its link through system
+suspend, but the host's PCIe votes keep CX and XO up. As on the vendor
+kernel, the host hands the link to the ADSP on the "pcie_drv" rpmsg
+channel: the ADSP keeps it in L1.2 and votes what the link needs when
+the endpoint wakes it, and the host drops its clocks, supplies,
+bandwidth and performance votes. WAKE# wakes the system.
+
+The PHY keeps its registers and GDSC (a wakeup-path GDSC) and drops its
+clocks and supplies through phy_notify_state(). The TCSR PCIe 0 refclk
+gate no longer holds XO, as on the vendor kernel.
+
+Enabled on aston (SM8550) with qcom,drv-supported.
+
+(cherry picked from commit 86a6e912ff22953b60997ac111cbb11c6602e694)
+---
+ drivers/clk/qcom/gcc-sm8550.c            |   3 +-
+ drivers/clk/qcom/gdsc.c                  |   2 +
+ drivers/clk/qcom/gdsc.h                  |   1 +
+ drivers/clk/qcom/tcsrcc-sm8550.c         |   9 +-
+ drivers/pci/controller/dwc/pcie-qcom.c   | 307 ++++++++++++++++++++++-
+ drivers/phy/qualcomm/phy-qcom-qmp-pcie.c |  73 ++++++
+ include/linux/phy/phy.h                  |  11 +
+ 7 files changed, 400 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/clk/qcom/gcc-sm8550.c b/drivers/clk/qcom/gcc-sm8550.c
+index 80a44ff7d211..91f099bc41a0 100644
+--- a/drivers/clk/qcom/gcc-sm8550.c
++++ b/drivers/clk/qcom/gcc-sm8550.c
+@@ -3015,7 +3015,8 @@ static struct gdsc pcie_0_phy_gdsc = {
+ 		.name = "pcie_0_phy_gdsc",
+ 	},
+ 	.pwrsts = PWRSTS_RET_ON,
+-	.flags = VOTABLE | POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
++	/* Stays on while the ADSP holds the Wi-Fi link through suspend. */
++	.flags = VOTABLE | POLL_CFG_GDSCR | RETAIN_FF_ENABLE | ACTIVE_WAKEUP,
+ };
+ 
+ static struct gdsc pcie_1_gdsc = {
+diff --git a/drivers/clk/qcom/gdsc.c b/drivers/clk/qcom/gdsc.c
+index 20a9e6152027..f9731717f1e1 100644
+--- a/drivers/clk/qcom/gdsc.c
++++ b/drivers/clk/qcom/gdsc.c
+@@ -552,6 +552,8 @@ static int gdsc_init(struct gdsc *sc)
+ 
+ 	if (sc->flags & ALWAYS_ON)
+ 		sc->pd.flags |= GENPD_FLAG_ALWAYS_ON;
++	if (sc->flags & ACTIVE_WAKEUP)
++		sc->pd.flags |= GENPD_FLAG_ACTIVE_WAKEUP;
+ 	if (!sc->pd.power_off)
+ 		sc->pd.power_off = gdsc_disable;
+ 	if (!sc->pd.power_on)
+diff --git a/drivers/clk/qcom/gdsc.h b/drivers/clk/qcom/gdsc.h
+index 80756498f1d6..15df031a4e34 100644
+--- a/drivers/clk/qcom/gdsc.h
++++ b/drivers/clk/qcom/gdsc.h
+@@ -69,6 +69,7 @@ struct gdsc {
+ #define RETAIN_FF_ENABLE	BIT(7)
+ #define NO_RET_PERIPH	BIT(8)
+ #define HW_CTRL_TRIGGER	BIT(9)
++#define ACTIVE_WAKEUP	BIT(10)
+ 	struct reset_controller_dev	*rcdev;
+ 	unsigned int			*resets;
+ 	unsigned int			reset_count;
+diff --git a/drivers/clk/qcom/tcsrcc-sm8550.c b/drivers/clk/qcom/tcsrcc-sm8550.c
+index 6cac619dd959..5c02f313cfa7 100644
+--- a/drivers/clk/qcom/tcsrcc-sm8550.c
++++ b/drivers/clk/qcom/tcsrcc-sm8550.c
+@@ -27,6 +27,11 @@ enum {
+ 	DT_BI_TCXO_PAD,
+ };
+ 
++/*
++ * No parent: through suspend the ADSP holds the PCIe 0 link (PCIe DRV) and
++ * votes XO itself, while this gate stays open. While the link is active,
++ * the PHY's aux clock keeps XO on.
++ */
+ static struct clk_branch tcsr_pcie_0_clkref_en = {
+ 	.halt_reg = 0x15100,
+ 	.halt_check = BRANCH_HALT_SKIP,
+@@ -35,10 +40,6 @@ static struct clk_branch tcsr_pcie_0_clkref_en = {
+ 		.enable_mask = BIT(0),
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "tcsr_pcie_0_clkref_en",
+-			.parent_data = &(const struct clk_parent_data){
+-				.index = DT_BI_TCXO_PAD,
+-			},
+-			.num_parents = 1,
+ 			.ops = &clk_branch2_ops,
+ 		},
+ 	},
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index 1be1db42888a..4c41d51dbe8d 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -33,6 +33,7 @@
+ #include <linux/phy/phy.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/reset.h>
++#include <linux/rpmsg.h>
+ #include <linux/slab.h>
+ #include <linux/types.h>
+ #include <linux/units.h>
+@@ -330,6 +331,10 @@ struct qcom_pcie {
+ 	int global_irq;
+ 	bool use_pm_opp;
+ 	struct mutex reset_lock;
++	int drv_id;			/* PCIe DRV device id, <0 without */
++	bool drv_active;
++	int wake_irq;
++	bool wake_armed;
+ };
+ 
+ #define to_qcom_pcie(x)		dev_get_drvdata((x)->dev)
+@@ -2255,6 +2260,17 @@ static int qcom_pcie_parse_legacy_binding(struct qcom_pcie *pcie)
+ 	return 0;
+ }
+ 
++/* WAKE# during the way into suspend aborts it, like one in suspend. */
++static irqreturn_t qcom_pcie_wake_irq(int irq, void *data)
++{
++	struct qcom_pcie *pcie = data;
++
++	if (READ_ONCE(pcie->wake_armed))
++		pm_system_wakeup();
++
++	return IRQ_HANDLED;
++}
++
+ static int qcom_pcie_probe(struct platform_device *pdev)
+ {
+ 	struct qcom_pcie_perst *perst, *tmp_perst;
+@@ -2264,6 +2280,7 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	struct qcom_pcie *pcie;
+ 	struct dw_pcie_rp *pp;
+ 	struct resource *res;
++	struct gpio_desc *wake;
+ 	struct dw_pcie *pci;
+ 	int ret, irq;
+ 
+@@ -2409,6 +2426,20 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, pcie);
+ 
++	pcie->drv_id = -1;
++	if (of_property_read_bool(dev->of_node, "qcom,drv-supported"))
++		pcie->drv_id = of_get_pci_domain_nr(dev->of_node);
++
++	/* WAKE# wakes the system while the ADSP holds the link (PCIe DRV). */
++	wake = devm_gpiod_get_optional(dev, "wake", GPIOD_IN);
++	if (!IS_ERR_OR_NULL(wake)) {
++		irq = gpiod_to_irq(wake);
++		if (irq > 0 && !devm_request_irq(dev, irq, qcom_pcie_wake_irq,
++						 IRQF_TRIGGER_FALLING,
++						 "qcom_pcie_wake", pcie))
++			pcie->wake_irq = irq;
++	}
++
+ 	ret = dw_pcie_host_init(pp);
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "cannot initialize host\n");
+@@ -2464,6 +2495,263 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	return ret;
+ }
+ 
++/*
++ * PCIe DRV: while the system sleeps, the ADSP holds the link in L1.2 and
++ * votes the clocks, power and bandwidth the link needs whenever the endpoint
++ * wakes it. The host hands the link over on the "pcie_drv" rpmsg channel and
++ * drops all of its own votes, so a Wi-Fi chip armed for wake stays connected
++ * while CX and XO collapse.
++ */
++#define QCOM_PCIE_DRV_MSG_ACK			0xa
++#define QCOM_PCIE_DRV_MSG_CMD			0xc
++#define QCOM_PCIE_DRV_CMD_ENABLE		0xc0000000
++#define QCOM_PCIE_DRV_CMD_DISABLE		0xc0000001
++#define QCOM_PCIE_DRV_CMD_ENABLE_L1SS_SLEEP	0xc0000005
++#define QCOM_PCIE_DRV_CMD_DISABLE_L1SS_SLEEP	0xc0000006
++#define QCOM_PCIE_DRV_L1SS_TIMEOUT_MS		5
++#define QCOM_PCIE_DRV_ACK_TIMEOUT_MS		250
++#define QCOM_PCIE_DRV_SEQ_RESERVED		0xffff
++
++struct qcom_pcie_drv_header {
++	__le16 major;
++	__le16 minor;
++	__le16 msg_id;
++	__le16 seq;
++	__le16 reply_seq;
++	__le16 payload_size;
++	__le32 dev_id;
++	u8 reserved[8];
++} __packed;
++
++struct qcom_pcie_drv_msg {
++	struct qcom_pcie_drv_header hdr;
++	__le32 dword[4];
++} __packed;
++
++static struct {
++	struct mutex lock;
++	struct rpmsg_device *rpdev;
++	struct completion ack;
++	u16 seq;
++	u16 reply_seq;
++	u32 status;
++} qcom_pcie_drv = {
++	.lock = __MUTEX_INITIALIZER(qcom_pcie_drv.lock),
++	.ack = COMPLETION_INITIALIZER(qcom_pcie_drv.ack),
++};
++
++static int qcom_pcie_drv_send(struct qcom_pcie *pcie, u32 cmd)
++{
++	struct qcom_pcie_drv_msg msg = {};
++	int ret;
++
++	mutex_lock(&qcom_pcie_drv.lock);
++	if (!qcom_pcie_drv.rpdev) {
++		ret = -ENODEV;
++		goto out;
++	}
++
++	reinit_completion(&qcom_pcie_drv.ack);
++	qcom_pcie_drv.reply_seq = qcom_pcie_drv.seq++;
++	if (qcom_pcie_drv.seq == QCOM_PCIE_DRV_SEQ_RESERVED)
++		qcom_pcie_drv.seq = 0;
++
++	msg.hdr.major = cpu_to_le16(1);
++	msg.hdr.minor = cpu_to_le16(0);
++	msg.hdr.msg_id = cpu_to_le16(QCOM_PCIE_DRV_MSG_CMD);
++	msg.hdr.seq = cpu_to_le16(qcom_pcie_drv.reply_seq);
++	msg.hdr.payload_size = cpu_to_le16(sizeof(msg.dword));
++	msg.hdr.dev_id = cpu_to_le32(pcie->drv_id);
++	msg.dword[0] = cpu_to_le32(cmd);
++	msg.dword[1] = cpu_to_le32(pcie->drv_id);
++	if (cmd == QCOM_PCIE_DRV_CMD_ENABLE ||
++	    cmd == QCOM_PCIE_DRV_CMD_ENABLE_L1SS_SLEEP)
++		msg.dword[2] = cpu_to_le32(QCOM_PCIE_DRV_L1SS_TIMEOUT_MS);
++
++	ret = rpmsg_send(qcom_pcie_drv.rpdev->ept, &msg, sizeof(msg));
++	if (ret)
++		goto out;
++
++	if (!wait_for_completion_timeout(&qcom_pcie_drv.ack,
++				msecs_to_jiffies(QCOM_PCIE_DRV_ACK_TIMEOUT_MS)))
++		ret = -ETIMEDOUT;
++	else if (qcom_pcie_drv.status)
++		ret = -EIO;
++out:
++	mutex_unlock(&qcom_pcie_drv.lock);
++	if (ret)
++		dev_err(pcie->pci->dev, "DRV command %#x failed: %d\n", cmd, ret);
++
++	return ret;
++}
++
++static int qcom_pcie_drv_callback(struct rpmsg_device *rpdev, void *data,
++				  int len, void *priv, u32 src)
++{
++	struct qcom_pcie_drv_header *hdr = data;
++	__le32 *status = data + sizeof(*hdr);
++
++	if (len < sizeof(*hdr) + sizeof(*status) ||
++	    le16_to_cpu(hdr->msg_id) != QCOM_PCIE_DRV_MSG_ACK ||
++	    le16_to_cpu(hdr->payload_size) != sizeof(*status)) {
++		dev_warn_ratelimited(&rpdev->dev, "unexpected message\n");
++		return 0;
++	}
++
++	/* A late reply to a command that timed out is dropped. */
++	if (le16_to_cpu(hdr->reply_seq) != READ_ONCE(qcom_pcie_drv.reply_seq))
++		return 0;
++
++	qcom_pcie_drv.status = le32_to_cpu(*status);
++	complete(&qcom_pcie_drv.ack);
++
++	return 0;
++}
++
++static int qcom_pcie_drv_probe(struct rpmsg_device *rpdev)
++{
++	mutex_lock(&qcom_pcie_drv.lock);
++	qcom_pcie_drv.rpdev = rpdev;
++	mutex_unlock(&qcom_pcie_drv.lock);
++
++	return 0;
++}
++
++static void qcom_pcie_drv_remove(struct rpmsg_device *rpdev)
++{
++	mutex_lock(&qcom_pcie_drv.lock);
++	qcom_pcie_drv.rpdev = NULL;
++	mutex_unlock(&qcom_pcie_drv.lock);
++}
++
++static const struct rpmsg_device_id qcom_pcie_drv_id_table[] = {
++	{ .name = "pcie_drv" },
++	{ }
++};
++
++static struct rpmsg_driver qcom_pcie_drv_driver = {
++	.probe = qcom_pcie_drv_probe,
++	.remove = qcom_pcie_drv_remove,
++	.callback = qcom_pcie_drv_callback,
++	.id_table = qcom_pcie_drv_id_table,
++	.drv = {
++		.name = "qcom-pcie-drv",
++	},
++};
++
++static int qcom_pcie_wake_armed_one(struct pci_dev *pdev, void *data)
++{
++	bool *armed = data;
++
++	if (!pci_is_bridge(pdev) && pdev->dev.driver &&
++	    device_may_wakeup(&pdev->dev)) {
++		*armed = true;
++		return 1;
++	}
++
++	return 0;
++}
++
++/* An endpoint that must wake the system keeps its link. */
++static bool qcom_pcie_wake_armed(struct qcom_pcie *pcie)
++{
++	struct pci_host_bridge *bridge = pcie->pci->pp.bridge;
++	bool armed = false;
++
++	if (bridge && bridge->bus)
++		pci_walk_bus(bridge->bus, qcom_pcie_wake_armed_one, &armed);
++
++	return armed;
++}
++
++static int qcom_pcie_drv_suspend(struct qcom_pcie *pcie)
++{
++	union phy_notify enter = { .pcie_state = PHY_PCIE_DRV_ENTER };
++	struct qcom_pcie_resources_2_7_0 *res = &pcie->res.v2_7_0;
++	struct dw_pcie *pci = pcie->pci;
++	struct qcom_pcie_port *port;
++	int ret;
++
++	if (pcie->drv_id < 0 ||
++	    pcie->cfg->ops->get_resources != qcom_pcie_get_resources_2_7_0 ||
++	    !dw_pcie_link_up(pci) || !qcom_pcie_wake_armed(pcie))
++		return -EOPNOTSUPP;
++
++	ret = qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_ENABLE);
++	if (ret)
++		return ret;
++
++	/* The ADSP owns the link: no DBI or config access from here on. */
++	clk_bulk_disable_unprepare(res->num_clks, res->clks);
++	list_for_each_entry(port, &pcie->ports, list)
++		phy_notify_state(port->phy, enter);
++
++	icc_disable(pcie->icc_mem);
++	icc_disable(pcie->icc_cpu);
++	if (pcie->use_pm_opp)
++		dev_pm_opp_set_opp(pci->dev, NULL);
++
++	pcie->drv_active = true;
++
++	/* Without it the link only stays in L1.2 longer; not fatal. */
++	qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_ENABLE_L1SS_SLEEP);
++
++	return 0;
++}
++
++static int qcom_pcie_drv_resume(struct qcom_pcie *pcie)
++{
++	union phy_notify exit = { .pcie_state = PHY_PCIE_DRV_EXIT };
++	struct qcom_pcie_resources_2_7_0 *res = &pcie->res.v2_7_0;
++	struct device *dev = pcie->pci->dev;
++	struct qcom_pcie_port *port;
++	int ret;
++
++	pcie->drv_active = false;
++
++	ret = qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_DISABLE_L1SS_SLEEP);
++
++	if (pcie->use_pm_opp)
++		qcom_pcie_set_max_opp(dev);
++	icc_enable(pcie->icc_cpu);
++	icc_enable(pcie->icc_mem);
++
++	list_for_each_entry(port, &pcie->ports, list)
++		phy_notify_state(port->phy, exit);
++	if (clk_bulk_prepare_enable(res->num_clks, res->clks))
++		dev_err(dev, "Failed to enable clocks after DRV\n");
++
++	/* An ADSP that lost the hand-off (restarted) has nothing to return. */
++	if (!ret)
++		ret = qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_DISABLE);
++
++	qcom_pcie_icc_opp_update(pcie);
++
++	return ret;
++}
++
++static int qcom_pcie_suspend(struct device *dev)
++{
++	struct qcom_pcie *pcie = dev_get_drvdata(dev);
++
++	if (pcie && pcie->wake_irq > 0 && qcom_pcie_wake_armed(pcie))
++		pcie->wake_armed = !enable_irq_wake(pcie->wake_irq);
++
++	return 0;
++}
++
++static int qcom_pcie_resume(struct device *dev)
++{
++	struct qcom_pcie *pcie = dev_get_drvdata(dev);
++
++	if (pcie && pcie->wake_armed) {
++		disable_irq_wake(pcie->wake_irq);
++		pcie->wake_armed = false;
++	}
++
++	return 0;
++}
++
+ static int qcom_pcie_suspend_noirq(struct device *dev)
+ {
+ 	struct qcom_pcie *pcie;
+@@ -2477,6 +2765,9 @@ static int qcom_pcie_suspend_noirq(struct device *dev)
+ 	if (!pcie)
+ 		return 0;
+ 
++	if (!qcom_pcie_drv_suspend(pcie))
++		return 0;
++
+ 	ret = dw_pcie_suspend_noirq(pcie->pci);
+ 	if (ret)
+ 		return ret;
+@@ -2539,6 +2830,9 @@ static int qcom_pcie_resume_noirq(struct device *dev)
+ 	if (!pcie)
+ 		return 0;
+ 
++	if (pcie->drv_active)
++		return qcom_pcie_drv_resume(pcie);
++
+ 	if (pcie->pci->suspended) {
+ 		if (pcie->use_pm_opp) {
+ 			ret = qcom_pcie_set_max_opp(dev);
+@@ -2643,6 +2937,7 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_QCOM, 0x1000, qcom_fixup_class);
+ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_QCOM, 0x1001, qcom_fixup_class);
+ 
+ static const struct dev_pm_ops qcom_pcie_pm_ops = {
++	SYSTEM_SLEEP_PM_OPS(qcom_pcie_suspend, qcom_pcie_resume)
+ 	NOIRQ_SYSTEM_SLEEP_PM_OPS(qcom_pcie_suspend_noirq, qcom_pcie_resume_noirq)
+ };
+ 
+@@ -2656,4 +2951,14 @@ static struct platform_driver qcom_pcie_driver = {
+ 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+ 	},
+ };
+-builtin_platform_driver(qcom_pcie_driver);
++static int __init qcom_pcie_driver_init(void)
++{
++	int ret;
++
++	ret = register_rpmsg_driver(&qcom_pcie_drv_driver);
++	if (ret)
++		return ret;
++
++	return platform_driver_register(&qcom_pcie_driver);
++}
++device_initcall(qcom_pcie_driver_init);
+diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c b/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
+index 9cfabf474fd6..ac72dde8e5fb 100644
+--- a/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
++++ b/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
+@@ -5955,10 +5955,83 @@ static int qmp_pcie_set_mode(struct phy *phy, enum phy_mode mode, int submode)
+ 	return 0;
+ }
+ 
++/*
++ * The ref clock stays on: it only opens the refclk gate, and the processor
++ * holding the link needs it.
++ */
++static void qmp_pcie_drv_clks_off(struct qmp_pcie *qmp)
++{
++	int i;
++
++	for (i = ARRAY_SIZE(qmp_pciephy_clk_l) - 1; i >= 0; i--)
++		if (strcmp(qmp->clks[i].id, "ref"))
++			clk_disable_unprepare(qmp->clks[i].clk);
++}
++
++static int qmp_pcie_drv_clks_on(struct qmp_pcie *qmp)
++{
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(qmp_pciephy_clk_l); i++) {
++		if (!strcmp(qmp->clks[i].id, "ref"))
++			continue;
++		ret = clk_prepare_enable(qmp->clks[i].clk);
++		if (ret) {
++			while (--i >= 0)
++				if (strcmp(qmp->clks[i].id, "ref"))
++					clk_disable_unprepare(qmp->clks[i].clk);
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++/*
++ * PCIe DRV: the PHY keeps its registers and stays powered (its GDSC is kept
++ * on through the wakeup path) while the link sits in L1.2. No register is
++ * written either way.
++ */
++static int qmp_pcie_notify_phystate(struct phy *phy, union phy_notify state)
++{
++	struct qmp_pcie *qmp = phy_get_drvdata(phy);
++	const struct qmp_phy_cfg *cfg = qmp->cfg;
++	int ret;
++
++	switch (state.pcie_state) {
++	case PHY_PCIE_DRV_ENTER:
++		clk_bulk_disable_unprepare(qmp->num_pipe_clks, qmp->pipe_clks);
++		qmp_pcie_drv_clks_off(qmp);
++		regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
++		device_set_wakeup_path(qmp->dev);
++		return 0;
++	case PHY_PCIE_DRV_EXIT:
++		ret = regulator_bulk_enable(cfg->num_vregs, qmp->vregs);
++		if (ret)
++			return ret;
++		ret = qmp_pcie_drv_clks_on(qmp);
++		if (ret)
++			goto err_disable_regulators;
++		ret = clk_bulk_prepare_enable(qmp->num_pipe_clks, qmp->pipe_clks);
++		if (ret)
++			goto err_disable_clks;
++		return 0;
++	}
++
++	return -EOPNOTSUPP;
++
++err_disable_clks:
++	qmp_pcie_drv_clks_off(qmp);
++err_disable_regulators:
++	regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
++	return ret;
++}
++
+ static const struct phy_ops qmp_pcie_phy_ops = {
+ 	.power_on	= qmp_pcie_enable,
+ 	.power_off	= qmp_pcie_disable,
+ 	.set_mode	= qmp_pcie_set_mode,
++	.notify_phystate = qmp_pcie_notify_phystate,
+ 	.owner		= THIS_MODULE,
+ };
+ 
+diff --git a/include/linux/phy/phy.h b/include/linux/phy/phy.h
+index 5a7f064ed8fd..6ea3b4e1d7a8 100644
+--- a/include/linux/phy/phy.h
++++ b/include/linux/phy/phy.h
+@@ -61,8 +61,19 @@ enum phy_ufs_state {
+ 	PHY_UFS_HIBERN8_EXIT,
+ };
+ 
++/*
++ * PCIe DRV: another processor holds the link in L1 substates while the host
++ * sleeps. On enter the PHY drops what the host votes for and keeps its
++ * configuration; on exit it takes them back.
++ */
++enum phy_pcie_state {
++	PHY_PCIE_DRV_ENTER,
++	PHY_PCIE_DRV_EXIT,
++};
++
+ union phy_notify {
+ 	enum phy_ufs_state ufs_state;
++	enum phy_pcie_state pcie_state;
+ };
+ 
+ /**
+-- 
+2.56.0
+

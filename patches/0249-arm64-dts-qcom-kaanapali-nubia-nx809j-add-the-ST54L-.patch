@@ -1,0 +1,71 @@
+From 256d4c0654aa1647938d34ee03a05c93c7e5d185 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 17:11:39 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: add the ST54L NFC
+ controller
+
+The ST54L sits at 0x08 on QUP SE21 I2C, its interrupt on GPIO 75 and
+its reset on GPIO 34. Its PLL needs RF_CLK3: without it the
+controller reports PLL lock errors while polling. The secure
+element's SPI is left alone.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 34 +++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 81aba9a7db90..5c297d138254 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -1683,6 +1683,26 @@ trigger@12 {
+ 	};
+ };
+ 
++/*
++ * NFC: an ST54L (NFC controller and secure element). Its PLL runs from
++ * RF_CLK3. The secure element's SPI (QUP SE4, GPIOs 40-43) is left alone.
++ */
++&i2c21 {
++	clock-frequency = <400000>;
++	status = "okay";
++
++	nfc@8 {
++		compatible = "st,st54l-i2c";
++		reg = <0x08>;
++		interrupts-extended = <&tlmm 75 IRQ_TYPE_LEVEL_HIGH>;
++		reset-gpios = <&tlmm 34 GPIO_ACTIVE_LOW>;
++		clocks = <&rpmhcc RPMH_RF_CLK3>;
++
++		pinctrl-0 = <&nfc_int_default>, <&nfc_reset_default>;
++		pinctrl-names = "default";
++	};
++};
++
+ &i2c_hub_3 {
+ 	status = "okay";
+ 
+@@ -2307,6 +2327,20 @@ wlan_en: wlan-en-state {
+ 		bias-pull-down;
+ 	};
+ 
++	nfc_int_default: nfc-int-default-state {
++		pins = "gpio75";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++
++	nfc_reset_default: nfc-reset-default-state {
++		pins = "gpio34";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
+ 	trigger_left_int_default: trigger-left-int-default-state {
+ 		pins = "gpio200";
+ 		function = "gpio";
+-- 
+2.56.0
+

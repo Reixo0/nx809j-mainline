@@ -1,0 +1,152 @@
+From f45ec031f75fddcb382889d5a120b4b13bc18a34 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:12:54 +0100
+Subject: [PATCH] ASoC: codecs: wcd939x: let the audio chain sleep in system
+ suspend
+
+MBHC keeps the codec and its SoundWire devices resumed while a jack is
+registered, because jack events do not reach us while the link is
+stopped. That also keeps both SoundWire controllers, the RX, TX and VA
+macros, their clocks and the XO running through system sleep, and the
+SoC never collapses CX.
+
+Register a PM notifier: before system sleep, allow runtime PM again and
+suspend the codec, the SoundWire devices, their buses and controllers
+and the macros supplying them right away (their autosuspend timers would
+outlast the start of system sleep, which blocks runtime PM); after
+resume, hold them up again. Jack detection keeps working awake and after
+resume, and a sleep then reached CX collapse and DDR self-refresh.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ sound/soc/codecs/wcd939x.c | 73 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 73 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
+index efb9d5379fc6..7b0adc2f81eb 100644
+--- a/sound/soc/codecs/wcd939x.c
++++ b/sound/soc/codecs/wcd939x.c
+@@ -25,6 +25,7 @@
+ #include <sound/soc.h>
+ #include <sound/soc-dapm.h>
+ #include <linux/regulator/consumer.h>
++#include <linux/suspend.h>
+ #include <linux/usb/typec_mux.h>
+ #include <linux/usb/typec_altmode.h>
+ 
+@@ -199,6 +200,9 @@ struct wcd939x_priv {
+ 	struct irq_domain *virq;
+ 	struct regmap_irq_chip_data *irq_chip;
+ 	struct snd_soc_jack *jack;
++	/* the codec and its SoundWire devices are held resumed for MBHC */
++	bool jack_held;
++	struct notifier_block pm_nb;
+ 	unsigned long status_mask;
+ 	s32 micb_ref[WCD939X_MAX_MICBIAS];
+ 	s32 pullup_ref[WCD939X_MAX_MICBIAS];
+@@ -3305,6 +3309,68 @@ static int wcd939x_irq_init(struct wcd939x_priv *wcd, struct device *dev)
+ 					&wcd->irq_chip);
+ }
+ 
++/*
++ * Suspend @dev now, then the SoundWire bus and controller above it and the
++ * devices supplying them, two links deep: the RX/TX macros and the VA macro
++ * that supplies those, with their clocks. Waiting for their autosuspend
++ * timers would outlast the start of system sleep, which blocks runtime PM,
++ * and the macros would keep their clocks and the XO on.
++ */
++static void wcd939x_suspend_suppliers(struct device *dev, int depth)
++{
++	struct device_link *link;
++
++	list_for_each_entry(link, &dev->links.suppliers, c_node) {
++		pm_runtime_suspend(link->supplier);
++		if (depth > 1)
++			wcd939x_suspend_suppliers(link->supplier, depth - 1);
++	}
++}
++
++static void wcd939x_suspend_chain(struct device *dev)
++{
++	int i;
++
++	for (i = 0; dev && i < 3; i++, dev = dev->parent) {
++		pm_runtime_suspend(dev);
++		wcd939x_suspend_suppliers(dev, 2);
++	}
++}
++
++/*
++ * MBHC holds the codec up while a jack is registered, and that keeps the
++ * whole audio chain, its clocks and the XO running. During system sleep the
++ * chain may stop: let it runtime suspend before sleep and hold it again on
++ * wake.
++ */
++static int wcd939x_pm_notify(struct notifier_block *nb, unsigned long action,
++			     void *data)
++{
++	struct wcd939x_priv *wcd = container_of(nb, struct wcd939x_priv, pm_nb);
++	struct device *dev = wcd->component->dev;
++
++	if (!wcd->jack_held)
++		return NOTIFY_DONE;
++
++	switch (action) {
++	case PM_SUSPEND_PREPARE:
++		pm_runtime_allow(dev);
++		pm_runtime_allow(wcd->rxdev);
++		pm_runtime_allow(wcd->txdev);
++		pm_runtime_suspend(dev);
++		wcd939x_suspend_chain(wcd->rxdev);
++		wcd939x_suspend_chain(wcd->txdev);
++		break;
++	case PM_POST_SUSPEND:
++		pm_runtime_forbid(dev);
++		pm_runtime_forbid(wcd->rxdev);
++		pm_runtime_forbid(wcd->txdev);
++		break;
++	}
++
++	return NOTIFY_DONE;
++}
++
+ static int wcd939x_soc_codec_probe(struct snd_soc_component *component)
+ {
+ 	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(component);
+@@ -3408,6 +3474,10 @@ static int wcd939x_soc_codec_probe(struct snd_soc_component *component)
+ 		goto err_free_ear_pdm_wd_int;
+ 	}
+ 
++	wcd939x->component = component;
++	wcd939x->pm_nb.notifier_call = wcd939x_pm_notify;
++	register_pm_notifier(&wcd939x->pm_nb);
++
+ 	return 0;
+ 
+ err_free_ear_pdm_wd_int:
+@@ -3426,6 +3496,7 @@ static void wcd939x_soc_codec_remove(struct snd_soc_component *component)
+ {
+ 	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(component);
+ 
++	unregister_pm_notifier(&wcd939x->pm_nb);
+ 	wcd939x_mbhc_deinit(component);
+ 
+ 	free_irq(wcd939x->ear_pdm_wd_int, wcd939x);
+@@ -3451,12 +3522,14 @@ static int wcd939x_codec_set_jack(struct snd_soc_component *comp,
+ 		pm_runtime_forbid(comp->dev);
+ 		pm_runtime_forbid(wcd->rxdev);
+ 		pm_runtime_forbid(wcd->txdev);
++		wcd->jack_held = true;
+ 
+ 		return wcd_mbhc_start(wcd->wcd_mbhc, &wcd->mbhc_cfg, jack);
+ 	}
+ 
+ 	wcd_mbhc_stop(wcd->wcd_mbhc);
+ 
++	wcd->jack_held = false;
+ 	pm_runtime_allow(wcd->txdev);
+ 	pm_runtime_allow(wcd->rxdev);
+ 	pm_runtime_allow(comp->dev);
+-- 
+2.56.0
+

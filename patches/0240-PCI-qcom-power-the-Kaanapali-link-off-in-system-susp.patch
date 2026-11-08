@@ -1,0 +1,71 @@
+From cde4109e9a4b3226825dabc8a0d99b6eba988eda Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:12:43 +0100
+Subject: [PATCH] PCI: qcom: power the Kaanapali link off in system suspend
+
+Kaanapali collapses CX in s2idle once nothing votes against it, which
+takes the controller's power and state with it. A link kept up through
+suspend is then found down on resume ("Recovering Root Port due to Link
+Down"), the WCN7860 Wi-Fi behind it stops answering ("failed to resume
+core: -110", "Hardware became unavailable upon resume"), and one such
+sleep left the phone in EDL.
+
+Add a suspend_poweroff flag to the per-SoC configuration and set it for
+Kaanapali, so the DesignWare core sends PME_Turn_Off, takes the link to
+L2 and powers the controller down, and brings it back on resume. With it
+the Wi-Fi comes back about 6 s after a CX-collapse sleep.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index d903f10211c2..1be1db42888a 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -300,6 +300,8 @@ struct qcom_pcie_cfg {
+ 	bool override_no_snoop;
+ 	bool firmware_managed;
+ 	bool no_l0s;
++	/* the controller loses power in system suspend: take the link to L2 */
++	bool suspend_poweroff;
+ };
+ 
+ struct qcom_pcie_perst {
+@@ -1694,6 +1696,16 @@ static const struct qcom_pcie_cfg cfg_1_9_0 = {
+ 	.ops = &ops_1_9_0,
+ };
+ 
++/*
++ * Kaanapali collapses CX in s2idle, which takes the controller's power and
++ * state with it: a link kept up through suspend is found down on resume and
++ * its endpoint stops responding.
++ */
++static const struct qcom_pcie_cfg cfg_kaanapali = {
++	.ops = &ops_1_9_0,
++	.suspend_poweroff = true,
++};
++
+ static const struct qcom_pcie_cfg cfg_1_34_0 = {
+ 	.ops = &ops_1_9_0,
+ 	.override_no_snoop = true,
+@@ -2375,6 +2387,7 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 		goto err_pm_runtime_put;
+ 
+ 	pp->ops = &qcom_pcie_dw_ops;
++	pp->suspend_poweroff = pcie->cfg->suspend_poweroff;
+ 
+ 	ret = qcom_pcie_parse_ports(pcie);
+ 	if (ret) {
+@@ -2586,6 +2599,7 @@ static int qcom_pcie_resume_noirq(struct device *dev)
+ 
+ static const struct of_device_id qcom_pcie_match[] = {
+ 	{ .compatible = "qcom,hawi-pcie", .data = &cfg_1_9_0 },
++	{ .compatible = "qcom,kaanapali-pcie", .data = &cfg_kaanapali },
+ 	{ .compatible = "qcom,pcie-apq8064", .data = &cfg_2_1_0 },
+ 	{ .compatible = "qcom,pcie-apq8084", .data = &cfg_1_0_0 },
+ 	{ .compatible = "qcom,pcie-ipq4019", .data = &cfg_2_4_0 },
+-- 
+2.56.0
+
