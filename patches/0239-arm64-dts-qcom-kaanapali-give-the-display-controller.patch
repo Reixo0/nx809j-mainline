@@ -1,0 +1,43 @@
+From 8b4f66b1d043c920b5f304329de7942e03a66d96 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:12:29 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali: give the display controller its
+ SS IP clock
+
+The display controller also runs from DISP_CC_MDSS_MDP_SS_IP_CLK, which
+the stock device tree hands it as ssip_clk, but it was not listed here,
+so Linux never enabled it. The panel then worked only when the
+bootloader happened to leave that clock on: some boots scanned out a
+correct top band followed by a stale frame, and with the unused clocks
+switched off every boot did. List it so the DPU enables it with its
+other clocks; ten boots with unused clocks off came up clean.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index 9de8bc00de75..2d801ac24f31 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -4312,12 +4312,14 @@ mdss_mdp: display-controller@9801000 {
+ 					 <&dispcc DISP_CC_MDSS_AHB_CLK>,
+ 					 <&dispcc DISP_CC_MDSS_MDP_LUT_CLK>,
+ 					 <&dispcc DISP_CC_MDSS_MDP_CLK>,
+-					 <&dispcc DISP_CC_MDSS_VSYNC_CLK>;
++					 <&dispcc DISP_CC_MDSS_VSYNC_CLK>,
++					 <&dispcc DISP_CC_MDSS_MDP_SS_IP_CLK>;
+ 				clock-names = "nrt_bus",
+ 					      "iface",
+ 					      "lut",
+ 					      "core",
+-					      "vsync";
++					      "vsync",
++					      "ssip";
+ 
+ 				assigned-clocks = <&dispcc DISP_CC_MDSS_VSYNC_CLK>;
+ 				assigned-clock-rates = <19200000>;
+-- 
+2.56.0
+
