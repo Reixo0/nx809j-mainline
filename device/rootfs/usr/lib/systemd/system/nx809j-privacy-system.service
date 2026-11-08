@@ -1,0 +1,17 @@
+# Location switched off per app, as geoclue rules, and which apps geoclue
+# gives a location, for the status bar (nx809j-privacy-system).
+[Unit]
+Description=Privacy switches that need root
+Before=geoclue.service
+
+[Service]
+ExecStart=/usr/libexec/nx809j-privacy-system
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/nx809j-privacy
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

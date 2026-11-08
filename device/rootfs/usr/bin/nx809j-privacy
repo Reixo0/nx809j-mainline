@@ -3,19 +3,26 @@
 
 Switches: ~/.config/denial/privacy.json, written by Settings,
     {"microphone": true, "camera": true, "location": true,
-     "apps": {"microphone": {"firefox": false}, "camera": {...}}}
+     "apps": {"microphone": {"firefox": false}, "camera": {...},
+              "location": {"org.gnome.Maps": false}}}
 go into PipeWire's "privacy" metadata, where WirePlumber's nx809j-privacy.lua
-hides microphones and cameras from the apps switched off. Location is
-switched by Denial's geoclue agent from the same file.
+hides microphones and cameras from the apps switched off. A copy goes to
+/run/nx809j-privacy/users/<uid>.json, for the services that are not ours:
+braun (the camera service) refuses the camera to apps switched off, and
+nx809j-privacy-system makes geoclue refuse location to them. Location as a
+whole is switched by Denial's geoclue agent from the first file.
 
 In use: $XDG_RUNTIME_DIR/denial/privacy-usage.json,
     {"inUse": {"microphone": true, "camera": false, "location": true},
-     "microphone": ["firefox"], "camera": [], "location": []}
+     "microphone": ["firefox"], "camera": [], "location": ["org.gnome.Maps"]}
 rewritten whenever it changes: apps recording through PipeWire, the app
-braun (the camera service) streams for, and apps with a camera node open, by
-the name they report. geoclue only says whether any
-app gets a location, not which (clients are private to their app), so the
-location list stays empty.
+braun streams for, apps with a camera node open, by the name they report,
+and the apps geoclue gives a location to (from nx809j-privacy-system), by
+the desktop id they give it.
+
+Seen: $XDG_STATE_HOME/denial/privacy-seen.json, every app that ever used
+each, {"microphone": ["firefox"], "camera": [], "location": []}, for the
+lists of apps in Settings.
 """
 
 import json
@@ -44,12 +51,48 @@ def usage_path():
     return os.path.join(base, 'denial', 'privacy-usage.json')
 
 
-def read_switches():
+def seen_path():
+    base = os.environ.get('XDG_STATE_HOME') or os.path.expanduser('~/.local/state')
+    return os.path.join(base, 'denial', 'privacy-seen.json')
+
+
+SYSTEM = '/run/nx809j-privacy'
+APP = re.compile(r'[\w.+-]+')
+
+
+def read_config():
     try:
         with open(config_path()) as f:
             data = json.load(f)
     except (OSError, ValueError):
         data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def publish_switches(data):
+    """The switches, checked, where braun and nx809j-privacy-system read them."""
+    clean = {kind: data.get(kind) is not False for kind in KINDS}
+    clean['apps'] = {}
+    for kind in KINDS:
+        apps = (data.get('apps') or {}).get(kind) or {}
+        if isinstance(apps, dict):
+            clean['apps'][kind] = {app: on for app, on in apps.items()
+                                   if isinstance(on, bool) and APP.fullmatch(app)}
+    users = os.path.join(SYSTEM, 'users')
+    if not os.path.isdir(users):
+        return
+    path = os.path.join(users, '%d.json' % os.getuid())
+    tmp = '%s.%d.tmp' % (path, os.getpid())
+    try:
+        with open(tmp, 'w') as f:
+            json.dump(clean, f)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except OSError as e:
+        log('publishing the switches:', e)
+
+
+def read_switches(data):
     switches = {}
     for kind in ("microphone", "camera"):
         switches[kind] = 'off' if data.get(kind) is False else 'on'
@@ -203,6 +246,19 @@ def braun_streaming():
     return {app or 'unknown'}
 
 
+def location_apps():
+    """The apps geoclue gives a location to, by their desktop id."""
+    try:
+        with open(os.path.join(SYSTEM, 'location.json')) as f:
+            apps = json.load(f).get('apps') or []
+    except (OSError, ValueError, AttributeError):
+        return set()
+    uid = os.getuid()
+    return {a['app'] for a in apps
+            if isinstance(a, dict) and a.get('uid') in (uid, None)
+            and isinstance(a.get('app'), str)}
+
+
 def location_in_use():
     """Whether geoclue is giving any app a location, without starting it."""
     out = subprocess.run(['busctl', '--system', '--auto-start=no', 'get-property',
@@ -224,10 +280,43 @@ def write_usage(usage):
     os.replace(tmp, path)
 
 
+def remember(seen, usage):
+    """Adds the apps in use to those seen; whether any was new."""
+    new = False
+    for kind in KINDS:
+        known = seen.setdefault(kind, [])
+        for app in sorted(usage[kind]):
+            if app not in known and APP.fullmatch(app):
+                known.append(app)
+                new = True
+    return new
+
+
+def read_seen():
+    try:
+        with open(seen_path()) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {kind: [a for a in data.get(kind) or [] if isinstance(a, str)] for kind in KINDS}
+
+
+def write_seen(seen):
+    path = seen_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(seen, f)
+    os.replace(tmp, path)
+
+
 def main():
     graph = None
     last_config = None
     last_usage = None
+    seen = read_seen()
     next_poll = 0
     while True:
         if graph is None:
@@ -244,7 +333,9 @@ def main():
             mtime = None
         if mtime != last_config:
             last_config = mtime
-            push_switches(read_switches())
+            data = read_config()
+            push_switches(read_switches(data))
+            publish_switches(data)
 
         timeout = max(0, next_poll - time.monotonic())
         r, _, _ = select.select([graph], [], [], timeout)
@@ -263,15 +354,17 @@ def main():
             next_poll = time.monotonic() + POLL_SECONDS
             usage = graph.recording()
             usage['camera'] |= camera_openers() | braun_streaming()
-            usage['location'] = set()
+            usage['location'] = location_apps()
             usage['locationInUse'] = location_in_use()
             if usage != last_usage:
                 last_usage = usage
                 write_usage(usage)
+                if remember(seen, usage):
+                    write_seen(seen)
             # WirePlumber restored them from its state when it started; put
             # them back if the metadata came up empty anyway.
             if not metadata_switches():
-                push_switches(read_switches())
+                push_switches(read_switches(read_config()))
 
 
 if __name__ == '__main__':

@@ -1,0 +1,242 @@
+#!/usr/bin/python3
+"""The privacy switches that need root: location per app, through geoclue.
+
+Each user's nx809j-privacy copies their switches to
+/run/nx809j-privacy/users/<uid>.json (a file they own). An app switched off
+for location there,
+    {"apps": {"location": {"org.gnome.Maps": false}}}
+becomes a rule in /run/nx809j-privacy/geoclue.conf, which tmpfiles links
+into /etc/geoclue/conf.d:
+    [org.gnome.Maps]
+    allowed=false
+geoclue then refuses that desktop id whatever else says, sandboxed or not.
+It reads its configuration only when it starts, so it is restarted when the
+rules change. Apps are known by the desktop id they give geoclue: this keeps
+honest apps out, it is no sandbox. A rule holds for every user.
+
+It also follows which apps geoclue gives a location (clients are private to
+their app, so the bus is watched instead) into
+/run/nx809j-privacy/location.json,
+    {"apps": [{"app": "org.gnome.Maps", "uid": 1000}]}
+for the status bar and Settings.
+"""
+
+import json
+import os
+import re
+import select
+import subprocess
+import sys
+import time
+
+RUN = '/run/nx809j-privacy'
+USERS = RUN + '/users'
+GEOCLUE_CONF = RUN + '/geoclue.conf'
+LOCATION = RUN + '/location.json'
+POLL_SECONDS = 2
+
+GEOCLUE = 'org.freedesktop.GeoClue2'
+CLIENT = 'org.freedesktop.GeoClue2.Client'
+MANAGER = 'org.freedesktop.GeoClue2.Manager'
+APP_ID = re.compile(r'[\w.+-]+')
+
+
+def log(*args):
+    print(*args, file=sys.stderr, flush=True)
+
+
+def write(path, text):
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write(text)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def users_state():
+    """What the switch files are now, to see when one changes."""
+    try:
+        names = sorted(os.listdir(USERS))
+    except OSError:
+        return ()
+    state = []
+    for name in names:
+        try:
+            st = os.lstat(os.path.join(USERS, name))
+        except OSError:
+            continue
+        state.append((name, st.st_mtime_ns, st.st_size, st.st_uid))
+    return tuple(state)
+
+
+def switched_off():
+    """Desktop ids some user switched location off for."""
+    off = set()
+    try:
+        names = os.listdir(USERS)
+    except OSError:
+        return off
+    for name in names:
+        match = re.fullmatch(r'(\d+)\.json', name)
+        path = os.path.join(USERS, name)
+        try:
+            # Only a user's own file, and no links into somewhere else.
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            continue
+        with os.fdopen(fd) as f:
+            if not match or os.fstat(f.fileno()).st_uid != int(match.group(1)):
+                continue
+            try:
+                data = json.load(f)
+            except ValueError:
+                continue
+        apps = ((data.get('apps') or {}).get('location') or {}) if isinstance(data, dict) else {}
+        if not isinstance(apps, dict):
+            continue
+        for app, on in apps.items():
+            if on is False and APP_ID.fullmatch(app):
+                off.add(app)
+    return off
+
+
+def geoclue_rules(off):
+    lines = ['# Written by nx809j-privacy-system: apps switched off for location.\n']
+    for app in sorted(off):
+        lines.append('\n[%s]\nallowed=false\nsystem=false\nusers=\n' % app)
+    return ''.join(lines)
+
+
+def apply_rules():
+    text = geoclue_rules(switched_off())
+    if read_text(GEOCLUE_CONF) == text:
+        return
+    write(GEOCLUE_CONF, text)
+    log('location rules changed; restarting geoclue if it runs')
+    subprocess.run(['systemctl', 'try-restart', 'geoclue.service'])
+
+
+def connection_user(name):
+    out = subprocess.run(['busctl', '--system', 'call', 'org.freedesktop.DBus',
+                          '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+                          'GetConnectionUnixUser', 's', name],
+                         capture_output=True, text=True).stdout.split()
+    return int(out[1]) if len(out) == 2 and out[1].isdigit() else None
+
+
+class Clients:
+    """geoclue's clients, from the messages to and from it."""
+
+    def __init__(self):
+        # path -> {"app", "owner", "uid", "started"}
+        self.clients = {}
+        # (owner, cookie) -> path of a Start waiting for its reply
+        self.starting = {}
+        self.proc = subprocess.Popen(
+            ['busctl', 'monitor', '--system', '--json=short',
+             "--match=destination='%s'" % GEOCLUE,
+             "--match=sender='%s'" % GEOCLUE,
+             "--match=type='signal',sender='org.freedesktop.DBus',member='NameOwnerChanged'"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+
+    def fileno(self):
+        return self.proc.stdout.fileno()
+
+    def read(self):
+        line = self.proc.stdout.readline()
+        if not line:
+            raise EOFError('busctl monitor ended')
+        try:
+            message = json.loads(line)
+        except ValueError:
+            return
+        self.take(message)
+
+    def take(self, m):
+        kind = m.get('type')
+        data = (m.get('payload') or {}).get('data') or []
+        path = m.get('path') or ''
+        if kind == 'method_call':
+            member, interface = m.get('member'), m.get('interface')
+            sender = m.get('sender')
+            if interface == 'org.freedesktop.DBus.Properties' and member == 'Set' \
+                    and len(data) == 3 and data[0] == CLIENT and data[1] == 'DesktopId':
+                value = data[2].get('data') if isinstance(data[2], dict) else None
+                if isinstance(value, str) and APP_ID.fullmatch(value):
+                    client = self.clients.setdefault(path, {'started': False})
+                    client.update(app=value, owner=sender, uid=connection_user(sender))
+            elif interface == CLIENT and member == 'Start':
+                self.starting[(sender, m.get('cookie'))] = path
+            elif interface == CLIENT and member == 'Stop':
+                if path in self.clients:
+                    self.clients[path]['started'] = False
+            elif interface == MANAGER and member == 'DeleteClient' and data:
+                self.clients.pop(data[0], None)
+        elif kind in ('method_return', 'error'):
+            path = self.starting.pop((m.get('destination'), m.get('reply_cookie')), None)
+            if path in self.clients:
+                self.clients[path]['started'] = kind == 'method_return'
+        elif kind == 'signal' and m.get('member') == 'NameOwnerChanged' and len(data) == 3:
+            name, _old, new = data
+            if new:
+                return
+            if name == GEOCLUE:
+                self.clients.clear()
+                self.starting.clear()
+                return
+            for path in [p for p, c in self.clients.items() if c.get('owner') == name]:
+                del self.clients[path]
+            for key in [k for k in self.starting if k[0] == name]:
+                del self.starting[key]
+
+    def in_use(self):
+        return sorted({(c['app'], c.get('uid')) for c in self.clients.values()
+                       if c.get('started') and c.get('app')}, key=lambda a: (a[0], a[1] or 0))
+
+
+def main():
+    os.makedirs(USERS, exist_ok=True)
+    apply_rules()
+    clients = None
+    last_users = None
+    last_location = None
+    next_poll = 0
+    while True:
+        if clients is None:
+            clients = Clients()
+
+        timeout = max(0, next_poll - time.monotonic())
+        r, _, _ = select.select([clients], [], [], timeout)
+        if r:
+            try:
+                clients.read()
+            except (EOFError, OSError):
+                log('the bus monitor stopped; starting it again')
+                clients.proc.kill()
+                clients = None
+                time.sleep(2)
+                continue
+
+        now = clients.in_use()
+        if now != last_location:
+            last_location = now
+            write(LOCATION, json.dumps({'apps': [{'app': app, 'uid': uid} for app, uid in now]}))
+
+        if time.monotonic() >= next_poll:
+            next_poll = time.monotonic() + POLL_SECONDS
+            state = users_state()
+            if state != last_users:
+                last_users = state
+                apply_rules()
+
+
+if __name__ == '__main__':
+    main()
