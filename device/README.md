@@ -25,6 +25,8 @@ local changes.
 | `nx809j-keep-pstore` + `systemd-pstore.service.d/nx809j.conf` | systemd-pstore moves the previous boot's ramoops log to `/var/lib/systemd/pstore` under the same name each boot; this keeps a copy per boot in `saved/<time>-<boot id>/` (the crashed boot is the one before), the last 10 |
 | `nx809j-gnss` (+ service) | GPS: while geoclue is connected to `/run/nx809j-gnss/nmea.sock`, runs a location session on the modem (QMI LOC) and writes NMEA for every fix; idle otherwise. Unlocks the GNSS engine, which comes locked |
 | `share/nx809j/geoclue.conf`, `tmpfiles.d/nx809j-geoclue.conf` | geoclue's NMEA source set to that socket, linked into `/etc/geoclue/conf.d` (geoclue reads no other place) |
+| `nx809j-privacy` (+ user service) | Privacy switches from `~/.config/denial/privacy.json` (Settings) into PipeWire's `privacy` metadata, and what uses the microphone, camera and location into `$XDG_RUNTIME_DIR/denial/privacy-usage.json` for the status bar |
+| `wireplumber/scripts/nx809j-privacy.lua` (+ `50-nx809j-privacy.conf`) | Hides microphones and cameras from apps switched off, globally or per app (by the binary name the app reports: no sandbox). Location is switched by Denial's geoclue agent |
 | `nx809j-reboot-linux` (+ "Reboot to Linux" launcher) | Dual boot: arms the Canoe boot manager's boot-once record for Linux in `misc`, then reboots (see `uefi/README.md`); needs passwordless sudo when run as a user |
 | `80-nx809j.preset` | Which of these services (and rmtfs, tqftpserv) systemd enables. ModemManager is left to you: the Arch image uses dmail (`phonewave-nx809j`) instead, and the two conflict |
 

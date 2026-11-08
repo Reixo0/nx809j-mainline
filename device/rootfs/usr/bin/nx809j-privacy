@@ -1,0 +1,264 @@
+#!/usr/bin/python3
+"""Privacy switches and what is in use, for Settings and the status bar.
+
+Switches: ~/.config/denial/privacy.json, written by Settings,
+    {"microphone": true, "camera": true, "location": true,
+     "apps": {"microphone": {"firefox": false}, "camera": {...}}}
+go into PipeWire's "privacy" metadata, where WirePlumber's nx809j-privacy.lua
+hides microphones and cameras from the apps switched off. Location is
+switched by Denial's geoclue agent from the same file.
+
+In use: $XDG_RUNTIME_DIR/denial/privacy-usage.json,
+    {"inUse": {"microphone": true, "camera": false, "location": true},
+     "microphone": ["firefox"], "camera": [], "location": []}
+rewritten whenever it changes: apps recording through PipeWire and apps with
+a camera node open, by the name they report. geoclue only says whether any
+app gets a location, not which (clients are private to their app), so the
+location list stays empty.
+"""
+
+import json
+import os
+import re
+import select
+import subprocess
+import sys
+import time
+
+KINDS = ("microphone", "camera", "location")
+POLL_SECONDS = 2
+
+
+def log(*args):
+    print(*args, file=sys.stderr, flush=True)
+
+
+def config_path():
+    base = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
+    return os.path.join(base, 'denial', 'privacy.json')
+
+
+def usage_path():
+    base = os.environ.get('XDG_RUNTIME_DIR') or '/run/user/%d' % os.getuid()
+    return os.path.join(base, 'denial', 'privacy-usage.json')
+
+
+def read_switches():
+    try:
+        with open(config_path()) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    switches = {}
+    for kind in ("microphone", "camera"):
+        switches[kind] = 'off' if data.get(kind) is False else 'on'
+        apps = (data.get('apps') or {}).get(kind) or {}
+        for app, on in apps.items():
+            if on is False and re.fullmatch(r'[\w.+-]+', app):
+                switches['%s.app.%s' % (kind, app)] = 'off'
+    return switches
+
+
+def metadata_switches():
+    """What the privacy metadata holds now."""
+    out = subprocess.run(['pw-metadata', '-n', 'privacy', '0'],
+                         capture_output=True, text=True).stdout
+    found = {}
+    for key, value in re.findall(r"key:'([^']+)' value:'([^']*)'", out):
+        found[key] = value
+    return found
+
+
+def push_switches(switches):
+    current = metadata_switches()
+    for key, value in switches.items():
+        if current.get(key) != value:
+            subprocess.run(['pw-metadata', '-n', 'privacy', '0', key, value, 'Spa:String'],
+                           capture_output=True)
+    for key in current:
+        if key not in switches:
+            subprocess.run(['pw-metadata', '-n', 'privacy', '-d', '0', key],
+                           capture_output=True)
+
+
+class Graph:
+    """PipeWire's clients and nodes, from pw-dump --monitor."""
+
+    def __init__(self):
+        self.objects = {}
+        self.proc = subprocess.Popen(['pw-dump', '--monitor', '--no-colors'],
+                                     stdout=subprocess.PIPE, text=True, bufsize=1)
+        self.buffer = ''
+        self.decoder = json.JSONDecoder()
+
+    def fileno(self):
+        return self.proc.stdout.fileno()
+
+    def read(self):
+        chunk = os.read(self.fileno(), 65536).decode(errors='replace')
+        if not chunk:
+            raise EOFError('pw-dump ended')
+        self.buffer += chunk
+        while True:
+            text = self.buffer.lstrip()
+            if not text:
+                self.buffer = ''
+                return
+            try:
+                batch, end = self.decoder.raw_decode(text)
+            except ValueError:
+                self.buffer = text
+                return
+            self.buffer = text[end:]
+            for obj in batch if isinstance(batch, list) else []:
+                oid = obj.get('id')
+                if obj.get('info') is None and 'type' not in obj:
+                    self.objects.pop(oid, None)
+                    continue
+                old = self.objects.get(oid, {})
+                merged = dict(old)
+                merged.update(obj)
+                info = dict(old.get('info') or {})
+                info.update(obj.get('info') or {})
+                merged['info'] = info
+                self.objects[oid] = merged
+
+    def app_of(self, client_id):
+        client = self.objects.get(client_id) or {}
+        props = (client.get('info') or {}).get('props') or {}
+        return (props.get('application.process.binary') or props.get('application.name')
+                or None)
+
+    def recording(self):
+        """Apps with a running capture stream, by kind."""
+        found = {"microphone": set(), "camera": set()}
+        for obj in self.objects.values():
+            if not obj.get('type', '').endswith('Node'):
+                continue
+            info = obj.get('info') or {}
+            props = info.get('props') or {}
+            cls = props.get('media.class', '')
+            if info.get('state') != 'running':
+                continue
+            if cls == 'Stream/Input/Audio':
+                kind = 'microphone'
+            elif cls == 'Stream/Input/Video':
+                kind = 'camera'
+            else:
+                continue
+            app = self.app_of(props.get('client.id')) or props.get('application.name')
+            if app:
+                found[kind].add(app)
+        return found
+
+
+def camera_openers():
+    """Our processes with a camera node open (apps that skip PipeWire)."""
+    nodes = set()
+    for name in os.listdir('/dev'):
+        if name.startswith('video'):
+            try:
+                st = os.stat('/dev/' + name)
+                nodes.add((st.st_rdev))
+            except OSError:
+                pass
+    found = set()
+    uid = os.getuid()
+    for pid in os.listdir('/proc'):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat('/proc/' + pid).st_uid != uid:
+                continue
+            fds = os.listdir('/proc/%s/fd' % pid)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                st = os.stat('/proc/%s/fd/%s' % (pid, fd))
+            except OSError:
+                continue
+            if st.st_rdev and st.st_rdev in nodes and (st.st_mode & 0o170000) == 0o020000:
+                try:
+                    found.add(os.path.basename(os.readlink('/proc/%s/exe' % pid)))
+                except OSError:
+                    pass
+                break
+    # PipeWire's own camera monitor keeps nodes open while idle.
+    found -= {'pipewire', 'wireplumber'}
+    return found
+
+
+def location_in_use():
+    """Whether geoclue is giving any app a location, without starting it."""
+    out = subprocess.run(['busctl', '--system', '--auto-start=no', 'get-property',
+                          'org.freedesktop.GeoClue2', '/org/freedesktop/GeoClue2/Manager',
+                          'org.freedesktop.GeoClue2.Manager', 'InUse'],
+                         capture_output=True, text=True).stdout
+    return out.strip() == 'b true'
+
+
+def write_usage(usage):
+    path = usage_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + '.tmp'
+    data = {'inUse': {k: bool(usage[k]) or (k == 'location' and usage['locationInUse'])
+                      for k in KINDS}}
+    data.update({k: sorted(usage[k]) for k in KINDS})
+    with open(tmp, 'w') as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
+def main():
+    graph = None
+    last_config = None
+    last_usage = None
+    next_poll = 0
+    while True:
+        if graph is None:
+            try:
+                graph = Graph()
+            except OSError as e:
+                log('pw-dump:', e)
+                time.sleep(5)
+                continue
+
+        try:
+            mtime = os.stat(config_path()).st_mtime_ns
+        except OSError:
+            mtime = None
+        if mtime != last_config:
+            last_config = mtime
+            push_switches(read_switches())
+
+        timeout = max(0, next_poll - time.monotonic())
+        r, _, _ = select.select([graph], [], [], timeout)
+        if r:
+            try:
+                graph.read()
+            except (EOFError, OSError):
+                log('PipeWire went away; reconnecting')
+                graph.proc.kill()
+                graph = None
+                last_config = None
+                time.sleep(2)
+                continue
+
+        if time.monotonic() >= next_poll:
+            next_poll = time.monotonic() + POLL_SECONDS
+            usage = graph.recording()
+            usage['camera'] |= camera_openers()
+            usage['location'] = set()
+            usage['locationInUse'] = location_in_use()
+            if usage != last_usage:
+                last_usage = usage
+                write_usage(usage)
+            # WirePlumber restored them from its state when it started; put
+            # them back if the metadata came up empty anyway.
+            if not metadata_switches():
+                push_switches(read_switches())
+
+
+if __name__ == '__main__':
+    main()

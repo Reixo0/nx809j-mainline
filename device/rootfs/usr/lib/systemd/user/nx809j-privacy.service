@@ -1,0 +1,14 @@
+# Privacy switches into PipeWire, and what uses the microphone, camera and
+# location, for the status bar (nx809j-privacy).
+[Unit]
+Description=Privacy switches and in-use status
+After=wireplumber.service
+Wants=wireplumber.service
+
+[Service]
+ExecStart=/usr/bin/nx809j-privacy
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
