@@ -11,8 +11,9 @@ switched by Denial's geoclue agent from the same file.
 In use: $XDG_RUNTIME_DIR/denial/privacy-usage.json,
     {"inUse": {"microphone": true, "camera": false, "location": true},
      "microphone": ["firefox"], "camera": [], "location": []}
-rewritten whenever it changes: apps recording through PipeWire and apps with
-a camera node open, by the name they report. geoclue only says whether any
+rewritten whenever it changes: apps recording through PipeWire, the app
+braun (the camera service) streams for, and apps with a camera node open, by
+the name they report. geoclue only says whether any
 app gets a location, not which (clients are private to their app), so the
 location list stays empty.
 """
@@ -189,6 +190,19 @@ def camera_openers():
     return found
 
 
+BRAUN_STATUS = '/run/braun/streaming'
+
+
+def braun_streaming():
+    """The app braun streams a camera for: `<app>\t<camera>` while it does."""
+    try:
+        with open(BRAUN_STATUS) as f:
+            app = f.read().split('\t', 1)[0].strip()
+    except OSError:
+        return set()
+    return {app or 'unknown'}
+
+
 def location_in_use():
     """Whether geoclue is giving any app a location, without starting it."""
     out = subprocess.run(['busctl', '--system', '--auto-start=no', 'get-property',
@@ -248,7 +262,7 @@ def main():
         if time.monotonic() >= next_poll:
             next_poll = time.monotonic() + POLL_SECONDS
             usage = graph.recording()
-            usage['camera'] |= camera_openers()
+            usage['camera'] |= camera_openers() | braun_streaming()
             usage['location'] = set()
             usage['locationInUse'] = location_in_use()
             if usage != last_usage:
