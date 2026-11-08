@@ -135,7 +135,7 @@ mkdir -p "$n/usr/bin" "$n/usr/lib/systemd/system" "$n/usr/share/dbus-1/system-se
   "$n/usr/share/dbus-1/system.d" "$n/usr/lib/sysusers.d" "$n/usr/lib/udev/rules.d" \
   "$n/usr/share/braun/sensors" "$n/etc/braun" "$n/etc/hapticd" "$n/etc/dmail" \
   "$n/usr/lib/systemd/user" "$n/usr/share/dbus-1/services"
-install -m755 "$PW"/{hapticd,hapticctl,steinerd,steinerctl,braun,braunctl,dmail,dmailctl,callaudio} "$n/usr/bin/"
+install -m755 "$PW"/{hapticd,hapticctl,steinerd,steinerctl,braun,braunctl,braun-loopback,dmail,dmailctl,callaudio} "$n/usr/bin/"
 for s in haptics/hapticd:hapticd sensors/steinerd:steinerd camera/braun:braun modem/dmail:dmail; do
   k=$P/${s%:*}/packaging; m=${s#*:}
   install -m644 "$k/$m.service" "$n/usr/lib/systemd/system/"
@@ -146,6 +146,9 @@ install -m644 "$P/camera/braun/packaging/braun.sysusers" "$n/usr/lib/sysusers.d/
 install -m644 "$P/modem/dmail/packaging/dmail.sysusers" "$n/usr/lib/sysusers.d/dmail.conf"
 install -m644 "$R/etc/dmail/device.toml" "$n/etc/dmail/"
 install -m644 "$P/audio/callaudio/packaging/callaudio.service" "$n/usr/lib/systemd/user/"
+install -m644 "$P/camera/braun/packaging/braun-loopback.service" "$n/usr/lib/systemd/user/"
+install -Dm644 "$R/usr/lib/modprobe.d/braun-loopback.conf" "$n/usr/lib/modprobe.d/braun-loopback.conf"
+install -Dm644 "$R/usr/lib/modules-load.d/braun-loopback.conf" "$n/usr/lib/modules-load.d/braun-loopback.conf"
 install -m644 "$P/audio/callaudio/packaging/org.callaudio.service" "$n/usr/share/dbus-1/services/"
 install -m644 "$P/camera/braun/sensors/"*.toml "$n/usr/share/braun/sensors/"
 install -m644 "$R/etc/braun/"*.toml "$n/etc/braun/"

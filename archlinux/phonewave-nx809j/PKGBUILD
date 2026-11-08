@@ -28,5 +28,7 @@ package() {
   done
   wants="$pkgdir/usr/lib/systemd/user/default.target.wants"
   install -d "$wants"
-  ln -s ../callaudio.service "$wants/callaudio.service"
+  for u in callaudio braun-loopback; do
+    ln -s "../$u.service" "$wants/$u.service"
+  done
 }

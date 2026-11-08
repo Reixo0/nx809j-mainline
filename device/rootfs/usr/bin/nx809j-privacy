@@ -228,8 +228,10 @@ def camera_openers():
                 except OSError:
                     pass
                 break
-    # PipeWire's own camera monitor keeps nodes open while idle.
-    found -= {'pipewire', 'wireplumber'}
+    # PipeWire's own camera monitor keeps nodes open while idle, and
+    # braun-loopback holds its webcam devices to write them: braun says when
+    # it streams a camera for them.
+    found -= {'pipewire', 'wireplumber', 'braun-loopback'}
     return found
 
 
