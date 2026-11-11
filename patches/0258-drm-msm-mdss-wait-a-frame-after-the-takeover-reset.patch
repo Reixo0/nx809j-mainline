@@ -1,0 +1,32 @@
+From e84952eedb5f31a795a26040e8336ecf76423178 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Mon, 9 Nov 2026 16:51:40 +0100
+Subject: [PATCH] drm/msm/mdss: wait a frame after the takeover reset
+
+The UBWC setup written right after the deassert was lost: UBWC_STATIC,
+UBWC_CTRL_2 and UBWC_PREDICTION_MODE kept their reset values (0xe, 1, 0
+instead of 0x103e, 5, 1 on kaanapali) and scanout of compressed buffers
+came out as garbage. Writing the right values by hand fixed the picture.
+---
+ drivers/gpu/drm/msm/msm_mdss.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/msm_mdss.c b/drivers/gpu/drm/msm/msm_mdss.c
+index fc2c0604b88d..37023c0b9c29 100644
+--- a/drivers/gpu/drm/msm/msm_mdss.c
++++ b/drivers/gpu/drm/msm/msm_mdss.c
+@@ -628,6 +628,11 @@ void msm_mdss_takeover(struct device *dev)
+ 	/* As msm_mdss_reset(): held about a frame. */
+ 	msleep(20);
+ 	reset_control_deassert(msm_mdss->takeover_reset);
++	/*
++	 * Registers written right after the deassert are lost: the UBWC setup
++	 * below kept its reset values and scanout of compressed buffers broke.
++	 */
++	msleep(20);
+ 	msm_mdss->takeover_reset = NULL;
+ 
+ 	msm_mdss_setup_ubwc(msm_mdss);
+-- 
+2.56.0
+

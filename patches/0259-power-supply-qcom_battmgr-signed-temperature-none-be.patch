@@ -1,0 +1,57 @@
+From 5bcb3e8421cda6dabaa60f044f8f98d8a1043cdf Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 10 Nov 2026 11:05:36 +0100
+Subject: [PATCH] power: supply: qcom_battmgr: signed temperature, none before
+ the first reading
+
+The property firmware answers about -271 degrees until it has measured.
+Read as unsigned that was 42949402 degrees, and Android shut down for
+heat when it started in those seconds.
+---
+ drivers/power/supply/qcom_battmgr.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/power/supply/qcom_battmgr.c b/drivers/power/supply/qcom_battmgr.c
+index 10b0a3361f5b..25d8d2ed0048 100644
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -278,7 +278,7 @@ struct qcom_battmgr_status {
+ 	int power_now;
+ 	unsigned int voltage_now;
+ 	unsigned int voltage_ocv;
+-	unsigned int temperature;
++	int temperature;
+ 	unsigned int resistance;
+ 	unsigned int soh_percent;
+ 
+@@ -631,6 +631,9 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
+ 		val->intval = battmgr->status.percent;
+ 		break;
+ 	case POWER_SUPPLY_PROP_TEMP:
++		/* The firmware answers near absolute zero until it has measured */
++		if (battmgr->status.temperature < -2000)
++			return -ENODATA;
+ 		val->intval = battmgr->status.temperature;
+ 		break;
+ 	case POWER_SUPPLY_PROP_INTERNAL_RESISTANCE:
+@@ -1267,7 +1270,7 @@ static unsigned int qcom_battmgr_sc8280xp_parse_technology(const char *chemistry
+ 	return POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
+ }
+ 
+-static unsigned int qcom_battmgr_sc8280xp_convert_temp(unsigned int temperature)
++static int qcom_battmgr_sc8280xp_convert_temp(int temperature)
+ {
+ 	return DIV_ROUND_CLOSEST(temperature, 10);
+ }
+@@ -1481,7 +1484,7 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
+ 			break;
+ 		case BATT_TEMP:
+ 			val = le32_to_cpu(resp->intval.value);
+-			battmgr->status.temperature = DIV_ROUND_CLOSEST(val, 10);
++			battmgr->status.temperature = DIV_ROUND_CLOSEST((int)val, 10);
+ 			break;
+ 		case BATT_TECHNOLOGY:
+ 			battmgr->info.technology = le32_to_cpu(resp->intval.value);
+-- 
+2.56.0
+

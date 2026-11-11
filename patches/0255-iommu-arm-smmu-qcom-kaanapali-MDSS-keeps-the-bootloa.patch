@@ -1,0 +1,29 @@
+From e58ba367ad59880cf392a64415a61447d2894a31 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sun, 8 Nov 2026 01:01:11 +0100
+Subject: [PATCH] iommu/arm-smmu-qcom: kaanapali MDSS keeps the bootloader's
+ scanout
+
+The bootloader leaves the display fetching its splash. In a translated
+domain every fetch faulted from the SMMU probe on, and the panel showed
+black until msm took over, about 1.8 s. Like the other MDSS blocks, it
+now starts in an identity domain until msm attaches its own.
+---
+ drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+index 795e8ec7e8fa..0ee9a9cfdf8e 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+@@ -407,6 +407,7 @@ static const struct of_device_id qcom_smmu_client_of_match[] __maybe_unused = {
+ 	{ .compatible = "qcom,adreno" },
+ 	{ .compatible = "qcom,adreno-gmu" },
+ 	{ .compatible = "qcom,glymur-mdss" },
++	{ .compatible = "qcom,kaanapali-mdss" },
+ 	{ .compatible = "qcom,mdp4" },
+ 	{ .compatible = "qcom,mdss" },
+ 	{ .compatible = "qcom,qcm2290-mdss" },
+-- 
+2.56.0
+

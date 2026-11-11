@@ -1,0 +1,61 @@
+From a1c663ca4f3c2851fecf33475799a4fa552dad16 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sun, 8 Nov 2026 00:54:06 +0100
+Subject: [PATCH] drm/msm/dsi: no PHY or controller reset under the splash
+
+Until the first power-on the panel may still show the bootloader's
+splash, and a reset under it turned it white.
+---
+ drivers/gpu/drm/msm/dsi/dsi_host.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/dsi/dsi_host.c b/drivers/gpu/drm/msm/dsi/dsi_host.c
+index aa1333747559..14e908cfd6fe 100644
+--- a/drivers/gpu/drm/msm/dsi/dsi_host.c
++++ b/drivers/gpu/drm/msm/dsi/dsi_host.c
+@@ -185,6 +185,11 @@ struct msm_dsi_host {
+ 
+ 	bool registered;
+ 	bool power_on;
++	/*
++	 * Until the first power-on the panel may still show the bootloader's
++	 * splash: a PHY or controller reset under it turned it white.
++	 */
++	bool splash;
+ 	bool enabled;
+ 	int irq;
+ };
+@@ -2169,6 +2174,7 @@ int msm_dsi_host_register(struct mipi_dsi_host *host)
+ 		ret = mipi_dsi_host_register(host);
+ 		if (ret)
+ 			return ret;
++		msm_host->splash = true;
+ 
+ 		msm_host->registered = true;
+ 	}
+@@ -2413,6 +2419,8 @@ void msm_dsi_host_reset_phy(struct mipi_dsi_host *host)
+ 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+ 
+ 	DBG("");
++	if (msm_host->splash)
++		return;
+ 	dsi_write(msm_host, REG_DSI_PHY_RESET, DSI_PHY_RESET_RESET);
+ 	/* Make sure fully reset */
+ 	wmb();
+@@ -2555,7 +2563,12 @@ int msm_dsi_host_power_on(struct mipi_dsi_host *host,
+ 	}
+ 
+ 	dsi_timing_setup(msm_host, is_bonded_dsi);
+-	dsi_sw_reset(msm_host);
++	if (msm_host->splash) {
++		msm_host->splash = false;
++		dsi_write(msm_host, REG_DSI_CLK_CTRL, DSI_CLK_CTRL_ENABLE_CLKS);
++	} else {
++		dsi_sw_reset(msm_host);
++	}
+ 	dsi_ctrl_enable(msm_host, phy_shared_timings, phy);
+ 
+ 	msm_host->power_on = true;
+-- 
+2.56.0
+

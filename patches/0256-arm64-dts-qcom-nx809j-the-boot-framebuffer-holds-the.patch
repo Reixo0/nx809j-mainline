@@ -1,0 +1,43 @@
+From 4e7572808a65155ded82d0a861a0437c76336f3e Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Mon, 9 Nov 2026 16:29:28 +0100
+Subject: [PATCH] arm64: dts: qcom: nx809j: the boot framebuffer holds the DSI
+ link clocks
+
+The boot clean-up of unused clocks turned off the DSI byte and pixel
+clocks at 0.52 s. The RM692H5 is a command-mode panel: without them it
+kept its last frame, the boot log, and the rescue, which never starts
+msm, drew its install screen where the panel could not see it.
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 100c1cc33a8f..7027f1e4b4e8 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -123,13 +123,19 @@ framebuffer: framebuffer@fc800000 {
+ 			/*
+ 			 * Held until msm takes over: the boot clean-up of unused
+ 			 * clocks and power domains, on before msm claimed them,
+-			 * turned the lit panel white on some boots.
++			 * turned the lit panel white on some boots. The DSI link
++			 * clocks carry each frame to the command-mode panel; without
++			 * them it keeps the last one, and the rescue, which never
++			 * starts msm, could not show its screen.
+ 			 */
+ 			clocks = <&gcc GCC_DISP_HF_AXI_CLK>,
+ 				 <&dispcc DISP_CC_MDSS_AHB_CLK>,
+ 				 <&dispcc DISP_CC_MDSS_MDP_CLK>,
+ 				 <&dispcc DISP_CC_MDSS_VSYNC_CLK>,
+-				 <&dispcc DISP_CC_MDSS_ESC0_CLK>;
++				 <&dispcc DISP_CC_MDSS_ESC0_CLK>,
++				 <&dispcc DISP_CC_MDSS_BYTE0_CLK>,
++				 <&dispcc DISP_CC_MDSS_BYTE0_INTF_CLK>,
++				 <&dispcc DISP_CC_MDSS_PCLK0_CLK>;
+ 			power-domains = <&dispcc DISP_CC_MDSS_CORE_GDSC>;
+ 		};
+ 	};
+-- 
+2.56.0
+

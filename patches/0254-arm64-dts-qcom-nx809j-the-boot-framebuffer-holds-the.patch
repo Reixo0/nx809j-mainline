@@ -1,0 +1,38 @@
+From 6b17e8c9246dac3e0c2881b778e21ba1bbf153fa Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Sun, 8 Nov 2026 00:54:07 +0100
+Subject: [PATCH] arm64: dts: qcom: nx809j: the boot framebuffer holds the
+ display clocks
+
+The boot clean-up of unused clocks and power domains ran before msm
+claimed them and turned the lit panel white on some boots.
+---
+ arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 5c297d138254..100c1cc33a8f 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -119,6 +119,18 @@ framebuffer: framebuffer@fc800000 {
+ 			height = <2688>;
+ 			stride = <(1216 * 4)>;
+ 			format = "a8r8g8b8";
++
++			/*
++			 * Held until msm takes over: the boot clean-up of unused
++			 * clocks and power domains, on before msm claimed them,
++			 * turned the lit panel white on some boots.
++			 */
++			clocks = <&gcc GCC_DISP_HF_AXI_CLK>,
++				 <&dispcc DISP_CC_MDSS_AHB_CLK>,
++				 <&dispcc DISP_CC_MDSS_MDP_CLK>,
++				 <&dispcc DISP_CC_MDSS_VSYNC_CLK>,
++				 <&dispcc DISP_CC_MDSS_ESC0_CLK>;
++			power-domains = <&dispcc DISP_CC_MDSS_CORE_GDSC>;
+ 		};
+ 	};
+ 
+-- 
+2.56.0
+
