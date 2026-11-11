@@ -1,0 +1,42 @@
+From 81aeecda5b6c1087d045e2b02d2e813a0f83bca0 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 20:58:04 +0100
+Subject: [PATCH] drm/msm: throttle the GPU up at 20% load
+
+simple_ondemand only jumps to the highest OPP above upthreshold and
+otherwise scales the frequency by the load. A compositor that renders
+each frame in a burst and then waits for vblank keeps the average load
+just under 50% at the lowest OPP, where its frames no longer fit the
+refresh: on a 144Hz panel the frame rate settles around 100fps and
+motion stutters. At 20% the frequency settles where frames fit.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/msm_gpu_devfreq.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/msm_gpu_devfreq.c b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+index 2e1d5c343272..7043241bffc2 100644
+--- a/drivers/gpu/drm/msm/msm_gpu_devfreq.c
++++ b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+@@ -148,11 +148,14 @@ void msm_devfreq_init(struct msm_gpu *gpu)
+ 
+ 	/*
+ 	 * Setup default values for simple_ondemand governor tuning.  We
+-	 * want to throttle up at 50% load for the double-buffer case,
++	 * want to throttle up at low load for the double-buffer case,
+ 	 * where due to stalling waiting for vblank we could get stuck
+-	 * at (for ex) 30fps at 50% utilization.
++	 * below the refresh rate at moderate utilization.  At 50% a
++	 * 144Hz panel settles at the lowest OPP, just under the
++	 * threshold, presenting ~100fps; at 20% the frequency settles
++	 * where each frame fits in its refresh.
+ 	 */
+-	priv->gpu_devfreq_config.upthreshold = 50;
++	priv->gpu_devfreq_config.upthreshold = 20;
+ 	priv->gpu_devfreq_config.downdifferential = 10;
+ 
+ 	mutex_init(&df->lock);
+-- 
+2.56.0
+
