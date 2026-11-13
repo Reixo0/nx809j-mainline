@@ -2,12 +2,17 @@
 # Internet through the PC, only while the USB cable is connected: a default
 # route on the dead link would keep winning over the modem's after an unplug.
 update() {
-	if [ "$(cat /sys/class/net/usb0/carrier 2>/dev/null)" = 1 ]; then
+	carrier=$(cat /sys/class/net/usb0/carrier 2>/dev/null)
+	if [ "$carrier" = 1 ]; then
 		ip route replace default via 172.16.42.2 dev usb0 metric 1000
 		resolvectl dns usb0 $DNS
 		resolvectl domain usb0 '~.'
 	else
 		ip route del default via 172.16.42.2 dev usb0 metric 1000 2>/dev/null
+	fi
+	if [ "$carrier" != "$last_carrier" ]; then
+		last_carrier=$carrier
+		/usr/bin/nx809j-droidloom-uplink >/dev/null 2>&1 &
 	fi
 }
 

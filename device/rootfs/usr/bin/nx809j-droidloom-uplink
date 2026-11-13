@@ -1,0 +1,53 @@
+#!/bin/sh
+# Replug Droidloom's virtual cable when the host's active default route changes,
+# so Android drops stale sockets (such as netd Private DNS probes) opened on an
+# earlier route or before Wi-Fi came up.
+
+state=/run/nx809j-droidloom-uplink
+runlock=/run/nx809j-droidloom-uplink.lock
+reqlock=/run/nx809j-droidloom-uplink.req.lock
+dirty=/run/nx809j-droidloom-uplink.dirty
+
+# The route the phone's own traffic takes now: interface, gateway and address.
+uplink() { ip -4 route get 1.1.1.1 2>/dev/null | sed -n '1s/ uid .*//p'; }
+
+# Coalesce bursts under a short mutex so an event arriving during sleep/replug
+# is never dropped when another caller already holds the runner lock.
+exec 8>>"$reqlock"
+flock 8
+: >"$dirty"
+exec 9>>"$runlock"
+if ! flock -n 9; then
+	exit 0
+fi
+exec 8>&-
+
+while :; do
+	exec 8>>"$reqlock"
+	flock 8
+	rm -f "$dirty"
+	exec 8>&-
+
+	# Let the routes settle; events in this window share one replug.
+	sleep 3
+
+	now=$(uplink)
+	prev=$(cat "$state" 2>/dev/null)
+	if [ "$now" != "$prev" ]; then
+		printf '%s' "$now" > "$state"
+		for link in /sys/class/net/dlh*; do
+			[ -e "$link" ] || continue
+			name=${link##*/}
+			ip link set "$name" down && sleep 1 && ip link set "$name" up
+			logger -t nx809j-droidloom-uplink "uplink changed to '${now:-none}'; replugged $name"
+		done
+	fi
+
+	exec 8>>"$reqlock"
+	flock 8
+	if [ ! -e "$dirty" ]; then
+		exec 9>&-
+		exit 0
+	fi
+	exec 8>&-
+done

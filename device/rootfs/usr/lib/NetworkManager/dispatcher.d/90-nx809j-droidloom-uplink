@@ -8,24 +8,4 @@
 case "$1" in dlh*|lo|p2p-*) exit 0 ;; esac
 case "$2" in up|down|dhcp4-change|dhcp6-change|connectivity-change) ;; *) exit 0 ;; esac
 
-exec 9>/run/nx809j-droidloom-uplink.lock
-flock -n 9 || exit 0
-# Let the routes settle; events in this window share the one replug.
-sleep 3
-
-# The route the phone's own traffic takes now: interface, gateway and address.
-uplink() { ip -4 route get 1.1.1.1 2>/dev/null | sed -n '1s/ uid .*//p'; }
-state=/run/nx809j-droidloom-uplink
-now=$(uplink)
-[ "$now" = "$(cat "$state" 2>/dev/null)" ] && exit 0
-had=$([ -e "$state" ] && echo yes)
-printf '%s' "$now" > "$state"
-# The first event after boot only records the uplink.
-[ -n "$had" ] || exit 0
-
-for link in /sys/class/net/dlh*; do
-	[ -e "$link" ] || continue
-	name=${link##*/}
-	ip link set "$name" down && sleep 1 && ip link set "$name" up
-	logger -t nx809j-droidloom-uplink "uplink changed to '${now:-none}'; replugged $name"
-done
+exec /usr/bin/nx809j-droidloom-uplink
