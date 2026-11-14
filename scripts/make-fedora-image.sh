@@ -92,6 +92,9 @@ cat > "$M/etc/yum.repos.d/nx809j.repo" <<EOF
 name=NX809J (RedMagic 11 Pro)
 baseurl=${RELEASE_REPO//$(rpm -E %fedora)/\$releasever}
 gpgcheck=0
+# Our packages win over Fedora's, even newer ones: Fedora's next ffmpeg
+# would drop the V4L2 fix until fedora/build-ffmpeg.sh rebuilds it
+priority=10
 EOF
 
 cat > "$M/etc/fstab" <<'EOF'
