@@ -1,0 +1,180 @@
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Subject: [PATCH] avcodec/v4l2_m2m_dec: flush on seek, resume after LAST
+
+The V4L2 mem2mem decoder had no flush callback: after a seek the decoder
+kept the old bitstream (stale frames), and after the end of the stream it
+stayed drained, so looping or replaying returned EOF at once.
+
+- Add a flush that stops the OUTPUT queue (and, after a drain, the
+  CAPTURE queue, whose buffers are requeued when it restarts) and resets
+  the drain state; the next packet restarts the queues.
+- On a source change that keeps the format, send V4L2_DEC_CMD_START only
+  after dequeuing the capture buffer flagged LAST, as the stateful decoder
+  spec says, and requeue that buffer when it is empty. Sending it at the
+  event made the following LAST dequeue stop the queue (EPIPE) on Qualcomm
+  iris, which signals a source change after every seek.
+
+Tested on the RedMagic 11 Pro (iris, Kaanapali) with FFmpeg n9.0.2:
+mid-stream seek and seek after EOF return all frames, bit-exact against a
+decode without seeks.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/libavcodec/v4l2_buffers.c b/libavcodec/v4l2_buffers.c
+index f96c267..76b55ab 100644
+--- a/libavcodec/v4l2_buffers.c
++++ b/libavcodec/v4l2_buffers.c
+@@ -252,6 +252,9 @@ static void v4l2_free_buffer(void *opaque, uint8_t *unused)
+             }
+             else if (avbuf->context->streamon)
+                 ff_v4l2_buffer_enqueue(avbuf);
++            else
++                /* queued again when the context streams (after a flush) */
++                avbuf->status = V4L2BUF_AVAILABLE;
+         }
+ 
+         av_refstruct_unref(&avbuf->context_ref);
+diff --git a/libavcodec/v4l2_context.c b/libavcodec/v4l2_context.c
+index be1df37..b79a198 100644
+--- a/libavcodec/v4l2_context.c
++++ b/libavcodec/v4l2_context.c
+@@ -206,7 +206,12 @@ static int v4l2_handle_event(V4L2Context *ctx)
+         s->capture.width = v4l2_get_width(&cap_fmt);
+         s->capture.sample_aspect_ratio = v4l2_get_sar(&s->capture);
+     } else {
+-        v4l2_start_decode(ctx);
++        /*
++         * Same format: the decoder pauses after a capture buffer flagged
++         * LAST, and V4L2_DEC_CMD_START must follow that buffer's dequeue
++         * (the stateful decoder spec), else the queue reports EPIPE.
++         */
++        s->resume_on_last = 1;
+         return 0;
+     }
+ 
+@@ -409,6 +414,29 @@ dequeue:
+ #endif
+         }
+ 
++#ifdef V4L2_BUF_FLAG_LAST
++        if (!ctx_to_m2mctx(ctx)->draining && !V4L2_TYPE_IS_OUTPUT(ctx->type) &&
++            buf.flags & V4L2_BUF_FLAG_LAST && ctx_to_m2mctx(ctx)->resume_on_last) {
++            int bytesused = V4L2_TYPE_IS_MULTIPLANAR(buf.type) ?
++                            buf.m.planes[0].bytesused : buf.bytesused;
++
++            ctx_to_m2mctx(ctx)->resume_on_last = 0;
++            v4l2_start_decode(ctx);
++            if (!bytesused) {
++                /* only marks the change: give it back and wait again */
++                avbuf = &ctx->buffers[buf.index];
++                avbuf->status = V4L2BUF_AVAILABLE;
++                avbuf->buf = buf;
++                if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
++                    memcpy(avbuf->planes, planes, sizeof(planes));
++                    avbuf->buf.m.planes = avbuf->planes;
++                }
++                ff_v4l2_buffer_enqueue(avbuf);
++                goto start;
++            }
++        }
++#endif
++
+         avbuf = &ctx->buffers[buf.index];
+         avbuf->status = V4L2BUF_AVAILABLE;
+         avbuf->buf = buf;
+diff --git a/libavcodec/v4l2_m2m.h b/libavcodec/v4l2_m2m.h
+index 4ba33dc..3f798e9 100644
+--- a/libavcodec/v4l2_m2m.h
++++ b/libavcodec/v4l2_m2m.h
+@@ -56,6 +56,8 @@ typedef struct V4L2m2mContext {
+ 
+     /* null frame/packet received */
+     int draining;
++    /* source change kept the format: resume after the LAST capture buffer */
++    int resume_on_last;
+     AVPacket buf_pkt;
+ 
+     /* Reference to a frame. Only used during encoding */
+diff --git a/libavcodec/v4l2_m2m_dec.c b/libavcodec/v4l2_m2m_dec.c
+index ba1fe76..db708d2 100644
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -99,9 +99,58 @@ static int v4l2_try_start(AVCodecContext *avctx)
+         return ret;
+     }
+ 
++    /* 6. after a flush, queue the buffers returned while capture was stopped */
++    for (int i = 0; i < capture->num_buffers; i++) {
++        V4L2Buffer *buf = &capture->buffers[i];
++
++        if (buf->status == V4L2BUF_AVAILABLE) {
++            ret = ff_v4l2_buffer_enqueue(buf);
++            if (ret < 0)
++                return ret;
++        }
++    }
++
+     return 0;
+ }
+ 
++/*
++ * Seek, or start again after the end of the stream: stop the bitstream queue,
++ * which drops queued packets, and after a drain the capture queue too, whose
++ * buffers are queued again when it restarts. The next packet restarts the
++ * queues as v4l2_try_start() did the first time.
++ */
++static void v4l2_decode_flush(AVCodecContext *avctx)
++{
++    V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
++    V4L2Context *const capture = &s->capture;
++    V4L2Context *const output = &s->output;
++
++    av_packet_unref(&s->buf_pkt);
++
++    if (output->streamon)
++        ff_v4l2_context_set_status(output, VIDIOC_STREAMOFF);
++    for (int i = 0; i < output->num_buffers; i++)
++        if (output->buffers[i].status == V4L2BUF_IN_DRIVER)
++            output->buffers[i].status = V4L2BUF_AVAILABLE;
++
++    /*
++     * A seek only needs the bitstream queue stopped. After a drain the
++     * capture queue has returned its last buffer and stays stopped until it
++     * restarts too.
++     */
++    if (capture->streamon && s->draining) {
++        ff_v4l2_context_set_status(capture, VIDIOC_STREAMOFF);
++        for (int i = 0; i < capture->num_buffers; i++)
++            if (capture->buffers[i].status == V4L2BUF_IN_DRIVER)
++                capture->buffers[i].status = V4L2BUF_AVAILABLE;
++    }
++
++    s->draining = 0;
++    s->resume_on_last = 0;
++    output->done = 0;
++    capture->done = 0;
++}
++
+ static int v4l2_prepare_decoder(V4L2m2mContext *s)
+ {
+     struct v4l2_event_subscription sub;
+@@ -144,7 +193,10 @@ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+         ret = ff_decode_get_packet(avctx, &s->buf_pkt);
+         if (ret < 0) {
+             if (ret == AVERROR(EAGAIN))
+-                return ff_v4l2_context_dequeue_frame(capture, frame, 0);
++                /* nothing to dequeue until a packet restarts capture */
++                return capture->streamon ?
++                       ff_v4l2_context_dequeue_frame(capture, frame, 0) :
++                       AVERROR(EAGAIN);
+             else if (ret != AVERROR_EOF)
+                 return ret;
+         }
+@@ -250,6 +302,7 @@ static const AVOption options[] = {
+         .init           = v4l2_decode_init, \
+         FF_CODEC_RECEIVE_FRAME_CB(v4l2_receive_frame), \
+         .close          = v4l2_decode_close, \
++        .flush          = v4l2_decode_flush, \
+         .bsfs           = bsf_name, \
+         .p.capabilities = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING, \
+         .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE | \
