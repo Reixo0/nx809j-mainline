@@ -1,0 +1,102 @@
+From 102099d151a3925d6437d71db61dec42e0527118 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 10:57:54 +0100
+Subject: [PATCH 267/274] iommu/of: map every iommu-map entry for a non-PCI
+ device ID
+
+A device can reach memory through several stream IDs for one input ID,
+one iommu-map entry each: the Kaanapali video codec's non-pixel context
+bank uses SIDs 0x1940, 0x1a20 and 0x1944. of_map_id() returns only the
+first match, so the others stayed unmapped and the codec's first access
+through them reset the phone.
+
+Walk the map and add every matching single-ID entry for non-PCI devices,
+falling back to of_map_iommu_id() when none matches. This stands in for
+"of/iommu: add multi-map support" from the first kaanapali-iris series,
+which no longer applies to this tree and only covered platform devices.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/iommu/of_iommu.c | 59 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 59 insertions(+)
+
+diff --git a/drivers/iommu/of_iommu.c b/drivers/iommu/of_iommu.c
+index a18bb60f6f3d..eec422a343a5 100644
+--- a/drivers/iommu/of_iommu.c
++++ b/drivers/iommu/of_iommu.c
+@@ -41,6 +41,59 @@ static int of_iommu_xlate(struct device *dev,
+ 	return ret;
+ }
+ 
++/*
++ * A non-PCI device can be reached through several stream IDs for one input
++ * ID (one iommu-map entry each, e.g. a video codec's non-pixel context bank).
++ * of_map_id() returns only the first match, so walk the map and add every
++ * matching single-ID entry. Returns the number of entries added, or an error.
++ */
++static int of_iommu_configure_dev_id_multi(struct device_node *master_np,
++					   struct device *dev, u32 id)
++{
++	const __be32 *map;
++	u32 map_mask = 0xffffffff;
++	int map_len, offset = 0, found = 0, err;
++
++	map = of_get_property(master_np, "iommu-map", &map_len);
++	if (!map || map_len % sizeof(*map))
++		return 0;
++	map_len /= sizeof(*map);
++	of_property_read_u32(master_np, "iommu-map-mask", &map_mask);
++	id &= map_mask;
++
++	while (map_len - offset >= 4) {
++		struct of_phandle_args spec = {};
++		u32 id_base = be32_to_cpup(map + offset);
++		u32 cells = 1, id_len, i;
++
++		spec.np = of_find_node_by_phandle(be32_to_cpup(map + offset + 1));
++		if (!spec.np)
++			return -ENODEV;
++		of_property_read_u32(spec.np, "#iommu-cells", &cells);
++		if (cells > MAX_PHANDLE_ARGS || map_len - offset < 3 + cells) {
++			of_node_put(spec.np);
++			return -EINVAL;
++		}
++		id_len = be32_to_cpup(map + offset + 2 + cells);
++		if (id >= id_base && id - id_base < id_len) {
++			for (i = 0; i < cells; i++)
++				spec.args[i] = be32_to_cpup(map + offset + 2 + i);
++			spec.args[0] += id - id_base;
++			spec.args_count = cells;
++			err = of_iommu_xlate(dev, &spec);
++			if (err) {
++				of_node_put(spec.np);
++				return err;
++			}
++			found++;
++		}
++		of_node_put(spec.np);
++		offset += 3 + cells;
++	}
++
++	return found;
++}
++
+ static int of_iommu_configure_dev_id(struct device_node *master_np,
+ 				     struct device *dev,
+ 				     const u32 *id)
+@@ -48,6 +101,12 @@ static int of_iommu_configure_dev_id(struct device_node *master_np,
+ 	struct of_phandle_args iommu_spec = {};
+ 	int err;
+ 
++	if (!dev_is_pci(dev)) {
++		err = of_iommu_configure_dev_id_multi(master_np, dev, *id);
++		if (err)
++			return err < 0 ? err : 0;
++	}
++
+ 	err = of_map_iommu_id(master_np, *id, &iommu_spec);
+ 	if (err)
+ 		return err;
+-- 
+2.56.1
+

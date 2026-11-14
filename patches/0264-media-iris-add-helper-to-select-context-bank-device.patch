@@ -1,0 +1,210 @@
+From 6d5d1fba5531a1e94ff2439a054a176e1cb66b75 Mon Sep 17 00:00:00 2001
+From: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+Date: Fri, 13 Mar 2026 18:49:39 +0530
+Subject: [PATCH 264/274] media: iris: add helper to select context bank device
+
+Depending on the buffer type (input, output, internal and interface
+queues), associated context bank is selected, if available. Fallback to
+parent device for backward compatibility.
+
+Co-developed-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+---
+ .../media/platform/qcom/iris/iris_buffer.c    |  7 ++--
+ .../media/platform/qcom/iris/iris_hfi_queue.c | 16 ++++----
+ .../media/platform/qcom/iris/iris_resources.c | 41 +++++++++++++++++++
+ .../media/platform/qcom/iris/iris_resources.h |  2 +
+ drivers/media/platform/qcom/iris/iris_vidc.c  |  4 +-
+ 5 files changed, 58 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_buffer.c b/drivers/media/platform/qcom/iris/iris_buffer.c
+index eb8de60c1177..e27269663e09 100644
+--- a/drivers/media/platform/qcom/iris/iris_buffer.c
++++ b/drivers/media/platform/qcom/iris/iris_buffer.c
+@@ -530,8 +530,8 @@ void iris_get_internal_buffers(struct iris_inst *inst, u32 plane)
+ static int iris_create_internal_buffer(struct iris_inst *inst,
+ 				       enum iris_buffer_type buffer_type, u32 index)
+ {
++	struct device *dev = iris_get_cb_dev(inst->core, iris_get_region(inst, buffer_type));
+ 	struct iris_buffers *buffers = &inst->buffers[buffer_type];
+-	struct iris_core *core = inst->core;
+ 	struct iris_buffer *buffer;
+ 
+ 	if (!buffers->size)
+@@ -547,7 +547,7 @@ static int iris_create_internal_buffer(struct iris_inst *inst,
+ 	buffer->buffer_size = buffers->size;
+ 	buffer->dma_attrs = DMA_ATTR_WRITE_COMBINE | DMA_ATTR_NO_KERNEL_MAPPING;
+ 
+-	buffer->kvaddr = dma_alloc_attrs(core->dev, buffer->buffer_size,
++	buffer->kvaddr = dma_alloc_attrs(dev, buffer->buffer_size,
+ 					 &buffer->device_addr, GFP_KERNEL, buffer->dma_attrs);
+ 	if (!buffer->kvaddr) {
+ 		kfree(buffer);
+@@ -651,9 +651,10 @@ int iris_queue_internal_buffers(struct iris_inst *inst, u32 plane)
+ void iris_destroy_internal_buffer(struct iris_inst *inst, struct iris_buffer *buffer)
+ {
+ 	struct iris_core *core = inst->core;
++	struct device *dev = iris_get_cb_dev(core, iris_get_region(inst, buffer->type));
+ 
+ 	list_del(&buffer->list);
+-	dma_free_attrs(core->dev, buffer->buffer_size, buffer->kvaddr,
++	dma_free_attrs(dev, buffer->buffer_size, buffer->kvaddr,
+ 		       buffer->device_addr, buffer->dma_attrs);
+ 	kfree(buffer);
+ }
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_queue.c b/drivers/media/platform/qcom/iris/iris_hfi_queue.c
+index bf6db23b53e2..7199270e6269 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_queue.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_queue.c
+@@ -245,25 +245,26 @@ static void iris_hfi_queue_deinit(struct iris_iface_q_info *iface_q)
+ 
+ int iris_hfi_queues_init(struct iris_core *core)
+ {
++	struct device *dev = iris_get_cb_dev(core, IRIS_NON_PIXEL_REGION);
+ 	struct iris_hfi_queue_table_header *q_tbl_hdr;
+ 	u32 queue_size;
+ 
+ 	/* Iris hardware requires 4K queue alignment */
+ 	queue_size = ALIGN((sizeof(*q_tbl_hdr) + (IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ)), SZ_4K);
+-	core->iface_q_table_vaddr = dma_alloc_attrs(core->dev, queue_size,
++	core->iface_q_table_vaddr = dma_alloc_attrs(dev, queue_size,
+ 						    &core->iface_q_table_daddr,
+ 						    GFP_KERNEL, DMA_ATTR_WRITE_COMBINE);
+ 	if (!core->iface_q_table_vaddr) {
+-		dev_err(core->dev, "queues alloc and map failed\n");
++		dev_err(dev, "queues alloc and map failed\n");
+ 		return -ENOMEM;
+ 	}
+ 
+-	core->sfr_vaddr = dma_alloc_attrs(core->dev, SFR_SIZE,
++	core->sfr_vaddr = dma_alloc_attrs(dev, SFR_SIZE,
+ 					  &core->sfr_daddr,
+ 					  GFP_KERNEL, DMA_ATTR_WRITE_COMBINE);
+ 	if (!core->sfr_vaddr) {
+-		dev_err(core->dev, "sfr alloc and map failed\n");
+-		dma_free_attrs(core->dev, queue_size, core->iface_q_table_vaddr,
++		dev_err(dev, "sfr alloc and map failed\n");
++		dma_free_attrs(dev, queue_size, core->iface_q_table_vaddr,
+ 			       core->iface_q_table_daddr, DMA_ATTR_WRITE_COMBINE);
+ 		return -ENOMEM;
+ 	}
+@@ -291,6 +292,7 @@ int iris_hfi_queues_init(struct iris_core *core)
+ 
+ void iris_hfi_queues_deinit(struct iris_core *core)
+ {
++	struct device *dev = iris_get_cb_dev(core, IRIS_NON_PIXEL_REGION);
+ 	u32 queue_size;
+ 
+ 	if (!core->iface_q_table_vaddr)
+@@ -300,7 +302,7 @@ void iris_hfi_queues_deinit(struct iris_core *core)
+ 	iris_hfi_queue_deinit(&core->message_queue);
+ 	iris_hfi_queue_deinit(&core->command_queue);
+ 
+-	dma_free_attrs(core->dev, SFR_SIZE, core->sfr_vaddr,
++	dma_free_attrs(dev, SFR_SIZE, core->sfr_vaddr,
+ 		       core->sfr_daddr, DMA_ATTR_WRITE_COMBINE);
+ 
+ 	core->sfr_vaddr = NULL;
+@@ -309,7 +311,7 @@ void iris_hfi_queues_deinit(struct iris_core *core)
+ 	queue_size = ALIGN(sizeof(struct iris_hfi_queue_table_header) +
+ 		(IFACEQ_QUEUE_SIZE * IFACEQ_NUMQ), SZ_4K);
+ 
+-	dma_free_attrs(core->dev, queue_size, core->iface_q_table_vaddr,
++	dma_free_attrs(dev, queue_size, core->iface_q_table_vaddr,
+ 		       core->iface_q_table_daddr, DMA_ATTR_WRITE_COMBINE);
+ 
+ 	core->iface_q_table_vaddr = NULL;
+diff --git a/drivers/media/platform/qcom/iris/iris_resources.c b/drivers/media/platform/qcom/iris/iris_resources.c
+index 7490f9af53e6..d453edadaab8 100644
+--- a/drivers/media/platform/qcom/iris/iris_resources.c
++++ b/drivers/media/platform/qcom/iris/iris_resources.c
+@@ -13,6 +13,7 @@
+ #include <linux/reset.h>
+ 
+ #include "iris_core.h"
++#include "iris_instance.h"
+ #include "iris_resources.h"
+ 
+ #define BW_THRESHOLD 50000
+@@ -186,3 +187,43 @@ int iris_create_child_device_and_map(struct iris_core *core, const struct iris_c
+ 
+ 	return 0;
+ }
++
++enum iris_buffer_region iris_get_region(struct iris_inst *inst, enum iris_buffer_type buffer_type)
++{
++	switch (buffer_type) {
++	case BUF_INPUT:
++		if (inst->domain == ENCODER)
++			return IRIS_PIXEL_REGION;
++		else
++			return IRIS_BITSTREAM_REGION;
++	case BUF_OUTPUT:
++		if (inst->domain == ENCODER)
++			return IRIS_BITSTREAM_REGION;
++		else
++			return IRIS_PIXEL_REGION;
++	case BUF_BIN:
++		return IRIS_BITSTREAM_REGION;
++	case BUF_DPB:
++	case BUF_PARTIAL:
++	case BUF_SCRATCH_2:
++	case BUF_VPSS:
++		return IRIS_PIXEL_REGION;
++	case BUF_ARP:
++	case BUF_COMV:
++	case BUF_LINE:
++	case BUF_NON_COMV:
++	case BUF_PERSIST:
++		return IRIS_NON_PIXEL_REGION;
++	default:
++		dev_err(inst->core->dev, "unknown buffer type: %d\n", buffer_type);
++		return IRIS_UNKNOWN_REGION;
++	}
++}
++
++struct device *iris_get_cb_dev(struct iris_core *core, enum iris_buffer_region region)
++{
++	if (core->cb_devs[region])
++		return core->cb_devs[region];
++
++	return core->dev;
++}
+diff --git a/drivers/media/platform/qcom/iris/iris_resources.h b/drivers/media/platform/qcom/iris/iris_resources.h
+index c573016535b8..2d0447309ca4 100644
+--- a/drivers/media/platform/qcom/iris/iris_resources.h
++++ b/drivers/media/platform/qcom/iris/iris_resources.h
+@@ -16,5 +16,7 @@ int iris_set_icc_bw(struct iris_core *core, unsigned long icc_bw);
+ int iris_disable_unprepare_clock(struct iris_core *core, enum platform_clk_type clk_type);
+ int iris_prepare_enable_clock(struct iris_core *core, enum platform_clk_type clk_type);
+ int iris_create_child_device_and_map(struct iris_core *core, const struct iris_context_bank *cb);
++enum iris_buffer_region iris_get_region(struct iris_inst *inst, enum iris_buffer_type buffer_type);
++struct device *iris_get_cb_dev(struct iris_core *core, enum iris_buffer_region buffer_type);
+ 
+ #endif
+diff --git a/drivers/media/platform/qcom/iris/iris_vidc.c b/drivers/media/platform/qcom/iris/iris_vidc.c
+index 05aab6e3005d..299c863c2afc 100644
+--- a/drivers/media/platform/qcom/iris/iris_vidc.c
++++ b/drivers/media/platform/qcom/iris/iris_vidc.c
+@@ -126,7 +126,7 @@ iris_m2m_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_
+ 	src_vq->drv_priv = inst;
+ 	src_vq->buf_struct_size = sizeof(struct iris_buffer);
+ 	src_vq->min_reqbufs_allocation = MIN_BUFFERS;
+-	src_vq->dev = inst->core->dev;
++	src_vq->dev = iris_get_cb_dev(inst->core, iris_get_region(inst, BUF_INPUT));
+ 	src_vq->lock = &inst->ctx_q_lock;
+ 	ret = vb2_queue_init(src_vq);
+ 	if (ret)
+@@ -140,7 +140,7 @@ iris_m2m_queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_
+ 	dst_vq->drv_priv = inst;
+ 	dst_vq->buf_struct_size = sizeof(struct iris_buffer);
+ 	dst_vq->min_reqbufs_allocation = MIN_BUFFERS;
+-	dst_vq->dev = inst->core->dev;
++	dst_vq->dev = iris_get_cb_dev(inst->core, iris_get_region(inst, BUF_OUTPUT));
+ 	dst_vq->lock = &inst->ctx_q_lock;
+ 
+ 	return vb2_queue_init(dst_vq);
+-- 
+2.56.1
+

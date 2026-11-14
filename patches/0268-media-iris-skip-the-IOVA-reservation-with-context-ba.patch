@@ -1,0 +1,63 @@
+From 9ca437da61bd67e041fbc9b51da35926207c3992 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 10:57:54 +0100
+Subject: [PATCH 268/274] media: iris: skip the IOVA reservation with context
+ bank devices
+
+Platforms with context bank devices (Kaanapali) give each region its own
+address space, so the main device has no IOMMU and reserving the
+non-pixel range on it fails the probe. Reserve only without context
+banks, and let the unreserve path take a NULL state.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_probe.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index 23e3cd95545b..d07637bd337b 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -15,6 +15,7 @@
+ #include "iris_core.h"
+ #include "iris_ctrls.h"
+ #include "iris_vidc.h"
++#include "iris_vpu_common.h"
+ 
+ static int iris_init_icc(struct iris_core *core)
+ {
+@@ -203,6 +204,9 @@ static void iris_unreserve_iova_region(struct device *dev, struct dma_iova_state
+ {
+ 	unsigned int i;
+ 
++	if (!iova_state)
++		return;
++
+ 	for (i = 0; dma_iova_size(&iova_state[i]); i++)
+ 		dma_iova_free(dev, &iova_state[i]);
+ }
+@@ -374,10 +378,17 @@ static int iris_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = iris_reserve_iova_region(dev, &core->iova_state, IRIS_NP_RESERVE_IOVA_START,
+-				       IRIS_NP_RESERVE_IOVA_SIZE);
+-	if (ret)
+-		return ret;
++	/*
++	 * Platforms with context bank devices give each region its own address
++	 * space, so the main device has no IOMMU and nothing to reserve.
++	 */
++	if (!core->iris_platform_data->cb_data_size) {
++		ret = iris_reserve_iova_region(dev, &core->iova_state,
++					       IRIS_NP_RESERVE_IOVA_START,
++					       IRIS_NP_RESERVE_IOVA_SIZE);
++		if (ret)
++			return ret;
++	}
+ 
+ 	ret = v4l2_device_register(dev, &core->v4l2_dev);
+ 	if (ret)
+-- 
+2.56.1
+

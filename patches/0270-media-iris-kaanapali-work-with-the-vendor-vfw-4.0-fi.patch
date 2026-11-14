@@ -1,0 +1,102 @@
+From cf97cbfab3e16525b4daac17e342a9f899a33522 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 10:57:55 +0100
+Subject: [PATCH 270/274] media: iris: kaanapali: work with the vendor vfw-4.0
+ firmware
+
+The NX809J runs the vendor firmware (vfw-4.0 rel0039), which differs
+from the upstream layout in two ways:
+
+- It expects bitstream and non-pixel buffers in one address space, as
+  the vendor device tree has SIDs 0x1940, 0x1a20 and 0x1944 in one
+  context bank. With a separate bitstream bank it dies in
+  venus_c2_parsing.c on the first frame.
+- It starts only once per boot: after a warm power collapse or a cold
+  restart it dies in venusCoreController.c and then on the first frame.
+  Add no_power_collapse and keep the core on once it has started.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../media/platform/qcom/iris/iris_platform_common.h |  2 ++
+ .../platform/qcom/iris/iris_platform_kaanapali.h    | 13 +++++++------
+ .../media/platform/qcom/iris/iris_platform_vpu3x.c  |  1 +
+ drivers/media/platform/qcom/iris/iris_probe.c       | 10 ++++++++++
+ 4 files changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index 5a0d9356bde9..d05da1a5b884 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -369,6 +369,8 @@ struct iris_platform_data {
+ 	u32 num_vpp_pipe;
+ 	bool no_aon;
+ 	bool no_rpmh;
++	/* the firmware only starts once per boot: never power it down */
++	bool no_power_collapse;
+ 	u32 wd_intr_mask;
+ 	u32 icc_ib_multiplier;
+ 	u32 max_session_count;
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_kaanapali.h b/drivers/media/platform/qcom/iris/iris_platform_kaanapali.h
+index bdca1e5bf673..5856778fca91 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_kaanapali.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_kaanapali.h
+@@ -62,16 +62,17 @@ static struct tz_cp_config tz_cp_config_kaanapali[] = {
+ 	},
+ };
+ 
++/*
++ * The vendor firmware (vfw-4.0) expects bitstream and non-pixel buffers in one
++ * address space, as in the vendor device tree, where SIDs 0x1940, 0x1a20 and
++ * 0x1944 share one context bank: with a separate bitstream bank it dies in
++ * venus_c2_parsing.c on the first frame.
++ */
+ static struct iris_context_bank kaanapali_cb_data[] = {
+-	{
+-		.name = "iris_bitstream",
+-		.f_id = IRIS_BITSTREAM,
+-		.region_mask = BIT(IRIS_BITSTREAM_REGION),
+-	},
+ 	{
+ 		.name = "iris_non_pixel",
+ 		.f_id = IRIS_NON_PIXEL,
+-		.region_mask = BIT(IRIS_NON_PIXEL_REGION),
++		.region_mask = BIT(IRIS_BITSTREAM_REGION) | BIT(IRIS_NON_PIXEL_REGION),
+ 	},
+ 	{
+ 		.name = "iris_pixel",
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c b/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
+index b25e3d7e8744..92c0b2f5127e 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
++++ b/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
+@@ -260,6 +260,7 @@ const struct iris_platform_data kaanapali_data = {
+ 	.tz_cp_config_data_size = ARRAY_SIZE(tz_cp_config_kaanapali),
+ 	.cb_data = kaanapali_cb_data,
+ 	.cb_data_size = ARRAY_SIZE(kaanapali_cb_data),
++	.no_power_collapse = true,
+ 	.num_vpp_pipe = 2,
+ 	.wd_intr_mask = WRAPPER_INTR_STATUS_A2HWD_BMSK,
+ 	.icc_ib_multiplier = 1,
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index d07637bd337b..d4ea512d4ca5 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -452,6 +452,16 @@ static int __maybe_unused iris_pm_suspend(struct device *dev)
+ 	if (core->state != IRIS_CORE_INIT)
+ 		goto exit;
+ 
++	if (core->iris_platform_data->no_power_collapse) {
++		/*
++		 * The vendor firmware (vfw-4.0) only starts once per boot: after
++		 * a warm power collapse or a cold restart it dies in
++		 * venusCoreController.c, then on the first frame. Keep it on.
++		 */
++		ret = -EBUSY;
++		goto exit;
++	}
++
+ 	ret = iris_hfi_pm_suspend(core);
+ 
+ exit:
+-- 
+2.56.1
+

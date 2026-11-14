@@ -1,0 +1,252 @@
+From 42338c2b7321aff2713297c3559bc8d7842ba278 Mon Sep 17 00:00:00 2001
+From: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+Date: Fri, 13 Mar 2026 18:49:38 +0530
+Subject: [PATCH 263/274] media: iris: add context bank devices using iommu-map
+
+Introduce different context banks(CB) and the associated buffer region.
+Different stream IDs from VPU would be associated to one of these CB.
+Multiple CBs are needed to increase the IOVA for the video usecases like
+higher concurrent sessions.
+
+Co-developed-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+---
+ drivers/media/platform/qcom/iris/iris_core.h  |  2 +
+ .../platform/qcom/iris/iris_platform_common.h | 14 ++++
+ drivers/media/platform/qcom/iris/iris_probe.c | 66 +++++++++++++++++--
+ .../media/platform/qcom/iris/iris_resources.c | 46 +++++++++++++
+ .../media/platform/qcom/iris/iris_resources.h |  1 +
+ 5 files changed, 125 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_core.h b/drivers/media/platform/qcom/iris/iris_core.h
+index 3e4cf652bf39..4ad6aa6777dc 100644
+--- a/drivers/media/platform/qcom/iris/iris_core.h
++++ b/drivers/media/platform/qcom/iris/iris_core.h
+@@ -40,6 +40,7 @@ struct qcom_ubwc_cfg_data;
+  * struct iris_core - holds core parameters valid for all instances
+  *
+  * @dev: reference to device structure
++ * @cb_devs: array of context bank devices (eg: bitstream, non-pixel, pixel, etc)
+  * @reg_base: IO memory base address
+  * @irq: iris irq
+  * @v4l2_dev: a holder for v4l2 device structure
+@@ -86,6 +87,7 @@ struct qcom_ubwc_cfg_data;
+ 
+ struct iris_core {
+ 	struct device				*dev;
++	struct device				*cb_devs[IRIS_MAX_REGION];
+ 	void __iomem				*reg_base;
+ 	int					irq;
+ 	struct v4l2_device			v4l2_dev;
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index a1203aaa4388..049391ca0bc6 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -256,6 +256,18 @@ struct icc_vote_data {
+ 	u32 fps;
+ };
+ 
++enum iris_buffer_region {
++	IRIS_UNKNOWN_REGION,
++	IRIS_BITSTREAM_REGION,
++	IRIS_NON_PIXEL_REGION,
++	IRIS_PIXEL_REGION,
++	IRIS_SECURE_BITSTREAM_REGION,
++	IRIS_SECURE_NON_PIXEL_REGION,
++	IRIS_SECURE_PIXEL_REGION,
++	IRIS_FIRMWARE_REGION,
++	IRIS_MAX_REGION,
++};
++
+ struct iris_context_bank {
+ 	char *name;
+ 	u32 f_id;
+@@ -351,6 +363,8 @@ struct iris_platform_data {
+ 	const struct platform_inst_slice_caps *slice_caps;
+ 	const struct tz_cp_config *tz_cp_config_data;
+ 	u32 tz_cp_config_data_size;
++	const struct iris_context_bank *cb_data;
++	const u32 cb_data_size;
+ 	u32 num_vpp_pipe;
+ 	bool no_aon;
+ 	bool no_rpmh;
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index 41dec90f3e2b..8d7b2cf805c9 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -131,6 +131,55 @@ static int iris_init_resets(struct iris_core *core)
+ 				     core->iris_platform_data->controller_rst_tbl_size);
+ }
+ 
++static void iris_destroy_child_device(struct iris_core *core, const struct iris_context_bank *cb)
++{
++	u32 index, region_mask = cb->region_mask;
++	struct device *dev = NULL;
++
++	while (region_mask) {
++		index = __ffs(region_mask);
++		dev = core->cb_devs[index];
++		core->cb_devs[index] = NULL;
++		region_mask &= ~BIT(index);
++	}
++
++	if (dev)
++		device_unregister(dev);
++}
++
++static void iris_deinit_context_bank_devices(struct iris_core *core)
++{
++	const struct iris_context_bank *cb;
++	int i;
++
++	for (i = 0; i < core->iris_platform_data->cb_data_size; i++) {
++		cb = &core->iris_platform_data->cb_data[i];
++		iris_destroy_child_device(core, cb);
++	}
++}
++
++static int iris_init_context_bank_devices(struct iris_core *core)
++{
++	const struct iris_context_bank *cb;
++	int ret, i;
++
++	for (i = 0; i < core->iris_platform_data->cb_data_size; i++) {
++		cb = &core->iris_platform_data->cb_data[i];
++
++		ret = iris_create_child_device_and_map(core, cb);
++		if (ret)
++			goto err_deinit_cb;
++	}
++
++	return 0;
++
++err_deinit_cb:
++	while (i-- > 0)
++		iris_destroy_child_device(core, &core->iris_platform_data->cb_data[i]);
++
++	return ret;
++}
++
+ static int iris_init_resources(struct iris_core *core)
+ {
+ 	int ret;
+@@ -254,6 +303,7 @@ static void iris_remove(struct platform_device *pdev)
+ 	cancel_delayed_work_sync(&core->sys_error_handler);
+ 
+ 	iris_core_deinit(core);
++	iris_deinit_context_bank_devices(core);
+ 
+ 	video_unregister_device(core->vdev_dec);
+ 	video_unregister_device(core->vdev_enc);
+@@ -343,12 +393,18 @@ static int iris_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, core);
+ 
+-	dma_mask = core->iris_platform_data->dma_mask;
+-
+-	ret = dma_set_mask_and_coherent(dev, dma_mask);
++	ret = iris_init_context_bank_devices(core);
+ 	if (ret)
+ 		goto err_vdev_unreg_enc;
+ 
++	dma_mask = core->iris_platform_data->dma_mask;
++
++	if (device_iommu_mapped(core->dev)) {
++		ret = dma_set_mask_and_coherent(core->dev, dma_mask);
++		if (ret)
++			goto err_deinit_cb;
++	}
++
+ 	dma_set_max_seg_size(&pdev->dev, DMA_BIT_MASK(32));
+ 	dma_set_seg_boundary(&pdev->dev, DMA_BIT_MASK(32));
+ 
+@@ -356,10 +412,12 @@ static int iris_probe(struct platform_device *pdev)
+ 	pm_runtime_use_autosuspend(core->dev);
+ 	ret = devm_pm_runtime_enable(core->dev);
+ 	if (ret)
+-		goto err_vdev_unreg_enc;
++		goto err_deinit_cb;
+ 
+ 	return 0;
+ 
++err_deinit_cb:
++	iris_deinit_context_bank_devices(core);
+ err_vdev_unreg_enc:
+ 	video_unregister_device(core->vdev_enc);
+ err_vdev_unreg_dec:
+diff --git a/drivers/media/platform/qcom/iris/iris_resources.c b/drivers/media/platform/qcom/iris/iris_resources.c
+index 883ef7e75291..7490f9af53e6 100644
+--- a/drivers/media/platform/qcom/iris/iris_resources.c
++++ b/drivers/media/platform/qcom/iris/iris_resources.c
+@@ -6,6 +6,7 @@
+ #include <linux/clk.h>
+ #include <linux/devfreq.h>
+ #include <linux/interconnect.h>
++#include <linux/iris_vpu_bus.h>
+ #include <linux/pm_domain.h>
+ #include <linux/pm_opp.h>
+ #include <linux/pm_runtime.h>
+@@ -140,3 +141,48 @@ int iris_disable_unprepare_clock(struct iris_core *core, enum platform_clk_type
+ 
+ 	return 0;
+ }
++
++static void iris_device_release(struct device *dev)
++{
++	dev_set_drvdata(dev, NULL);
++	kfree(dev);
++}
++
++int iris_create_child_device_and_map(struct iris_core *core, const struct iris_context_bank *cb)
++{
++	u32 index, region_mask = cb->region_mask;
++	struct device *dev;
++	int ret;
++
++	dev = kzalloc_obj(*dev);
++	if (!dev)
++		return -ENOMEM;
++
++	dev->release = iris_device_release;
++	dev->bus = &iris_vpu_bus_type;
++	dev->parent = core->dev;
++	dev->coherent_dma_mask = core->iris_platform_data->dma_mask;
++	dev->dma_mask = &dev->coherent_dma_mask;
++
++	dev_set_name(dev, "%s", cb->name);
++	dev_set_drvdata(dev, (void *)cb);
++
++	ret = device_register(dev);
++	if (ret) {
++		put_device(dev);
++		return ret;
++	}
++
++	if (!device_iommu_mapped(dev)) {
++		device_unregister(dev);
++		return 0;
++	}
++
++	while (region_mask) {
++		index = __ffs(region_mask);
++		core->cb_devs[index] = dev;
++		region_mask &= ~BIT(index);
++	}
++
++	return 0;
++}
+diff --git a/drivers/media/platform/qcom/iris/iris_resources.h b/drivers/media/platform/qcom/iris/iris_resources.h
+index 6bfbd2dc6db0..c573016535b8 100644
+--- a/drivers/media/platform/qcom/iris/iris_resources.h
++++ b/drivers/media/platform/qcom/iris/iris_resources.h
+@@ -15,5 +15,6 @@ int iris_unset_icc_bw(struct iris_core *core);
+ int iris_set_icc_bw(struct iris_core *core, unsigned long icc_bw);
+ int iris_disable_unprepare_clock(struct iris_core *core, enum platform_clk_type clk_type);
+ int iris_prepare_enable_clock(struct iris_core *core, enum platform_clk_type clk_type);
++int iris_create_child_device_and_map(struct iris_core *core, const struct iris_context_bank *cb);
+ 
+ #endif
+-- 
+2.56.1
+

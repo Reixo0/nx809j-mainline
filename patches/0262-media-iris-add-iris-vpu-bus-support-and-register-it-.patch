@@ -1,0 +1,134 @@
+From 4acd4ab39d01167bcb6f503f0622a1ae1d604ffc Mon Sep 17 00:00:00 2001
+From: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+Date: Fri, 13 Mar 2026 18:49:37 +0530
+Subject: [PATCH 262/274] media: iris: add iris vpu bus support and register it
+ with iommu_buses
+
+Add iris vpu bus support and hooks the new bus into the iommu_buses
+list. Iris devices need their own bus so that they can run their own
+dma_configure() logic.
+
+Co-developed-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Signed-off-by: Vikash Garodia <vikash.garodia@oss.qualcomm.com>
+---
+ drivers/iommu/iommu.c                         |  4 +++
+ drivers/media/platform/qcom/iris/Makefile     |  4 +++
+ .../platform/qcom/iris/iris_platform_common.h |  6 ++++
+ .../media/platform/qcom/iris/iris_vpu_bus.c   | 32 +++++++++++++++++++
+ include/linux/iris_vpu_bus.h                  | 13 ++++++++
+ 5 files changed, 59 insertions(+)
+ create mode 100644 drivers/media/platform/qcom/iris/iris_vpu_bus.c
+ create mode 100644 include/linux/iris_vpu_bus.h
+
+diff --git a/drivers/iommu/iommu.c b/drivers/iommu/iommu.c
+index b486b8bbd1fc..2c9542d1933b 100644
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -13,6 +13,7 @@
+ #include <linux/bug.h>
+ #include <linux/types.h>
+ #include <linux/init.h>
++#include <linux/iris_vpu_bus.h>
+ #include <linux/export.h>
+ #include <linux/slab.h>
+ #include <linux/errno.h>
+@@ -200,6 +201,9 @@ static const struct bus_type * const iommu_buses[] = {
+ #ifdef CONFIG_CDX_BUS
+ 	&cdx_bus_type,
+ #endif
++#if IS_ENABLED(CONFIG_VIDEO_QCOM_IRIS)
++	&iris_vpu_bus_type,
++#endif
+ };
+ 
+ /*
+diff --git a/drivers/media/platform/qcom/iris/Makefile b/drivers/media/platform/qcom/iris/Makefile
+index bbd1f724963e..5c35b9e35f2e 100644
+--- a/drivers/media/platform/qcom/iris/Makefile
++++ b/drivers/media/platform/qcom/iris/Makefile
+@@ -32,3 +32,7 @@ qcom-iris-objs += iris_buffer.o \
+              iris_vpu_common.o \
+ 
+ obj-$(CONFIG_VIDEO_QCOM_IRIS) += qcom-iris.o
++
++ifdef CONFIG_VIDEO_QCOM_IRIS
++obj-y += iris_vpu_bus.o
++endif
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index cddab9a9c375..a1203aaa4388 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -256,6 +256,12 @@ struct icc_vote_data {
+ 	u32 fps;
+ };
+ 
++struct iris_context_bank {
++	char *name;
++	u32 f_id;
++	u32 region_mask;
++};
++
+ enum platform_pm_domain_type {
+ 	IRIS_CTRL_POWER_DOMAIN,
+ 	IRIS_HW_POWER_DOMAIN,
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu_bus.c b/drivers/media/platform/qcom/iris/iris_vpu_bus.c
+new file mode 100644
+index 000000000000..9e9fdeb6e405
+--- /dev/null
++++ b/drivers/media/platform/qcom/iris/iris_vpu_bus.c
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Copyright (c) Qualcomm Innovation Center, Inc. All rights reserved.
++ */
++
++#include <linux/device.h>
++#include <linux/of_device.h>
++
++#include "iris_platform_common.h"
++
++static int iris_vpu_bus_dma_configure(struct device *dev)
++{
++	struct iris_context_bank *cb = dev_get_drvdata(dev);
++
++	if (!cb)
++		return -ENODEV;
++
++	return of_dma_configure_id(dev, dev->parent->of_node, true, &cb->f_id);
++}
++
++const struct bus_type iris_vpu_bus_type = {
++	.name = "iris-bus",
++	.dma_configure = iris_vpu_bus_dma_configure,
++};
++EXPORT_SYMBOL_GPL(iris_vpu_bus_type);
++
++static int __init iris_vpu_bus_init(void)
++{
++	return bus_register(&iris_vpu_bus_type);
++}
++
++postcore_initcall(iris_vpu_bus_init);
+diff --git a/include/linux/iris_vpu_bus.h b/include/linux/iris_vpu_bus.h
+new file mode 100644
+index 000000000000..422898cdf2f6
+--- /dev/null
++++ b/include/linux/iris_vpu_bus.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only
++ *
++ * Copyright (c) Qualcomm Innovation Center, Inc. All rights reserved.
++ */
++
++#ifndef __IRIS_VPU_BUS_H__
++#define __IRIS_VPU_BUS_H__
++
++#if IS_ENABLED(CONFIG_VIDEO_QCOM_IRIS)
++extern const struct bus_type iris_vpu_bus_type;
++#endif
++
++#endif /* __IRIS_VPU_BUS_H__ */
+-- 
+2.56.1
+

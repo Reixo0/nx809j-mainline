@@ -1,0 +1,82 @@
+From 7d317d7c71109c32736f15dc7a359e1367c5b73e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 16:44:17 +0100
+Subject: [PATCH 273/274] media: iris: vpu4x: release the NoC low power request
+ on power off
+
+Powering off the hardware (and APV) asks the MVP NoC for low power, but
+never takes the request back, and "resets" the NoC by writing 0 to
+MVP_NOC_RESET_SYNCRST without ever setting it. The request lives in the
+always-on wrapper: it outlasts the power collapse and a firmware reload,
+and every later firmware start dies in venusCoreController.c (then in
+venus_c2_parsing.c on the first frame). Only the first start after boot
+worked.
+
+Do as Qualcomm's downstream driver (iris4) does: wait for the handshake,
+clear AON_WRAPPER_MVP_NOC_LPI_CONTROL, and pulse the NoC sync reset.
+Tested on the Nubia RedMagic 11 Pro (kaanapali, vendor vfw-4.0): four
+runtime power collapses and two module reloads in a row, each followed by
+a bit-identical 300-frame H.264 decode.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_vpu4x.c | 24 +++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu4x.c b/drivers/media/platform/qcom/iris/iris_vpu4x.c
+index 90ccdc0d2a07..66ff79d124f8 100644
+--- a/drivers/media/platform/qcom/iris/iris_vpu4x.c
++++ b/drivers/media/platform/qcom/iris/iris_vpu4x.c
+@@ -119,12 +119,24 @@ static void iris_vpu4x_power_off_apv(struct iris_core *core)
+ 	if (!handshake_done && handshake_busy)
+ 		dev_err(core->dev, "LPI handshake timeout\n");
+ 
++	/*
++	 * Release the low power request again before resetting the NoC, as
++	 * Qualcomm's downstream driver does. The request lives in the always-on
++	 * wrapper: left set, it outlasts the power collapse and the firmware's
++	 * next start fails in its core controller.
++	 */
++	readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_LPI_STATUS,
++			   value, value & NOC_LPI_STATUS_DONE, 200, 2000);
++	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_LPI_CONTROL);
++
+ 	writel(0x080200, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_REQ);
+ 	ret = readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_RESET_ACK,
+ 				 value, value & 0x080200, 200, 2000);
+ 	if (ret)
+ 		goto disable_clocks_and_power;
+ 
++	/* Pulse the NoC reset: writing 0 alone never resets it */
++	writel(0x080200, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_SYNCRST);
+ 	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_SYNCRST);
+ 	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_REQ);
+ 	ret = readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_RESET_ACK,
+@@ -316,12 +328,24 @@ static void iris_vpu4x_power_off_hardware(struct iris_core *core)
+ 	if (!handshake_done && handshake_busy)
+ 		dev_err(core->dev, "LPI handshake timeout\n");
+ 
++	/*
++	 * Release the low power request again before resetting the NoC, as
++	 * Qualcomm's downstream driver does. The request lives in the always-on
++	 * wrapper: left set, it outlasts the power collapse and the firmware's
++	 * next start fails in its core controller.
++	 */
++	readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_LPI_STATUS,
++			   value, value & NOC_LPI_STATUS_DONE, 200, 2000);
++	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_LPI_CONTROL);
++
+ 	writel(MVP_NOC_RESET_REQ_MASK, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_REQ);
+ 	ret = readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_RESET_ACK,
+ 				 value, value & MVP_NOC_RESET_REQ_MASK, 200, 2000);
+ 	if (ret)
+ 		goto disable_clocks_and_power;
+ 
++	/* Pulse the NoC reset: writing 0 alone never resets it */
++	writel(MVP_NOC_RESET_REQ_MASK, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_SYNCRST);
+ 	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_SYNCRST);
+ 	writel(0x0, core->reg_base + AON_WRAPPER_MVP_NOC_RESET_REQ);
+ 	ret = readl_poll_timeout(core->reg_base + AON_WRAPPER_MVP_NOC_RESET_ACK,
+-- 
+2.56.1
+

@@ -1,0 +1,33 @@
+From 19da0a2509bc42e9324b9b658a8f8e4e186e8ce2 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 10:57:54 +0100
+Subject: [PATCH 269/274] media: iris: print the firmware's failure reason on a
+ system error
+
+The firmware writes why it failed (file, line, version) to the SFR
+buffer; print it next to the system error type.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_hfi_gen2_response.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen2_response.c b/drivers/media/platform/qcom/iris/iris_hfi_gen2_response.c
+index f0782c4b1e6e..652ae24582a0 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen2_response.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen2_response.c
+@@ -280,6 +280,11 @@ static int iris_hfi_gen2_handle_system_error(struct iris_core *core,
+ 	if (pkt)
+ 		dev_err(core->dev, "received system error of type %#x\n", pkt->type);
+ 
++	/* the firmware writes its failure reason to the SFR */
++	if (core->sfr_vaddr)
++		dev_err(core->dev, "sfr: %.*s\n", (int)(SFR_SIZE - sizeof(u32)),
++			(char *)core->sfr_vaddr + sizeof(u32));
++
+ 	core->state = IRIS_CORE_ERROR;
+ 
+ 	mutex_lock(&core->lock);
+-- 
+2.56.1
+

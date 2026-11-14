@@ -1,0 +1,68 @@
+From 6179ad45d477f98deb03b6a0c7d4a3d843049500 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 16:44:46 +0100
+Subject: [PATCH 274/274] media: iris: kaanapali: power collapse the firmware
+ again
+
+no_power_collapse kept the core on after its first start, because no
+later start worked. That was the NoC low power request the power off
+left set, fixed in the previous commit. Drop the flag: the core suspends
+when idle again, which saves its power and no longer fails system
+suspend with -EBUSY.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../media/platform/qcom/iris/iris_platform_common.h    |  2 --
+ drivers/media/platform/qcom/iris/iris_platform_vpu3x.c |  1 -
+ drivers/media/platform/qcom/iris/iris_probe.c          | 10 ----------
+ 3 files changed, 13 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index d05da1a5b884..5a0d9356bde9 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -369,8 +369,6 @@ struct iris_platform_data {
+ 	u32 num_vpp_pipe;
+ 	bool no_aon;
+ 	bool no_rpmh;
+-	/* the firmware only starts once per boot: never power it down */
+-	bool no_power_collapse;
+ 	u32 wd_intr_mask;
+ 	u32 icc_ib_multiplier;
+ 	u32 max_session_count;
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c b/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
+index 92c0b2f5127e..b25e3d7e8744 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
++++ b/drivers/media/platform/qcom/iris/iris_platform_vpu3x.c
+@@ -260,7 +260,6 @@ const struct iris_platform_data kaanapali_data = {
+ 	.tz_cp_config_data_size = ARRAY_SIZE(tz_cp_config_kaanapali),
+ 	.cb_data = kaanapali_cb_data,
+ 	.cb_data_size = ARRAY_SIZE(kaanapali_cb_data),
+-	.no_power_collapse = true,
+ 	.num_vpp_pipe = 2,
+ 	.wd_intr_mask = WRAPPER_INTR_STATUS_A2HWD_BMSK,
+ 	.icc_ib_multiplier = 1,
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index d4ea512d4ca5..d07637bd337b 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -452,16 +452,6 @@ static int __maybe_unused iris_pm_suspend(struct device *dev)
+ 	if (core->state != IRIS_CORE_INIT)
+ 		goto exit;
+ 
+-	if (core->iris_platform_data->no_power_collapse) {
+-		/*
+-		 * The vendor firmware (vfw-4.0) only starts once per boot: after
+-		 * a warm power collapse or a cold restart it dies in
+-		 * venusCoreController.c, then on the first frame. Keep it on.
+-		 */
+-		ret = -EBUSY;
+-		goto exit;
+-	}
+-
+ 	ret = iris_hfi_pm_suspend(core);
+ 
+ exit:
+-- 
+2.56.1
+
