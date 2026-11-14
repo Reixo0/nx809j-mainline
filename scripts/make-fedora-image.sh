@@ -17,12 +17,15 @@
 #   REPO       our dnf repository while building (fedora/build-rpms.sh's
 #              output; default: the published one the image is configured with)
 #   RELEASEVER Fedora release (default: the host's)
+#   COPR_OWNER owner of the nx809j COPR project the image's dnf uses
 #   USERNAME, PASSWORD   the phone's user (default alarm / 147147)
 #   FIRMWARE   the phone's own firmware, see above
 set -euo pipefail
 OUT=$(realpath "${1:-.}")
-# Where the image's dnf finds our packages. Not published yet: RELEASE.md
-RELEASE_REPO=https://reixo0.github.io/nx809j-mainline/fedora/$(rpm -E %fedora)/aarch64
+# Where the image's dnf finds our packages: the COPR project
+# fedora/copr-build.sh fills (COPR_OWNER: its owner's Fedora account)
+COPR_OWNER=${COPR_OWNER:-reixo}
+RELEASE_REPO=https://download.copr.fedorainfracloud.org/results/$COPR_OWNER/nx809j/fedora-$(rpm -E %fedora)-aarch64/
 REPO=${REPO:-$RELEASE_REPO}
 [[ $REPO == /* ]] && REPO=file://$REPO
 : "${DISPATCH:?DISPATCH=dispatch.efi (uefi/mu-silicium-nx809j/esp-dispatch)}"

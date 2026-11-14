@@ -11,10 +11,8 @@ Things that must be done before the prebuilt images are published.
   or debug changes, and Denial, Phonewave and the apps from the forks' `main`
   (`scripts/build-denial.sh`, then `scripts/arch-pkgs.sh`). On the development
   phone `[nx809j]` is commented out in `/etc/pacman.conf` until then.
-- [ ] **Publish the Fedora dnf repository.** Fedora images point dnf at
-  `RELEASE_REPO` in `scripts/make-fedora-image.sh`, which does not exist yet.
-  A GitHub release cannot hold it (dnf needs `repodata/` as a directory):
-  choose where it lives (GitHub Pages, COPR, ...) and set the URL. Build it
-  from clean sources as above: `scripts/fedora-pkgs.sh`, then
-  `fedora/build-ffmpeg.sh` and `fedora/build-rpms.sh` on an aarch64 Fedora
-  host.
+- [ ] **Publish the Fedora dnf repository (COPR).** Fedora images point dnf
+  at the `nx809j` COPR project of `COPR_OWNER` (`scripts/make-fedora-image.sh`).
+  Build it from clean sources as above: `scripts/fedora-pkgs.sh`, then
+  `fedora/copr-build.sh` on a Fedora host with `copr-cli` and the owner's
+  API token, and check every build succeeded before building images.
