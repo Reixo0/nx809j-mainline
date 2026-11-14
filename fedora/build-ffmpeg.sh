@@ -11,9 +11,12 @@
 # fedora/build-rpms.sh's repo (EXTRA_RPMS=OUTDIR).
 # SRPM_ONLY=1 makes only the patched source RPM instead, for COPR
 # (fedora/copr-build.sh).
-# Usage: [SRPM_ONLY=1] fedora/build-ffmpeg.sh OUTDIR
+# DECODERS="name ..." enables more decoders than Fedora's list (e.g. the
+# hardware ones Fedora leaves out), RELEASE_TAG changes the suffix.
+# Usage: [SRPM_ONLY=1] [DECODERS=...] [RELEASE_TAG=nx809j1] fedora/build-ffmpeg.sh OUTDIR
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+TAG=${RELEASE_TAG:-nx809j1}
 PATCH=$ROOT/archlinux/ffmpeg-nx809j/0001-avcodec-v4l2_m2m_dec-flush-on-seek-resume-after-LAST.patch
 OUT=$(realpath -m "${1:?usage: $0 OUTDIR}")
 [[ $(uname -m) == aarch64 ]] || { echo "run on aarch64" >&2; exit 1; }
@@ -31,9 +34,10 @@ cp "$PATCH" SOURCES/
 s=SPECS/ffmpeg.spec
 # %autosetup -S git_am applies every PatchN in order
 sed -i "/^Patch1002:/a Patch2001:      $(basename "$PATCH")" "$s"
-sed -i 's/^\(Release:\s*\S*\)%{?dist}$/\1%{?dist}.nx809j1/' "$s"
-grep -q '^Patch2001:' "$s" && grep -q '^Release:.*nx809j1' "$s" ||
+sed -i "s/^\(Release:\s*\S*\)%{?dist}$/\1%{?dist}.$TAG/" "$s"
+grep -q '^Patch2001:' "$s" && grep -q "^Release:.*$TAG" "$s" ||
   { echo "the spec changed: Patch/Release lines not found" >&2; exit 1; }
+for d in ${DECODERS:-}; do echo "$d" >> SOURCES/enable_decoders; done
 mkdir -p "$OUT"
 if [[ -n ${SRPM_ONLY:-} ]]; then
   rpmbuild --define "_topdir $T" -bs "$s" >/dev/null
