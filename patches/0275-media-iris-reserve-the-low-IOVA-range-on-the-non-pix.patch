@@ -1,0 +1,131 @@
+From 50c72d71ae75b1cfb2725a94d275f7f6a9eb2033 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 17:46:58 +0100
+Subject: [PATCH] media: iris: reserve the low IOVA range on the non-pixel
+ context bank
+
+The non-pixel stream cannot address the low 600 MB of IOVA space
+(IRIS_NP_RESERVE_IOVA_SIZE); a buffer there faults the SMMU and resets the
+phone. Without context banks the reservation is made on the main device.
+With them (kaanapali) the main device has no IOMMU and nothing was
+reserved: the non-pixel context bank's own address space handed out the
+whole range. Reserve it on that bank once it exists, and release it before
+the banks go.
+
+Found by comparison with the OnePlus Pad 4 kernel (iceland-linux 0157,
+"media: iris: Fix iova allocation from restrict region"), which reserves
+the range in its single IOMMU domain.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_core.h  |  2 +
+ drivers/media/platform/qcom/iris/iris_probe.c | 45 ++++++++++++++++++-
+ 2 files changed, 46 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_core.h b/drivers/media/platform/qcom/iris/iris_core.h
+index 4ad6aa6777dc..85d1d304fd37 100644
+--- a/drivers/media/platform/qcom/iris/iris_core.h
++++ b/drivers/media/platform/qcom/iris/iris_core.h
+@@ -83,6 +83,7 @@ struct qcom_ubwc_cfg_data;
+  * @inst_fw_caps_dec: an array of supported instance capabilities by decoder
+  * @inst_fw_caps_enc: an array of supported instance capabilities by encoder
+  * @iova_state: a pointer to an array of dma_iova_state entries reserved for restricted IOVA region
++ * @cb_iova_state: the same, reserved on the non-pixel context bank device
+  */
+ 
+ struct iris_core {
+@@ -131,6 +132,7 @@ struct iris_core {
+ 	struct platform_inst_fw_cap		inst_fw_caps_dec[INST_FW_CAP_MAX];
+ 	struct platform_inst_fw_cap		inst_fw_caps_enc[INST_FW_CAP_MAX];
+ 	struct dma_iova_state			*iova_state;
++	struct dma_iova_state			*cb_iova_state;
+ };
+ 
+ int iris_core_init(struct iris_core *core);
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index d07637bd337b..e7aa9f07e5e3 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -254,6 +254,42 @@ static int iris_reserve_iova_region(struct device *dev, struct dma_iova_state **
+ 	return ret;
+ }
+ 
++/*
++ * The non-pixel stream cannot address the low IOVA range either when it has a
++ * context bank of its own: keep that range out of the bank's address space,
++ * as the main device's reservation does without context banks. Firmware,
++ * queues and (on kaanapali) bitstream buffers live there; a buffer below the
++ * boundary faults the SMMU.
++ */
++static int iris_reserve_cb_iova_region(struct iris_core *core)
++{
++	struct device *dev;
++
++	if (!core->iris_platform_data->cb_data_size)
++		return 0;
++
++	dev = iris_get_cb_dev(core, IRIS_NON_PIXEL_REGION);
++	if (!dev || !device_iommu_mapped(dev))
++		return 0;
++
++	return iris_reserve_iova_region(dev, &core->cb_iova_state,
++					IRIS_NP_RESERVE_IOVA_START,
++					IRIS_NP_RESERVE_IOVA_SIZE);
++}
++
++static void iris_unreserve_cb_iova_region(struct iris_core *core)
++{
++	struct device *dev;
++
++	if (!core->cb_iova_state)
++		return;
++
++	dev = iris_get_cb_dev(core, IRIS_NON_PIXEL_REGION);
++	if (dev)
++		iris_unreserve_iova_region(dev, core->cb_iova_state);
++	core->cb_iova_state = NULL;
++}
++
+ static int iris_register_video_device(struct iris_core *core, enum domain_type type)
+ {
+ 	struct video_device *vdev;
+@@ -307,6 +343,7 @@ static void iris_remove(struct platform_device *pdev)
+ 	cancel_delayed_work_sync(&core->sys_error_handler);
+ 
+ 	iris_core_deinit(core);
++	iris_unreserve_cb_iova_region(core);
+ 	iris_deinit_context_bank_devices(core);
+ 
+ 	video_unregister_device(core->vdev_dec);
+@@ -380,7 +417,8 @@ static int iris_probe(struct platform_device *pdev)
+ 
+ 	/*
+ 	 * Platforms with context bank devices give each region its own address
+-	 * space, so the main device has no IOMMU and nothing to reserve.
++	 * space, so the main device has no IOMMU: the reservation goes on the
++	 * non-pixel context bank once it exists (iris_reserve_cb_iova_region()).
+ 	 */
+ 	if (!core->iris_platform_data->cb_data_size) {
+ 		ret = iris_reserve_iova_region(dev, &core->iova_state,
+@@ -408,6 +446,10 @@ static int iris_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		goto err_vdev_unreg_enc;
+ 
++	ret = iris_reserve_cb_iova_region(core);
++	if (ret)
++		goto err_deinit_cb;
++
+ 	dma_mask = core->iris_platform_data->dma_mask;
+ 
+ 	if (device_iommu_mapped(core->dev)) {
+@@ -428,6 +470,7 @@ static int iris_probe(struct platform_device *pdev)
+ 	return 0;
+ 
+ err_deinit_cb:
++	iris_unreserve_cb_iova_region(core);
+ 	iris_deinit_context_bank_devices(core);
+ err_vdev_unreg_enc:
+ 	video_unregister_device(core->vdev_enc);
+-- 
+2.56.1
+
