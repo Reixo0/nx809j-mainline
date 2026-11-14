@@ -4,6 +4,9 @@
 # packs in $DENIAL_BUILD/stage/{denial,phonewave,apps}.
 #
 #   DENIAL_BUILD=dir scripts/build-denial.sh   (default: ~/denial-build)
+#   SYSROOT=dir STAGE=dir: another phone's /usr and output directory (default
+#   $DENIAL_BUILD/sysroot and $DENIAL_BUILD/stage), e.g. a Fedora sysroot,
+#   whose libraries are in usr/lib64
 #
 # Needs: $DENIAL_BUILD/sysroot, a copy of a phone's /usr with
 #   seatd libinput wayland libxkbcommon libdrm mesa gtk3 fontconfig installed,
@@ -12,8 +15,8 @@
 # engine twice (about an hour on 20 cores, 30 GB in ~/.cache/denial).
 set -euo pipefail
 W=$(realpath "${DENIAL_BUILD:-$HOME/denial-build}")
-S=$W/sysroot
-[[ -d $S/usr/lib/pkgconfig ]] || { echo "no sysroot in $S" >&2; exit 1; }
+S=$(realpath "${SYSROOT:-$W/sysroot}")
+[[ -d $S/usr/lib/pkgconfig || -d $S/usr/lib64/pkgconfig ]] || { echo "no sysroot in $S" >&2; exit 1; }
 TARGET=aarch64-unknown-linux-gnu
 JOBS=${JOBS:-$(($(nproc) * 4 / 5))}
 OUT=$W/work; CC_DIR=$OUT/cc
@@ -83,12 +86,12 @@ printf '#!/bin/sh\nexec llvm-ar "$@"\n' > "$CC_DIR/aarch64-linux-gnu-ar"
 chmod +x "$CC_DIR"/*
 export PATH=$CC_DIR:$PATH
 export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_SYSROOT_DIR=$S
-export PKG_CONFIG_LIBDIR=$S/usr/lib/pkgconfig:$S/usr/share/pkgconfig
+export PKG_CONFIG_LIBDIR=$S/usr/lib64/pkgconfig:$S/usr/lib/pkgconfig:$S/usr/share/pkgconfig
 export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
 export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
 export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,$S/usr/lib"
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,-rpath-link,$S/usr/lib64 -C link-arg=-Wl,-rpath-link,$S/usr/lib"
 export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-gnu --sysroot=$S"
 export RUST_FONTCONFIG_DLOPEN=1
 cross() {  # directory, cargo arguments
@@ -108,7 +111,7 @@ AP=$CARGO_TARGET_DIR/$TARGET/release
 for a in camera sensors settings calls messages; do cross "$W/denial-apps/apps/$a"; done
 
 # Stage what each package holds
-ST=$W/stage; rm -rf "$ST"
+ST=$(realpath -m "${STAGE:-$W/stage}"); rm -rf "$ST"
 bundle() {  # assembly, destination
   mkdir -p "$2/data/flutter_assets" "$2/lib"
   cp -a "$1/flutter_assets/." "$2/data/flutter_assets/"
