@@ -1,0 +1,49 @@
+From 93527802a74f920eb28b7fd0727d3ca003d0b6aa Mon Sep 17 00:00:00 2001
+From: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Date: Sat, 17 Oct 2026 08:46:18 +0530
+Subject: [PATCH 294/295] media: iris: Disable the system error work on removal
+
+iris_remove() calls cancel_delayed_work_sync() to stop the system error
+work. This cancels a pending work and waits for a running one. It does
+not stop the work from being queued again afterwards.
+
+A system error interrupt can still arrive after that call. The
+interrupt handler queues the work again. The work then runs after the
+removal and uses resources that are already freed.
+
+Use disable_delayed_work_sync() instead. Once it returns no new work
+can be queued. The work cannot run again during or after the removal.
+
+Fixes: 452480931648 ("media: iris: cancel sys error work on driver removal")
+Cc: stable@vger.kernel.org
+Signed-off-by: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>
+Link: https://lore.kernel.org/r/20261017-iris-handle-unbind-v1-2-7809148eb90f@oss.qualcomm.com
+
+[ from patchwork.kernel.org series 1187781 (patch 14896439, 2 of 3); not applied upstream yet ]
+[ fixes our queue 0361 (upstream 452480931648). Patch 3/3 of the series
+  (use-after-free on unbind with open sessions) is not taken: it re-owns
+  struct iris_core on upstream's IRQ teardown, which our queue 0362
+  changes; it waits for the 7.4 rebase ]
+[ upstream author: Vishnu Reddy <busanna.reddy@oss.qualcomm.com>; picked for the iceland kernel q89u ]
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_probe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index e7aa9f07e5e3..cb419de1b5b3 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -340,7 +340,7 @@ static void iris_remove(struct platform_device *pdev)
+ 	if (!core)
+ 		return;
+ 
+-	cancel_delayed_work_sync(&core->sys_error_handler);
++	disable_delayed_work_sync(&core->sys_error_handler);
+ 
+ 	iris_core_deinit(core);
+ 	iris_unreserve_cb_iova_region(core);
+-- 
+2.56.1
+

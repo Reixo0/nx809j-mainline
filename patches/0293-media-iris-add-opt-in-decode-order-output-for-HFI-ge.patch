@@ -1,0 +1,236 @@
+From 127b959c3f4707a1f97c3e4cefc3ab37fec71225 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Sun, 25 Oct 2026 18:00:00 +0200
+Subject: [PATCH 293/295] media: iris: add opt-in decode-order output for HFI
+ gen2 decoders
+
+VA-API style clients (for example the iris-vaapi driver) decode one
+picture per call and wait for that picture before the next one. With the
+firmware's default display-order output a picture that is followed by
+B-frames is only returned after its successors were queued, so such a
+client waits forever (vaSyncSurface / vaEndPicture timeouts).
+
+The stateful V4L2 API already has a way to ask for this: setting
+V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE to 1 with
+V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY = 0 requests decode-order output.
+The venus driver maps that pair to HFI_PROPERTY_PARAM_VDEC_OUTPUT_ORDER.
+The HFI gen2 firmware has HFI_PROP_DECODE_ORDER_OUTPUT (0x0300015b, the ID
+in Qualcomm's GPL video-driver hfi_property.h, which also serves the
+Kaanapali platform), a u32 on the bitstream port, 1 = decode order.
+
+Add the two controls as decoder instance caps of the shared HFI gen2
+table and send HFI_PROP_DECODE_ORDER_OUTPUT = 1 at input STREAMON only
+when the client enabled the delay and set it to 0, and only for H.264,
+HEVC and VP9 (the codecs Qualcomm's driver offers it for). Nothing is
+sent otherwise, so existing clients (GStreamer, FFmpeg v4l2m2m, Chromium)
+keep the firmware default.
+
+The firmware behaviour has not been validated on every gen2 platform
+yet, so the controls are only offered when the new module parameter
+qcom_iris.decode_order_output=1 is set (default off; read when an
+instance is opened). Without it the driver behaves exactly as before.
+
+The need for this, and the property ID, were found by TheMojoMan in the
+OnePlus Pad 3 (SM8750) kernel oneplus-erhai-linux (commits 633000d6c4 and
+8b7116b2a8); this is an independent implementation in the iris caps
+framework.
+
+Link: https://github.com/TheMojoMan/oneplus-erhai-linux/commit/633000d6c484c1a787a2e2735dcd115e5fb2f00f
+Link: https://github.com/TheMojoMan/oneplus-erhai-linux/commit/8b7116b2a83993b733623fc3d372cff0a3267988
+Link: https://github.com/CFM880/iris-vaapi
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/media/platform/qcom/iris/iris_ctrls.c | 66 ++++++++++++++++++-
+ drivers/media/platform/qcom/iris/iris_ctrls.h |  1 +
+ .../media/platform/qcom/iris/iris_hfi_gen2.c  | 18 +++++
+ .../qcom/iris/iris_hfi_gen2_defines.h         |  1 +
+ .../platform/qcom/iris/iris_platform_common.h |  2 +
+ 5 files changed, 86 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_ctrls.c b/drivers/media/platform/qcom/iris/iris_ctrls.c
+index d87fe8bab35b..800a6b3e86ab 100644
+--- a/drivers/media/platform/qcom/iris/iris_ctrls.c
++++ b/drivers/media/platform/qcom/iris/iris_ctrls.c
+@@ -15,6 +15,17 @@
+ #define CABAC_MAX_BITRATE 160000000
+ #define CAVLC_MAX_BITRATE 220000000
+ 
++/*
++ * Decode-order output (V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE = 1 with
++ * V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY = 0) is not validated on every
++ * firmware yet, so the two controls are only offered when this parameter is
++ * set. It is read when an instance is opened.
++ */
++static bool decode_order_output;
++module_param(decode_order_output, bool, 0644);
++MODULE_PARM_DESC(decode_order_output,
++		 "Offer decoder display-delay controls (decode-order output) on HFI gen2 (default: N)");
++
+ static inline bool iris_valid_cap_id(enum platform_inst_fw_cap_type cap_id)
+ {
+ 	return cap_id >= 1 && cap_id < INST_FW_CAP_MAX;
+@@ -163,6 +174,10 @@ static enum platform_inst_fw_cap_type iris_get_cap_id(u32 id)
+ 		return SLICE_MAX_BYTES;
+ 	case V4L2_CID_MPEG_VIDEO_MULTI_SLICE_MAX_MB:
+ 		return SLICE_MAX_MB;
++	case V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE:
++		return DISPLAY_DELAY_ENABLE;
++	case V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY:
++		return DISPLAY_DELAY;
+ 	default:
+ 		return INST_FW_CAP_MAX;
+ 	}
+@@ -314,11 +329,23 @@ static u32 iris_get_v4l2_id(enum platform_inst_fw_cap_type cap_id)
+ 		return V4L2_CID_MPEG_VIDEO_MULTI_SLICE_MAX_BYTES;
+ 	case SLICE_MAX_MB:
+ 		return V4L2_CID_MPEG_VIDEO_MULTI_SLICE_MAX_MB;
++	case DISPLAY_DELAY_ENABLE:
++		return V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE;
++	case DISPLAY_DELAY:
++		return V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY;
+ 	default:
+ 		return 0;
+ 	}
+ }
+ 
++static bool iris_ctrl_offered(enum platform_inst_fw_cap_type cap_id)
++{
++	if (cap_id == DISPLAY_DELAY_ENABLE || cap_id == DISPLAY_DELAY)
++		return decode_order_output;
++
++	return true;
++}
++
+ static int iris_op_s_ctrl(struct v4l2_ctrl *ctrl)
+ {
+ 	struct iris_inst *inst = container_of(ctrl->handler, struct iris_inst, ctrl_handler);
+@@ -360,7 +387,8 @@ int iris_ctrls_init(struct iris_inst *inst)
+ 	int ret;
+ 
+ 	for (idx = 1; idx < INST_FW_CAP_MAX; idx++) {
+-		if (iris_get_v4l2_id(cap[idx].cap_id))
++		if (iris_get_v4l2_id(cap[idx].cap_id) &&
++		    iris_ctrl_offered(cap[idx].cap_id))
+ 			num_ctrls++;
+ 	}
+ 
+@@ -377,7 +405,7 @@ int iris_ctrls_init(struct iris_inst *inst)
+ 		struct v4l2_ctrl *ctrl;
+ 
+ 		v4l2_id = iris_get_v4l2_id(cap[idx].cap_id);
+-		if (!v4l2_id)
++		if (!v4l2_id || !iris_ctrl_offered(cap[idx].cap_id))
+ 			continue;
+ 
+ 		if (ctrl_idx >= num_ctrls) {
+@@ -528,6 +556,40 @@ int iris_set_u32(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
+ 					     &hfi_value, sizeof(u32));
+ }
+ 
++/*
++ * Ask the firmware to return pictures in decode order instead of display
++ * order, as the venus driver does with HFI_PROPERTY_PARAM_VDEC_OUTPUT_ORDER:
++ * only when the client enabled the display delay and set it to 0 frames.
++ * Clients that decode synchronously per picture (VA-API drivers) need it.
++ * Nothing is sent otherwise, so the firmware keeps its display-order default;
++ * without decode_order_output the two controls do not exist and stay 0.
++ */
++int iris_set_decode_order(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
++{
++	const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
++	u32 hfi_id = inst->fw_caps[cap_id].hfi_id;
++	u32 decode_order = 1;
++
++	if (inst->domain != DECODER)
++		return 0;
++
++	if (!inst->fw_caps[DISPLAY_DELAY_ENABLE].value ||
++	    inst->fw_caps[DISPLAY_DELAY].value)
++		return 0;
++
++	/* Qualcomm's own driver offers decode order for H.264, HEVC and VP9 only */
++	if (inst->codec != V4L2_PIX_FMT_H264 &&
++	    inst->codec != V4L2_PIX_FMT_HEVC &&
++	    inst->codec != V4L2_PIX_FMT_VP9)
++		return 0;
++
++	return hfi_ops->session_set_property(inst, hfi_id,
++					     HFI_HOST_FLAGS_NONE,
++					     iris_get_port_info(inst, cap_id),
++					     HFI_PAYLOAD_U32,
++					     &decode_order, sizeof(u32));
++}
++
+ int iris_set_stage(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
+ {
+ 	const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
+diff --git a/drivers/media/platform/qcom/iris/iris_ctrls.h b/drivers/media/platform/qcom/iris/iris_ctrls.h
+index 08db80744420..055d7bbdf133 100644
+--- a/drivers/media/platform/qcom/iris/iris_ctrls.h
++++ b/drivers/media/platform/qcom/iris/iris_ctrls.h
+@@ -14,6 +14,7 @@ struct iris_inst;
+ int iris_ctrls_init(struct iris_inst *inst);
+ void iris_session_init_caps(struct iris_core *core);
+ int iris_set_u32_enum(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
++int iris_set_decode_order(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_stage(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_pipe(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+ int iris_set_u32(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id);
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen2.c b/drivers/media/platform/qcom/iris/iris_hfi_gen2.c
+index 79bbd06ef8d2..945c7ad72ed9 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen2.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen2.c
+@@ -1106,6 +1106,24 @@ static const struct platform_inst_fw_cap inst_fw_cap_sm8550_dec[] = {
+ 		.flags = CAP_FLAG_INPUT_PORT,
+ 		.set = iris_set_u32,
+ 	},
++	{
++		.cap_id = DISPLAY_DELAY_ENABLE,
++		.min = 0,
++		.max = 1,
++		.step_or_mask = 1,
++		.value = 0,
++		.hfi_id = HFI_PROP_DECODE_ORDER_OUTPUT,
++		.flags = CAP_FLAG_INPUT_PORT,
++		.set = iris_set_decode_order,
++	},
++	{
++		.cap_id = DISPLAY_DELAY,
++		.min = 0,
++		.max = 16383,
++		.step_or_mask = 1,
++		.value = 0,
++		.flags = CAP_FLAG_INPUT_PORT,
++	},
+ };
+ 
+ static const struct platform_inst_fw_cap inst_fw_cap_sm8550_enc[] = {
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen2_defines.h b/drivers/media/platform/qcom/iris/iris_hfi_gen2_defines.h
+index 2b8b057d35a9..e89ed4075526 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen2_defines.h
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen2_defines.h
+@@ -130,6 +130,7 @@ enum hfi_flip {
+ 
+ #define HFI_PROP_FLIP				0x0300014c
+ #define HFI_PROP_SIGNAL_COLOR_INFO		0x03000155
++#define HFI_PROP_DECODE_ORDER_OUTPUT		0x0300015b
+ #define HFI_PROP_PICTURE_TYPE			0x03000162
+ #define HFI_PROP_DEC_DEFAULT_HEADER		0x03000168
+ #define HFI_PROP_DEC_START_FROM_RAP_FRAME	0x03000169
+diff --git a/drivers/media/platform/qcom/iris/iris_platform_common.h b/drivers/media/platform/qcom/iris/iris_platform_common.h
+index b2d2093b74c5..395d63e0ed88 100644
+--- a/drivers/media/platform/qcom/iris/iris_platform_common.h
++++ b/drivers/media/platform/qcom/iris/iris_platform_common.h
+@@ -212,6 +212,8 @@ enum platform_inst_fw_cap_type {
+ 	SLICE_MODE,
+ 	SLICE_MAX_BYTES,
+ 	SLICE_MAX_MB,
++	DISPLAY_DELAY_ENABLE,
++	DISPLAY_DELAY,
+ 	INST_FW_CAP_MAX,
+ };
+ 
+-- 
+2.56.1
+

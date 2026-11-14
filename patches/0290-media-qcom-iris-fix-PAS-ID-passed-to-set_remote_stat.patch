@@ -1,0 +1,31 @@
+From 2eb07c5ce56615934d80308123f881a7fb2a7a9d Mon Sep 17 00:00:00 2001
+From: Jorge Ramirez-Ortiz <jorge.ramirez@oss.qualcomm.com>
+Date: Tue, 20 Oct 2026 22:45:57 +0200
+Subject: [PATCH 290/295] media: qcom: iris: fix PAS ID passed to
+ set_remote_state
+
+A PAS ID of 0 does not identify the iris peripheral, so the
+remote-state update never reached it. Pass IRIS_PAS_ID, as every
+other PAS call in this file does.
+
+Fixes: bb8a95aa038e ("media: iris: implement power management")
+Signed-off-by: Jorge Ramirez-Ortiz <jorge.ramirez@oss.qualcomm.com>
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+---
+ drivers/media/platform/qcom/iris/iris_firmware.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_firmware.c b/drivers/media/platform/qcom/iris/iris_firmware.c
+index 21f57d37da18..ed2bd0e83797 100644
+--- a/drivers/media/platform/qcom/iris/iris_firmware.c
++++ b/drivers/media/platform/qcom/iris/iris_firmware.c
+@@ -262,5 +262,5 @@ int iris_fw_unload(struct iris_core *core)
+ 
+ int iris_set_hw_state(struct iris_core *core, bool resume)
+ {
+-	return qcom_pas_set_remote_state(resume, 0);
++	return qcom_pas_set_remote_state(resume, IRIS_PAS_ID);
+ }
+-- 
+2.56.1
+
