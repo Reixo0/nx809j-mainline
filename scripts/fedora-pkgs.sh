@@ -7,7 +7,7 @@
 #   nx809j-device   <- device/rootfs + our audio topology
 #   denial-nx809j, phonewave-nx809j, denial-apps-nx809j
 #                   <- SYSROOT=<Fedora sysroot> STAGE=$STAGE scripts/build-denial.sh
-#   qbootctl, tqftpserv, hexagonrpc, mobile-config-firefox
+#   qbootctl, tqftpserv, hexagonrpc, mobile-config-firefox, iris-vaapi
 #                   <- built from source by fedora/build-rpms.sh
 #
 # Output: out/fedora/rpmbuild/{SPECS,SOURCES}. Building needs an aarch64
@@ -76,5 +76,6 @@ fi
 
 # Sources of the packages built from upstream
 cp "$A/hexagonrpc/0001-hexagonrpcd-create-the-audio-PD.patch" "$T/SOURCES/"
+cp "$ROOT"/fedora/iris-vaapi/*.patch "$T/SOURCES/"
 ls -1 "$T/SPECS"
 echo "now on an aarch64 Fedora host: fedora/build-rpms.sh <copy of $T>"

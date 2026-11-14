@@ -43,7 +43,7 @@ PACKAGES=(fedora-release fedora-repos dnf5 rpm bash coreutils shadow-utils passw
   dosfstools e2fsprogs
   # The phone, Denial, its services and apps
   linux-nx809j nx809j-device denial-nx809j phonewave-nx809j denial-apps-nx809j
-  xdg-user-dirs kitty firefox mobile-config-firefox
+  xdg-user-dirs kitty firefox mobile-config-firefox iris-vaapi
   # Hardware
   mesa-dri-drivers mesa-vulkan-drivers pipewire pipewire-pulseaudio pipewire-alsa
   wireplumber alsa-utils bluez power-profiles-daemon)

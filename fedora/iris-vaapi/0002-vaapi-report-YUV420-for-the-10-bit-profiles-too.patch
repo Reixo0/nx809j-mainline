@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Mon, 26 Oct 2026 12:00:00 +0000
+Subject: [PATCH 2/2] vaapi: report YUV420 for the 10-bit profiles too
+
+Chromium's VA-API wrapper checks VA_RT_FORMAT_YUV420 for HEVC Main10
+(only VP9 profile 2 asks for YUV420_10) and leaves the profile out of
+its supported list when the check fails. Report both RT formats for the
+10-bit profiles; the surface format still follows the format the client
+asks for in vaCreateSurfaces.
+
+Found by TheMojoMan in the erhai port (oneplus-erhai-ubuntu,
+oneplus-erhai-video); re-implemented here.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/vaapi/vaapi_config.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/vaapi/vaapi_config.c b/src/vaapi/vaapi_config.c
+index ea504ef..8a57c78 100644
+--- a/src/vaapi/vaapi_config.c
++++ b/src/vaapi/vaapi_config.c
+@@ -21,8 +21,12 @@ vpu_profile_fourcc(VAProfile profile)
+ unsigned int
+ vpu_profile_rt_format(VAProfile profile)
+ {
++	/* Chromium checks VA_RT_FORMAT_YUV420 for HEVC Main10 (only VP9
++	 * profile 2 asks for YUV420_10) and drops the profile otherwise,
++	 * so the 10-bit profiles report both formats. */
+ 	return vpu_profile_is_10bit(profile) ?
+-		VA_RT_FORMAT_YUV420_10 : VA_RT_FORMAT_YUV420;
++		(VA_RT_FORMAT_YUV420 | VA_RT_FORMAT_YUV420_10) :
++		VA_RT_FORMAT_YUV420;
+ }
+ 
+ int

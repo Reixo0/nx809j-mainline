@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: mzak <mzak.amin@gmail.com>
+Date: Mon, 26 Oct 2026 12:00:00 +0000
+Subject: [PATCH 1/2] decode: skip CAPTURE pictures without a client timestamp
+
+With decode-order output the HFI gen2 firmware of SM8750 / SM8850 can
+complete a CAPTURE buffer that carries no timestamp from the client
+(an internal picture). assign_frame() already requeues that buffer but
+then returns -EIO, which the callers turn into a fatal session error,
+so H.264 / VP9 decoding stops. Skip the picture like an unknown one.
+
+Observed and fixed the same way in TheMojoMan's port for the OnePlus
+Pad 3 (oneplus-erhai-ubuntu, oneplus-erhai-video); re-implemented here.
+
+Signed-off-by: mzak <mzak.amin@gmail.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/decode/decode.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/decode/decode.c b/src/decode/decode.c
+index c178792..f4130e8 100644
+--- a/src/decode/decode.c
++++ b/src/decode/decode.c
+@@ -350,8 +350,15 @@ assign_frame(struct vpu_decode_ctx *ctx, const struct vpu_decoded_frame *frame)
+ 		uint64_t frame_seq, slot;
+ 
+ 		if (frame->timestamp < 1000000000ULL) {
++			/* A picture the client never submitted (no timestamp
++			 * of ours): HFI gen2 firmware in decode-order mode can
++			 * return such internal pictures. The buffer is back in
++			 * the CAPTURE queue, so skip it instead of failing the
++			 * whole session. */
++			DBG("[assign] no client timestamp, idx=%u requeued\n",
++			    frame->index);
+ 			vpu_platform_session_requeue_index(ctx->session, frame->index);
+-			return -EIO;
++			return 0;
+ 		}
+ 		frame_seq = (frame->timestamp / 1000000000ULL) - 1000;
+ 		slot = frame_seq % ARRAY_SIZE(ctx->target_ring);
