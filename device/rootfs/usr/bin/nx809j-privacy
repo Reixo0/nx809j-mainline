@@ -201,6 +201,15 @@ def camera_openers():
     nodes = set()
     for name in os.listdir('/dev'):
         if name.startswith('video'):
+            # Video codecs (the iris decoder and encoder) are no cameras.
+            # Asking the device with VIDIOC_QUERYCAP would open it, which
+            # boots the codec's firmware, so go by the name sysfs gives.
+            try:
+                with open('/sys/class/video4linux/%s/name' % name) as f:
+                    if f.read().strip().endswith(('-decoder', '-encoder')):
+                        continue
+            except OSError:
+                pass
             try:
                 st = os.stat('/dev/' + name)
                 nodes.add((st.st_rdev))
