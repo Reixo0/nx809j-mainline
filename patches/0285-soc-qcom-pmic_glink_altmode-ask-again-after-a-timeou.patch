@@ -1,0 +1,53 @@
+From ba4a7d201409fdcad2d307f3bbaf47c7778d8469 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Mon, 2 Nov 2026 00:45:24 +0100
+Subject: [PATCH 285/286] soc: qcom: pmic_glink_altmode: ask again after a
+ timeout
+
+Xiaomi's SoCCP firmware holds a request that reaches it just after its
+channel opens until another message arrives. Asking again for altmode
+notifications gets both answered. A late ack of a request that timed out
+no longer completes the next one.
+
+(cherry picked from commit aa3981f0e2d6fe31a8e2aae2a0e4eb0900c6a779)
+---
+ drivers/soc/qcom/pmic_glink_altmode.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/soc/qcom/pmic_glink_altmode.c b/drivers/soc/qcom/pmic_glink_altmode.c
+index 7102980c332d..f8d08e07cdae 100644
+--- a/drivers/soc/qcom/pmic_glink_altmode.c
++++ b/drivers/soc/qcom/pmic_glink_altmode.c
+@@ -164,6 +164,8 @@ static int pmic_glink_altmode_request(struct pmic_glink_altmode *altmode, u32 cm
+ 	req.cmd = cpu_to_le32(cmd);
+ 	req.arg = cpu_to_le32(arg);
+ 
++	/* A late ack of an earlier request that timed out is not this one's. */
++	reinit_completion(&altmode->pan_ack);
+ 	ret = pmic_glink_send(altmode->client, &req, sizeof(req));
+ 	if (ret) {
+ 		dev_err(altmode->dev, "failed to send altmode request: %#x (%d)\n", cmd, ret);
+@@ -580,9 +582,19 @@ static void pmic_glink_altmode_put_switch(void *data)
+ static void pmic_glink_altmode_enable_worker(struct work_struct *work)
+ {
+ 	struct pmic_glink_altmode *altmode = work_to_altmode(work);
++	int tries;
+ 	int ret;
+ 
+-	ret = pmic_glink_altmode_request(altmode, ALTMODE_PAN_EN, 0);
++	/*
++	 * Xiaomi's SoCCP firmware holds a request that reaches it just after
++	 * its channel opens until another message arrives; asking again gets
++	 * both answered.
++	 */
++	for (tries = 3; tries; tries--) {
++		ret = pmic_glink_altmode_request(altmode, ALTMODE_PAN_EN, 0);
++		if (ret != -ETIMEDOUT)
++			break;
++	}
+ 	if (ret)
+ 		dev_err(altmode->dev, "failed to request altmode notifications: %d\n", ret);
+ }
+-- 
+2.56.1
+

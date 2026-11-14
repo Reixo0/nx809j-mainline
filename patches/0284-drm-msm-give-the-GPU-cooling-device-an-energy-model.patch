@@ -1,0 +1,36 @@
+From 4f5c94bf67e2489e4d4d251c156a96d7480086ec Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Thu, 12 Nov 2026 12:43:37 +0100
+Subject: [PATCH 284/286] drm/msm: give the GPU cooling device an energy model
+
+Register the GPU's cooling device with devfreq_cooling_em_register(),
+which builds an energy model from the OPP table's opp-microwatt when the
+board gives it. The power allocator governor then budgets the GPU with
+the CPUs. Without opp-microwatt the cooling device is the same as
+before.
+
+(cherry picked from commit 09e401abf6c6f5115b0c1c7c071cbf79732a1fff)
+---
+ drivers/gpu/drm/msm/msm_gpu_devfreq.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/msm_gpu_devfreq.c b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+index 7043241bffc2..199ce499690c 100644
+--- a/drivers/gpu/drm/msm/msm_gpu_devfreq.c
++++ b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+@@ -192,7 +192,11 @@ void msm_devfreq_init(struct msm_gpu *gpu)
+ 
+ 	devfreq_suspend_device(df->devfreq);
+ 
+-	gpu->cooling = of_devfreq_cooling_register(gpu->pdev->dev.of_node, df->devfreq);
++	/*
++	 * With opp-microwatt in the GPU's OPP table the cooling device gets an
++	 * energy model, which lets the power allocator governor budget it.
++	 */
++	gpu->cooling = devfreq_cooling_em_register(df->devfreq, NULL);
+ 	if (IS_ERR(gpu->cooling)) {
+ 		DRM_DEV_ERROR(&gpu->pdev->dev,
+ 				"Couldn't register GPU cooling device\n");
+-- 
+2.56.1
+

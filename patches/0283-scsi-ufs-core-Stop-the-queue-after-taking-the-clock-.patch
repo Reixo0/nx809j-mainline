@@ -1,0 +1,38 @@
+From 5658e1fa64ed1de38fb74fdc83b0ea9ee9b22f30 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 10 Nov 2026 13:25:20 +0100
+Subject: [PATCH 283/286] scsi: ufs: core: Stop the queue after taking the
+ clock scaling locks
+
+Clock scaling stopped the request queue and then waited for the scaling
+lock. A device command, such as the periodic clock update, holds that lock
+while its request waits in the queue, so both waited forever and every
+write to storage stalled.
+
+(cherry picked from commit e972ab023f9e468b4ebed1f508371b713dc744e0)
+---
+ drivers/ufs/core/ufshcd.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/ufs/core/ufshcd.c b/drivers/ufs/core/ufshcd.c
+index cc75384c6502..4e306ecbc87f 100644
+--- a/drivers/ufs/core/ufshcd.c
++++ b/drivers/ufs/core/ufshcd.c
+@@ -1461,9 +1461,13 @@ static int ufshcd_clock_scaling_prepare(struct ufs_hba *hba, u64 timeout_us)
+ 	 * clock scaling is in progress
+ 	 */
+ 	mutex_lock(&hba->host->scan_mutex);
+-	blk_mq_quiesce_tagset(&hba->host->tag_set);
+ 	mutex_lock(&hba->wb_mutex);
+ 	down_write(&hba->clk_scaling_lock);
++	/*
++	 * A device command holds these locks while its request waits in the
++	 * queue: stop the queue only once no such command is left.
++	 */
++	blk_mq_quiesce_tagset(&hba->host->tag_set);
+ 
+ 	if (!hba->clk_scaling.is_allowed ||
+ 	    ufshcd_wait_for_pending_cmds(hba, timeout_us)) {
+-- 
+2.56.1
+

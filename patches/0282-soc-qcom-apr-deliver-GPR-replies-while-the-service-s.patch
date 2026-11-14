@@ -1,0 +1,37 @@
+From 300580e452747ddaf3257dbde86225b9bc0ded94 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Tue, 10 Nov 2026 11:11:12 +0100
+Subject: [PATCH 282/286] soc: qcom: apr: deliver GPR replies while the
+ service's driver probes
+
+The reply callback was installed after the driver's probe returned.
+q6apm asks the DSP for its state in its probe: the reply was dropped,
+and every boot waited the whole 5 s command timeout before the sound
+card appeared.
+
+(cherry picked from commit e8758b2600fe2b50aa6c6f7230ea18fafaa82412)
+---
+ drivers/soc/qcom/apr.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/soc/qcom/apr.c b/drivers/soc/qcom/apr.c
+index d489c440875e..be30ad6a978c 100644
+--- a/drivers/soc/qcom/apr.c
++++ b/drivers/soc/qcom/apr.c
+@@ -362,9 +362,11 @@ static int apr_device_probe(struct device *dev)
+ 	struct apr_driver *adrv = to_apr_driver(dev->driver);
+ 	int ret;
+ 
++	/* A driver may ask the DSP something in its probe and wait for the reply */
++	adev->svc.callback = adrv->gpr_callback;
+ 	ret = adrv->probe(adev);
+-	if (!ret)
+-		adev->svc.callback = adrv->gpr_callback;
++	if (ret)
++		adev->svc.callback = NULL;
+ 
+ 	return ret;
+ }
+-- 
+2.56.1
+

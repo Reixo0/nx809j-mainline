@@ -1,0 +1,46 @@
+From 40b5e4b08478020b85649b242ac840d99a3f05c7 Mon Sep 17 00:00:00 2001
+From: Doctor Logix <doctor.logix@gmail.com>
+Date: Mon, 2 Nov 2026 00:45:24 +0100
+Subject: [PATCH 286/286] usb: typec: ucsi: glink: register again after a
+ timeout
+
+Xiaomi's SoCCP firmware holds a request that reaches it just after its
+channel opens until another message arrives, so the first version read
+times out. Registering again gets both answered.
+
+(cherry picked from commit 174e5a6dc591c96bc4ae0d4f5cc71dabba1849d6)
+---
+ drivers/usb/typec/ucsi/ucsi_glink.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/typec/ucsi/ucsi_glink.c b/drivers/usb/typec/ucsi/ucsi_glink.c
+index 1db0c88d817e..d833d8badae8 100644
+--- a/drivers/usb/typec/ucsi/ucsi_glink.c
++++ b/drivers/usb/typec/ucsi/ucsi_glink.c
+@@ -315,13 +315,22 @@ static void pmic_glink_ucsi_register(struct work_struct *work)
+ 	struct pmic_glink_ucsi *ucsi = container_of(work, struct pmic_glink_ucsi, register_work);
+ 	unsigned long flags;
+ 	bool pd_running;
++	int tries;
+ 
+ 	spin_lock_irqsave(&ucsi->state_lock, flags);
+ 	pd_running = ucsi->pd_running;
+ 	spin_unlock_irqrestore(&ucsi->state_lock, flags);
+ 
+ 	if (!ucsi->ucsi_registered && pd_running) {
+-		ucsi_register(ucsi->ucsi);
++		/*
++		 * Xiaomi's SoCCP firmware holds a request that reaches it just
++		 * after its channel opens until another message arrives. The
++		 * version read then times out; reading again gets both answered.
++		 */
++		for (tries = 3; tries; tries--) {
++			if (ucsi_register(ucsi->ucsi) != -ETIMEDOUT)
++				break;
++		}
+ 		ucsi->ucsi_registered = true;
+ 	} else if (ucsi->ucsi_registered && !pd_running) {
+ 		ucsi_unregister(ucsi->ucsi);
+-- 
+2.56.1
+
