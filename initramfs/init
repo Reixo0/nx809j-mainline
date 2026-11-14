@@ -112,6 +112,22 @@ switch_to() {
 		sleep 1
 	done
 	mountpoint -q /newroot || { echo "!! mounting $1 failed"; return 1; }
+	# nx809j.rootdir=/dir: the system lives in a directory of the file
+	# system (a second distribution next to the main one). It becomes the
+	# root, and the whole file system stays reachable at /mnt/part.
+	ROOTDIR=$(sed -n 's/.*nx809j\.rootdir=\([^ ]*\).*/\1/p' /proc/cmdline)
+	if [ -n "$ROOTDIR" ]; then
+		mkdir -p /part
+		mount --move /newroot /part
+		if [ -d "/part$ROOTDIR" ] && mount --bind "/part$ROOTDIR" /newroot; then
+			mkdir -p /newroot/mnt/part
+			mount --move /part /newroot/mnt/part
+		else
+			echo "!! no directory $ROOTDIR on $1"
+			mount --move /part /newroot
+			return 1
+		fi
+	fi
 	if [ ! -x /newroot/sbin/init ]; then
 		echo "!! no /sbin/init on $1"
 		umount /newroot
