@@ -12,7 +12,7 @@ License:        GPL-3.0-or-later
 URL:            https://github.com/linux-msm/hexagonrpc
 Source0:        %{url}/archive/%{commit}/%{name}-%{shortcommit}.tar.gz
 Patch0:         0001-hexagonrpcd-create-the-audio-PD.patch
-BuildRequires:  gcc meson
+BuildRequires:  gcc meson systemd-rpm-macros
 
 %description
 hexagonrpcd answers the file requests of Qualcomm Hexagon DSPs (their sensor
