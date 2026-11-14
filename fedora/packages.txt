@@ -1,0 +1,16 @@
+# Fedora 45 packages for the NX809J (dnf install --setopt=install_weak_deps=False),
+# on top of Fedora-Container-Base-Generic. Collected during the switch from
+# Arch Linux ARM (phases 1-2); scripts/make-fedora-image.sh will use this list.
+# Base system
+systemd systemd-udev systemd-resolved zram-generator NetworkManager NetworkManager-wifi
+wpa_supplicant openssh-server openssh-clients sudo passwd kbd iproute iputils procps-ng
+util-linux e2fsprogs dosfstools nano less which kmod pciutils usbutils glibc-langpack-en
+python3
+# Hardware and phone services
+bluez pipewire pipewire-pulseaudio pipewire-alsa wireplumber alsa-utils alsa-ucm
+mesa-dri-drivers mesa-vulkan-drivers vulkan-tools qrtr rmtfs geoclue2 python3-evdev
+python3-xlib libgpiod-utils iio-sensor-proxy power-profiles-daemon iw
+# Tools
+lsof rsync jq git htop fastfetch wget unzip erofs-utils squashfs-tools xdg-user-dirs
+# Building qbootctl, tqftpserv, hexagonrpc (fedora/build-qcom-tools.sh)
+gcc meson ninja-build pkgconf-pkg-config qrtr-devel libzstd-devel xz-devel
