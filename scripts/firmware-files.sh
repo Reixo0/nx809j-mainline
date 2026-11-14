@@ -34,6 +34,9 @@ for f in $files; do
   echo "$f:$FW/$f"
 done
 
+# Video codec (iris VPU40, two pipes), signed for this phone
+echo "$DEV/vpu40_2v.mbn:$ROOT/dump/firmware/vendor_firmware/vpu40_2v.mbn"
+
 # The modem loads these over tqftpserv from next to modem.mbn: its MBN
 # configuration (modem_pr), OEM software (modem_oem) and their manifest
 IMAGE=$ROOT/dump/firmware/vendor_firmware_mnt/image
