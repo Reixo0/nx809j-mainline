@@ -1,0 +1,93 @@
+From bb84ee71eee280dab51dfde2d32eed7d5d69363a Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 16:26:04 +0100
+Subject: [PATCH 297/297] =?UTF-8?q?arm64:=20dts:=20qcom:=20nx809j:=20start?=
+ =?UTF-8?q?=20the=20fan=20at=2050=20=C2=B0C?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The fan's 21 trips now run from 50 to 80 °C in 1.5 °C steps with 1.5 °C
+hysteresis, so it stays off in light use instead of spinning at idle
+temperatures; that saved about 140 mW on the power tests.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 50 ++++++++++---------
+ 1 file changed, 26 insertions(+), 24 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 748cb79fdaf9..157d4203a7e1 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -2465,14 +2465,16 @@ &usb_dwc3_hs {
+ 
+ /*
+  * Fan and liquid cooling pump follow the prime core and GPU sensors. The fan
+- * starts at 40 C and goes up one level every 2 C to full speed at 80 C; each
+- * level holds until 2 C below its trip. The pump runs at the vendor's high
+- * level from 70 C until the sensors fall below 65 C.
++ * starts at 50 C and goes up one level every 1.5 C to full speed at 80 C;
++ * each level holds until 1.5 C below its trip. Idle cores sit near 40 C, where
++ * the lowest level alone cost ~140 mW of a 1.5 W screen-on idle. The pump
++ * runs at the vendor's high level from 70 C until the sensors fall below
++ * 65 C.
+  */
+ #define FAN_TRIP(zone, n, temp)						\
+ 	zone##_fan##n: fan##n {						\
+ 		temperature = <temp>;					\
+-		hysteresis = <2000>;					\
++		hysteresis = <1500>;					\
+ 		type = "active";					\
+ 	};
+ 
+@@ -2483,26 +2485,26 @@ map##n {							\
+ 	};
+ 
+ #define FAN_TRIPS(zone)							\
+-	FAN_TRIP(zone, 1, 40000)					\
+-	FAN_TRIP(zone, 2, 42000)					\
+-	FAN_TRIP(zone, 3, 44000)					\
+-	FAN_TRIP(zone, 4, 46000)					\
+-	FAN_TRIP(zone, 5, 48000)					\
+-	FAN_TRIP(zone, 6, 50000)					\
+-	FAN_TRIP(zone, 7, 52000)					\
+-	FAN_TRIP(zone, 8, 54000)					\
+-	FAN_TRIP(zone, 9, 56000)					\
+-	FAN_TRIP(zone, 10, 58000)					\
+-	FAN_TRIP(zone, 11, 60000)					\
+-	FAN_TRIP(zone, 12, 62000)					\
+-	FAN_TRIP(zone, 13, 64000)					\
+-	FAN_TRIP(zone, 14, 66000)					\
+-	FAN_TRIP(zone, 15, 68000)					\
+-	FAN_TRIP(zone, 16, 70000)					\
+-	FAN_TRIP(zone, 17, 72000)					\
+-	FAN_TRIP(zone, 18, 74000)					\
+-	FAN_TRIP(zone, 19, 76000)					\
+-	FAN_TRIP(zone, 20, 78000)					\
++	FAN_TRIP(zone, 1, 50000)					\
++	FAN_TRIP(zone, 2, 51500)					\
++	FAN_TRIP(zone, 3, 53000)					\
++	FAN_TRIP(zone, 4, 54500)					\
++	FAN_TRIP(zone, 5, 56000)					\
++	FAN_TRIP(zone, 6, 57500)					\
++	FAN_TRIP(zone, 7, 59000)					\
++	FAN_TRIP(zone, 8, 60500)					\
++	FAN_TRIP(zone, 9, 62000)					\
++	FAN_TRIP(zone, 10, 63500)					\
++	FAN_TRIP(zone, 11, 65000)					\
++	FAN_TRIP(zone, 12, 66500)					\
++	FAN_TRIP(zone, 13, 68000)					\
++	FAN_TRIP(zone, 14, 69500)					\
++	FAN_TRIP(zone, 15, 71000)					\
++	FAN_TRIP(zone, 16, 72500)					\
++	FAN_TRIP(zone, 17, 74000)					\
++	FAN_TRIP(zone, 18, 75500)					\
++	FAN_TRIP(zone, 19, 77000)					\
++	FAN_TRIP(zone, 20, 78500)					\
+ 	FAN_TRIP(zone, 21, 80000)
+ 
+ #define FAN_MAPS(zone)							\
+-- 
+2.56.1
+
