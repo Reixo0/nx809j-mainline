@@ -1,0 +1,13 @@
+#!/bin/sh
+# Deep CPU idle (cpu-sleep-0) only while suspended. Awake it stays off
+# (tmpfiles.d/nx809j-cpuidle.conf: the phone reset silently with it), but
+# without it suspend-to-idle never powers the SoC down (cxsd/ddr in
+# qcom_stats stay at 0), so sleep would save little.
+case "$1" in
+pre)  v=0 ;;
+post) v=1 ;;
+*)    exit 0 ;;
+esac
+for f in /sys/devices/system/cpu/cpu*/cpuidle/state1/disable; do
+	echo $v > "$f"
+done

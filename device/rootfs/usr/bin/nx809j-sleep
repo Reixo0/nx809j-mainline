@@ -13,12 +13,26 @@ phone awake:
   - sound playing on any output (music, a ringing alarm or call),
   - a call in dmail,
   - network traffic, which keeps downloads going,
-  - an Android alarm clock about to ring.
+  - an Android alarm clock about to ring,
+  - a charger: battery does not matter then, and Android does not doze on
+    the charger, so its alarms (push reconnects among them) would wake the
+    phone again within seconds of each sleep.
 After any wakeup it stays up for a short window before sleeping again, so
 Wi-Fi can reconnect and messages arrive: at least AWAKE_FOR, and until the
 route to the internet has held for NET_SETTLE seconds (at most AWAKE_MAX),
 since pushes held during sleep come some seconds after the link to Google
 is made again.
+
+Android's own wakeup alarms (push reconnects and the like) still wake the
+phone. Such a wake, before the maintenance wakeup is due, keeps Android
+offline: it gets a few seconds for its alarm, then the phone sleeps again.
+The network comes back at the maintenance wakeup or when the screen turns
+on, so a push service that reconnects every few seconds cannot keep the
+phone awake.
+
+Android itself is put into Doze when the phone first sleeps, instead of
+half an hour later, and let out when the screen turns on: before Doze its
+push services' reconnect alarms would wake the phone every few seconds.
 
 Android alarm clocks cannot program the phone's wakeup timer themselves:
 the next one is read from Android before each sleep and the phone wakes a
@@ -50,6 +64,8 @@ NET_WINDOW = 10
 NET_SETTLE = 25
 AWAKE_MAX = 75
 POLL = 2
+# After an early wakeup for an Android alarm, sleep again after this long
+ANDROID_ALARM_WINDOW = 4
 HOLD = "/run/nx809j-sleep/hold"
 RTC = "/sys/class/rtc/rtc0/wakealarm"
 
@@ -98,6 +114,23 @@ def sound_playing():
     return False
 
 
+def on_charger():
+    """Whether a charger feeds the phone (USB or wireless).
+
+    The UCSI supply is left out: it is online too while the phone powers
+    an accessory."""
+    for psy in glob.glob("/sys/class/power_supply/*"):
+        if os.path.basename(psy).startswith("ucsi-"):
+            continue
+        try:
+            if (open(f"{psy}/type").read().strip() in ("USB", "Mains", "Wireless")
+                    and open(f"{psy}/online").read().strip() == "1"):
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def in_call():
     out = run(["busctl", "get-property", "org.dmail", "/org/dmail",
                "org.dmail.Voice1", "Calls"])
@@ -118,13 +151,29 @@ def net_bytes():
     return total
 
 
-def android_alarm_clock():
-    """The next Android alarm clock, in seconds since the epoch, or None."""
+def android(*args, timeout=10):
+    """Runs a command in Droidloom's Android, or returns None without it."""
     pid = run(["pgrep", "-x", "logd"]).split()
     if not pid:
         return None
-    out = run(["nsenter", "-t", pid[0], "-a", "/system/bin/env",
-               "PATH=/system/bin:/system/xbin", "dumpsys", "alarm"], timeout=10)
+    return run(["nsenter", "-t", pid[0], "-a", "/system/bin/env",
+                "PATH=/system/bin:/system/xbin", *args], timeout=timeout)
+
+
+def android_doze(on):
+    """Puts Android into deep Doze at once, or lets it out."""
+    out = android("dumpsys", "deviceidle", *(("force-idle", "deep") if on
+                                               else ("unforce",)))
+    if out is not None:
+        log(("Android dozes: " if on else "Android awake: ") + out.strip())
+    return out is not None
+
+
+def android_alarm_clock():
+    """The next Android alarm clock, in seconds since the epoch, or None."""
+    out = android("dumpsys", "alarm")
+    if out is None:
+        return None
     info = out.split("Next alarm clock information:", 1)
     if len(info) < 2:
         return None
@@ -183,16 +232,50 @@ def uplink():
     return m.group(1) if m else ""
 
 
-def boot_offset():
-    """Time spent asleep since boot: grows across each sleep."""
-    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.monotonic()
+def boottime():
+    return time.clock_gettime(time.CLOCK_BOOTTIME)
 
 
-def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since):
+def suspend_count():
+    """Suspends that happened or failed. Timekeeping only stops in sleep
+    when the CPUs reach a deep idle state, so a sleep does not always show
+    in the clocks."""
+    total = 0
+    for stat in ("success", "fail"):
+        try:
+            total += int(open(f"/sys/power/suspend_stats/{stat}").read())
+        except (OSError, ValueError):
+            pass
+    return total
+
+
+def wakeup_irq():
+    """The interrupt that ended the last sleep, by name if known."""
+    try:
+        irq = open("/sys/power/pm_wakeup_irq").read().strip()
+    except OSError:
+        return "none recorded"
+    try:
+        for line in open("/proc/interrupts"):
+            f = line.split()
+            if f and f[0] == irq + ":":
+                return f"{irq} ({f[-1]})"
+    except OSError:
+        pass
+    return irq
+
+
+def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
+              android_alarm_until):
     if screen_on():
         return "screen on"
     if now - screen_off_since < SLEEP_AFTER:
         return "screen just went off"
+    if android_alarm_until is not None:
+        # Woken early for an Android alarm: Android stays offline
+        if now < android_alarm_until:
+            return "Android alarm"
+        return None
     if now - awake_since < AWAKE_FOR:
         return "just woke"
     # Pushes held during sleep arrive some seconds after the link to Google
@@ -202,6 +285,8 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since):
         return "network coming back"
     if os.path.exists(HOLD):
         return "held by " + HOLD
+    if on_charger():
+        return "on the charger"
     if net_rate > NET_BYTES:
         return f"network busy ({net_rate // 1000} kB/s)"
     if sleep_blocked():
@@ -237,13 +322,15 @@ def android_push_off():
     return True
 
 
-def suspend(now_wall):
-    wake = now_wall + WAKE_EVERY
+def suspend(now_wall, wake):
+    """Sleep until `wake` (seconds since the epoch) at the latest."""
     alarm = android_alarm_clock()
     if alarm is not None and alarm > now_wall - 60:
         if alarm - now_wall < ALARM_NEAR:
             return "alarm clock due"
-        wake = min(wake, alarm - ALARM_EARLY)
+        if alarm - ALARM_EARLY < wake:
+            wake = alarm - ALARM_EARLY
+            log("waking before an alarm clock")
     try:
         with open(RTC, "w") as rtc:
             rtc.write("0")
@@ -252,8 +339,7 @@ def suspend(now_wall):
     except OSError as err:
         log(f"cannot set the wakeup timer: {err}")
         return "no wakeup timer"
-    log(f"sleeping, wakeup in {int(wake - now_wall)} s"
-        + (" (before an alarm clock)" if wake < now_wall + WAKE_EVERY else ""))
+    log(f"sleeping, wakeup in {int(wake - now_wall)} s")
     unplugged = android_push_off()
     # Root may suspend through block inhibitors: why_awake checked them
     if subprocess.run(["systemctl", "suspend"]).returncode != 0:
@@ -269,39 +355,53 @@ def main():
     screen_off_since = now
     awake_since = now
     was_on = True
-    asleep = boot_offset()
     net = [(now, net_bytes())]
     reason = None
     events = None
     unplugged_android = False
+    # Set while a suspend was asked for: the suspend count and boot time then
+    asleep = None
+    # Wall time the maintenance wakeup is due, while Android stays offline
+    maintenance = None
+    android_alarm_until = None
+    dozing = False
     last_route = uplink()
     uplink_since = now if last_route else None
     while True:
         time.sleep(POLL)
-        # Awake again, after a sleep or a suspend that did not happen
-        if unplugged_android:
-            android_net(True)
-            unplugged_android = False
         now = time.monotonic()
-        slept = boot_offset() - asleep
-        if slept > 1:
-            asleep += slept
-            awake_since = now
-            try:
-                irq = open("/sys/power/pm_wakeup_irq").read().strip()
-            except OSError:
-                irq = "none recorded"
+        if asleep is not None and suspend_count() != asleep[0]:
+            slept = boottime() - asleep[1]
+            irq = wakeup_irq()
             fired = new_events(events) if events else []
-            log(f"woke after {int(slept)} s, wakeup irq {irq}"
-                + (f", wakeup sources: {' '.join(fired)}" if fired else ""))
+            asleep = None
             events = None
-            net = []
+            early = (maintenance is not None and time.time() < maintenance - 5
+                     and "rtc" in irq and not screen_on())
+            log(f"woke after {int(slept)} s, wakeup irq {irq}"
+                + (f", wakeup sources: {' '.join(fired)}" if fired else "")
+                + (", Android alarm: Android stays offline" if early else ""))
+            if early:
+                android_alarm_until = now + ANDROID_ALARM_WINDOW
+            else:
+                android_alarm_until = None
+                maintenance = None
+                awake_since = now
+                net = []
         on = screen_on()
         if on:
             was_on = True
+            android_alarm_until = None
+            maintenance = None
+            if dozing:
+                dozing = not android_doze(False)
         elif was_on:
             was_on = False
             screen_off_since = now
+        # Awake for good: Android goes online again
+        if unplugged_android and android_alarm_until is None and asleep is None:
+            android_net(True)
+            unplugged_android = False
         route = uplink()
         if route != last_route:
             last_route = route
@@ -310,14 +410,24 @@ def main():
         net = [s for s in net if now - s[0] <= NET_WINDOW]
         span = net[-1][0] - net[0][0]
         rate = int((net[-1][1] - net[0][1]) / span) if span >= 4 else NET_BYTES + 1
-        why = why_awake(now, screen_off_since, awake_since, rate, uplink_since)
+        why = why_awake(now, screen_off_since, awake_since, rate, uplink_since,
+                        android_alarm_until)
         if why is None:
             events = wakeup_events()
+            wall = time.time()
+            if maintenance is None or maintenance <= wall + 5:
+                maintenance = wall + WAKE_EVERY
+            if not dozing and not on_charger():
+                dozing = android_doze(True)
+            asleep = (suspend_count(), boottime())
             unplugged_android = True
-            why = suspend(time.time())
+            why = suspend(wall, maintenance)
             if why is None:
                 time.sleep(5)
                 continue
+            asleep = None
+            android_alarm_until = None
+            maintenance = None
         if why != reason and not on:
             log(f"staying awake: {why}")
         reason = why
