@@ -9,3 +9,4 @@ enable nx809j-good-modules.service
 enable systemd-pstore.service
 enable nx809j-gnss.service
 enable nx809j-privacy-system.service
+enable nx809j-sleep.service

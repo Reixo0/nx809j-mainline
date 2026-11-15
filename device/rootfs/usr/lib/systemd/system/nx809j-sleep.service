@@ -1,0 +1,13 @@
+# Sleep while the screen is off, with a maintenance wakeup every 5 minutes
+# (nx809j-sleep). Pause it with: systemd-inhibit --what=sleep ...
+[Unit]
+Description=Phone sleep policy
+After=systemd-logind.service
+
+[Service]
+ExecStart=/usr/bin/nx809j-sleep
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

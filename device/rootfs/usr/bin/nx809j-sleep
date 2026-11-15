@@ -1,0 +1,327 @@
+#!/usr/bin/python3
+"""Put the phone to sleep while its screen is off, as Android does.
+
+Sleep is s2idle: the SoC powers down, the modem can still wake it for calls
+and messages, but Wi-Fi is off until the next wakeup. So the phone wakes
+itself every few minutes (a maintenance wakeup, like Android's Doze):
+Wi-Fi reconnects, pending pushes arrive and show, then it sleeps again.
+
+It sleeps when the screen has been off for a while and nothing needs the
+phone awake:
+  - a logind "sleep" block inhibitor (systemd-inhibit, or the file
+    /run/nx809j-sleep/hold for debugging),
+  - sound playing on any output (music, a ringing alarm or call),
+  - a call in dmail,
+  - network traffic, which keeps downloads going,
+  - an Android alarm clock about to ring.
+After any wakeup it stays up for a short window before sleeping again, so
+Wi-Fi can reconnect and messages arrive: at least AWAKE_FOR, and until the
+route to the internet has held for NET_SETTLE seconds (at most AWAKE_MAX),
+since pushes held during sleep come some seconds after the link to Google
+is made again.
+
+Android alarm clocks cannot program the phone's wakeup timer themselves:
+the next one is read from Android before each sleep and the phone wakes a
+little before it.
+
+Settings, as environment variables (seconds):
+  NX809J_SLEEP_AFTER      screen off this long before sleeping (15)
+  NX809J_SLEEP_WAKE_EVERY maintenance wakeup interval (300)
+  NX809J_SLEEP_AWAKE_FOR  stay up this long after a wakeup (30)
+  NX809J_SLEEP_NET_BYTES  traffic per second that counts as busy (30000)
+"""
+
+import glob
+import os
+import re
+import subprocess
+import sys
+import time
+
+SLEEP_AFTER = int(os.environ.get("NX809J_SLEEP_AFTER", "15"))
+WAKE_EVERY = int(os.environ.get("NX809J_SLEEP_WAKE_EVERY", "300"))
+AWAKE_FOR = int(os.environ.get("NX809J_SLEEP_AWAKE_FOR", "30"))
+NET_BYTES = int(os.environ.get("NX809J_SLEEP_NET_BYTES", "30000"))
+# Wake this long before an Android alarm clock; closer than ALARM_NEAR, stay up
+ALARM_EARLY = 20
+ALARM_NEAR = 90
+NET_WINDOW = 10
+# After a wakeup, stay up until the route has held this long, at most AWAKE_MAX
+NET_SETTLE = 25
+AWAKE_MAX = 75
+POLL = 2
+HOLD = "/run/nx809j-sleep/hold"
+RTC = "/sys/class/rtc/rtc0/wakealarm"
+
+
+def log(*args):
+    print(*args, file=sys.stderr, flush=True)
+
+
+def run(args, timeout=5):
+    try:
+        return subprocess.run(args, capture_output=True, text=True,
+                              timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def screen_on():
+    for path in glob.glob("/sys/class/drm/card*-DSI-*/dpms"):
+        try:
+            if open(path).read().strip() == "On":
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def sleep_blocked():
+    out = run(["busctl", "get-property", "org.freedesktop.login1",
+               "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+               "BlockInhibited"])
+    return "sleep" in out.split('"', 1)[-1].split(":")
+
+
+def session_users():
+    for path in glob.glob("/run/user/*/pulse/native"):
+        yield path.split("/")[3]
+
+
+def sound_playing():
+    for uid in session_users():
+        out = run(["setpriv", f"--reuid={uid}", f"--regid={uid}",
+                   "--clear-groups", "env", f"XDG_RUNTIME_DIR=/run/user/{uid}",
+                   "pactl", "list", "sinks", "short"])
+        if any(line.split("\t")[-1] == "RUNNING" for line in out.splitlines()):
+            return True
+    return False
+
+
+def in_call():
+    out = run(["busctl", "get-property", "org.dmail", "/org/dmail",
+               "org.dmail.Voice1", "Calls"])
+    m = re.match(r"a\(\w+\) (\d+)", out)
+    return bool(m and int(m.group(1)))
+
+
+def net_bytes():
+    total = 0
+    for dev in glob.glob("/sys/class/net/*"):
+        name = os.path.basename(dev)
+        if name == "wlan0" or name.startswith(("rmnet_data", "usb", "eth")):
+            for stat in ("rx_bytes", "tx_bytes"):
+                try:
+                    total += int(open(f"{dev}/statistics/{stat}").read())
+                except (OSError, ValueError):
+                    pass
+    return total
+
+
+def android_alarm_clock():
+    """The next Android alarm clock, in seconds since the epoch, or None."""
+    pid = run(["pgrep", "-x", "logd"]).split()
+    if not pid:
+        return None
+    out = run(["nsenter", "-t", pid[0], "-a", "/system/bin/env",
+               "PATH=/system/bin:/system/xbin", "dumpsys", "alarm"], timeout=10)
+    info = out.split("Next alarm clock information:", 1)
+    if len(info) < 2:
+        return None
+    times = [int(t) / 1000 for t in
+             re.findall(r"time:(\d+)", info[1].split("pending alarms", 1)[0])]
+    return min(times) if times else None
+
+
+def wakeup_sources():
+    """Event counts of the kernel's wakeup sources, by name."""
+    counts = {}
+    for src in glob.glob("/sys/class/wakeup/wakeup*"):
+        try:
+            name = open(f"{src}/name").read().strip()
+            n = int(open(f"{src}/event_count").read())
+        except (OSError, ValueError):
+            continue
+        counts[name] = counts.get(name, 0) + n
+    return counts
+
+
+WAKE_IRQS = {"131072": "modem", "196608": "adsp"}
+
+
+def wake_irq_counts():
+    """Message interrupts from the modem and ADSP (GLINK), by remote."""
+    counts = {}
+    try:
+        for line in open("/proc/interrupts"):
+            f = line.split()
+            if f and f[-1] == "glink-smem" and f[-3] in WAKE_IRQS:
+                counts[WAKE_IRQS[f[-3]]] = sum(int(x) for x in f[1:-4] if x.isdigit())
+    except OSError:
+        pass
+    return counts
+
+
+def wakeup_events():
+    counts = wakeup_sources()
+    counts.update({f"irq:{k}": v for k, v in wake_irq_counts().items()})
+    return counts
+
+
+def new_events(before):
+    """Wakeup sources that fired since `before`; ours and polls left out."""
+    after = wakeup_events()
+    return sorted(name for name, n in after.items()
+                  if n > before.get(name, 0)
+                  and not name.startswith(("eventpoll", "[timerfd]", "NETLINK")))
+
+
+def uplink():
+    """The route to the internet, or "" without one."""
+    out = run(["ip", "-o", "route", "get", "1.1.1.1"])
+    m = re.search(r" dev (\S+)", out)
+    return m.group(1) if m else ""
+
+
+def boot_offset():
+    """Time spent asleep since boot: grows across each sleep."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.monotonic()
+
+
+def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since):
+    if screen_on():
+        return "screen on"
+    if now - screen_off_since < SLEEP_AFTER:
+        return "screen just went off"
+    if now - awake_since < AWAKE_FOR:
+        return "just woke"
+    # Pushes held during sleep arrive some seconds after the link to Google
+    # is up again; it is made anew whenever the route changes.
+    if now - awake_since < AWAKE_MAX and (
+            uplink_since is None or now - uplink_since < NET_SETTLE):
+        return "network coming back"
+    if os.path.exists(HOLD):
+        return "held by " + HOLD
+    if net_rate > NET_BYTES:
+        return f"network busy ({net_rate // 1000} kB/s)"
+    if sleep_blocked():
+        return "sleep inhibitor"
+    if in_call():
+        return "call"
+    if sound_playing():
+        return "sound playing"
+    return None
+
+
+def android_net(up):
+    """Plug Droidloom's virtual cable in or out."""
+    for link in glob.glob("/sys/class/net/dlh*"):
+        run(["ip", "link", "set", os.path.basename(link), "up" if up else "down"])
+
+
+def android_push_off():
+    """Close Android's push connection before Wi-Fi goes away in sleep.
+
+    Wi-Fi drops without a word, so Google's server would keep sending
+    pushes into a connection that is dead until the phone's next wakeup,
+    and those are lost. Reset it while Wi-Fi is up, so the server holds them
+    for the next connection, and unplug Android so it does not make a new
+    one before the phone sleeps."""
+    pid = run(["pgrep", "-x", "logd"]).split()
+    if not pid or not glob.glob("/sys/class/net/dlh*"):
+        return False
+    run(["nsenter", "-t", pid[0], "-n", "ss", "-K", "state", "established",
+         "( dport = :5228 or dport = :5229 or dport = :5230 )"])
+    time.sleep(0.3)  # the resets leave through the cable
+    android_net(False)
+    return True
+
+
+def suspend(now_wall):
+    wake = now_wall + WAKE_EVERY
+    alarm = android_alarm_clock()
+    if alarm is not None and alarm > now_wall - 60:
+        if alarm - now_wall < ALARM_NEAR:
+            return "alarm clock due"
+        wake = min(wake, alarm - ALARM_EARLY)
+    try:
+        with open(RTC, "w") as rtc:
+            rtc.write("0")
+        with open(RTC, "w") as rtc:
+            rtc.write(str(int(wake)))
+    except OSError as err:
+        log(f"cannot set the wakeup timer: {err}")
+        return "no wakeup timer"
+    log(f"sleeping, wakeup in {int(wake - now_wall)} s"
+        + (" (before an alarm clock)" if wake < now_wall + WAKE_EVERY else ""))
+    unplugged = android_push_off()
+    # Root may suspend through block inhibitors: why_awake checked them
+    if subprocess.run(["systemctl", "suspend"]).returncode != 0:
+        if unplugged:
+            android_net(True)
+        return "suspend refused"
+    return None
+
+
+def main():
+    os.makedirs(os.path.dirname(HOLD), exist_ok=True)
+    now = time.monotonic()
+    screen_off_since = now
+    awake_since = now
+    was_on = True
+    asleep = boot_offset()
+    net = [(now, net_bytes())]
+    reason = None
+    events = None
+    unplugged_android = False
+    last_route = uplink()
+    uplink_since = now if last_route else None
+    while True:
+        time.sleep(POLL)
+        # Awake again, after a sleep or a suspend that did not happen
+        if unplugged_android:
+            android_net(True)
+            unplugged_android = False
+        now = time.monotonic()
+        slept = boot_offset() - asleep
+        if slept > 1:
+            asleep += slept
+            awake_since = now
+            try:
+                irq = open("/sys/power/pm_wakeup_irq").read().strip()
+            except OSError:
+                irq = "none recorded"
+            fired = new_events(events) if events else []
+            log(f"woke after {int(slept)} s, wakeup irq {irq}"
+                + (f", wakeup sources: {' '.join(fired)}" if fired else ""))
+            events = None
+            net = []
+        on = screen_on()
+        if on:
+            was_on = True
+        elif was_on:
+            was_on = False
+            screen_off_since = now
+        route = uplink()
+        if route != last_route:
+            last_route = route
+            uplink_since = now if route else None
+        net.append((now, net_bytes()))
+        net = [s for s in net if now - s[0] <= NET_WINDOW]
+        span = net[-1][0] - net[0][0]
+        rate = int((net[-1][1] - net[0][1]) / span) if span >= 4 else NET_BYTES + 1
+        why = why_awake(now, screen_off_since, awake_since, rate, uplink_since)
+        if why is None:
+            events = wakeup_events()
+            unplugged_android = True
+            why = suspend(time.time())
+            if why is None:
+                time.sleep(5)
+                continue
+        if why != reason and not on:
+            log(f"staying awake: {why}")
+        reason = why
+
+
+if __name__ == "__main__":
+    main()
