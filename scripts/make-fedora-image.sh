@@ -46,7 +46,7 @@ PACKAGES=(fedora-release fedora-repos dnf5 rpm bash coreutils shadow-utils passw
   xdg-user-dirs kitty firefox mobile-config-firefox iris-vaapi
   # Hardware
   mesa-dri-drivers mesa-vulkan-drivers pipewire pipewire-pulseaudio pipewire-alsa
-  wireplumber alsa-utils bluez power-profiles-daemon)
+  wireplumber alsa-utils bluez power-profiles-daemon upower)
 SERVICES=(NetworkManager bluetooth nx809j-denial power-profiles-daemon
   systemd-resolved systemd-timesyncd)
 
