@@ -32,9 +32,11 @@ the NX809J needs on top of Fedora.
 %build
 
 %install
-cp -dR --preserve=mode,timestamps usr %{buildroot}/
+cp -dR --preserve=mode,timestamps usr etc %{buildroot}/
 cd %{buildroot}
-find . -mindepth 1 \( -type f -o -type l \) -printf '"/%%P"\n' > %{_builddir}/files.list
+# Files in /etc are the user's to edit: an update leaves an edited one be
+find . -mindepth 1 \( -type f -o -type l \) -printf '"/%%P"\n' |
+  sed 's|^"/etc/|%%config(noreplace) "/etc/|' > %{_builddir}/files.list
 # Our own directories (those no other package owns)
 find . -mindepth 1 -type d -printf '/%%P\n' | while read -r d; do
   rpm -qf --quiet "$d" 2>/dev/null || echo "%%dir \"$d\""

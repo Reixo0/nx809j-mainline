@@ -1,0 +1,8 @@
+{
+  "output": "DSI-1",
+  "switch": "/sys/module/panel_raydium_rm692h5/parameters/ambient",
+  "brightness": 400,
+  "settle_ms": 1000,
+  "always_on": false,
+  "pulse_ms": 3000
+}

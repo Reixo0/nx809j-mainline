@@ -51,7 +51,7 @@ setspec linux-nx809j "${rel%%-*}.${base//-/}.r$n.g$h" "$rel"
 # Device files: Version is the date and time of the last change to them
 "$ROOT/scripts/build-topology.sh" >/dev/null
 st=$ROOT/out/fedora/device; rm -rf "$st"; mkdir -p "$st"
-cp -a "$ROOT/device/rootfs/usr" "$st/"
+cp -a "$ROOT/device/rootfs/usr" "$ROOT/device/rootfs/etc" "$st/"
 install -Dm644 "$ROOT/out/audio/qcom/kaanapali/Nubia-NX809J-tplg.bin" \
   "$st/usr/lib/firmware/qcom/kaanapali/Nubia-NX809J-tplg.bin"
 pack "$st" device-files.tar.gz
