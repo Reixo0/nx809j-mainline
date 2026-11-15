@@ -11,6 +11,9 @@ phone awake:
   - a logind "sleep" block inhibitor (systemd-inhibit, or the file
     /run/nx809j-sleep/hold for debugging),
   - sound playing on any output (music, a ringing alarm or call),
+  - an Android app holding a partial wakelock (Droidloom's Android has no
+    kernel to pass it to), each for at most WAKELOCK_MAX: a misbehaving app
+    cannot keep the phone up all night,
   - a call in dmail,
   - network traffic, which keeps downloads going,
   - an Android alarm clock about to ring,
@@ -66,6 +69,10 @@ AWAKE_MAX = 75
 POLL = 2
 # After an early wakeup for an Android alarm, sleep again after this long
 ANDROID_ALARM_WINDOW = 4
+# An Android wakelock keeps the phone up for at most this long; while Android
+# is offline after an alarm, for at most WAKELOCK_OFFLINE
+WAKELOCK_MAX = 600
+WAKELOCK_OFFLINE = 30
 HOLD = "/run/nx809j-sleep/hold"
 RTC = "/sys/class/rtc/rtc0/wakealarm"
 
@@ -167,6 +174,35 @@ def android_doze(on):
     if out is not None:
         log(("Android dozes: " if on else "Android awake: ") + out.strip())
     return out is not None
+
+
+def duration(text):
+    """Seconds in Android's duration format, such as -1m2s345ms."""
+    total = 0.0
+    for n, unit in re.findall(r"(\d+)(ms|d|h|m|s)", text):
+        total += int(n) * {"d": 86400, "h": 3600, "m": 60, "s": 1,
+                           "ms": 0.001}[unit]
+    return total
+
+
+def android_wakelock(limit):
+    """A partial wakelock an Android app holds, held for less than `limit`
+    seconds, or None. Doze disables those of apps it holds back."""
+    out = android("dumpsys", "power")
+    if not out or "Wake Locks:" not in out:
+        return None
+    for line in out.split("Wake Locks:", 1)[1].splitlines()[1:]:
+        if not line.startswith("  "):
+            break
+        m = re.match(r"\s+PARTIAL_WAKE_LOCK\s+'(.*)'(.*)", line)
+        if not m or "DISABLED" in m.group(2):
+            continue
+        acq = re.search(r"ACQ=(\S+)", m.group(2))
+        if acq and duration(acq.group(1)) >= limit:
+            continue
+        uid = re.search(r"uid=(\d+)", m.group(2))
+        return m.group(1) + (f" (uid {uid.group(1)})" if uid else "")
+    return None
 
 
 def android_alarm_clock():
@@ -275,7 +311,8 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
         # Woken early for an Android alarm: Android stays offline
         if now < android_alarm_until:
             return "Android alarm"
-        return None
+        lock = android_wakelock(WAKELOCK_OFFLINE)
+        return f"Android wakelock {lock}" if lock else None
     if now - awake_since < AWAKE_FOR:
         return "just woke"
     # Pushes held during sleep arrive some seconds after the link to Google
@@ -295,6 +332,9 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
         return "call"
     if sound_playing():
         return "sound playing"
+    lock = android_wakelock(WAKELOCK_MAX)
+    if lock:
+        return f"Android wakelock {lock}"
     return None
 
 
