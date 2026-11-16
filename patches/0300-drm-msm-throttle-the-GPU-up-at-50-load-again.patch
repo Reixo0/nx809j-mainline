@@ -1,0 +1,48 @@
+From 28577f14dbd01dc7b56240d73f5f2bdcf53aa494 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 16:40:18 +0100
+Subject: [PATCH] drm/msm: throttle the GPU up at 50% load again
+
+simple_ondemand jumps to the highest OPP for any sample above
+upthreshold and otherwise settles near upthreshold - downdifferential/2
+load. At 20% a 60 fps video that Denial composes in ~2 ms per frame
+(13% load) kept the GPU at 578-726 MHz with bursts to 1.2 GHz; 160 MHz
+presents every frame. At 50% the video settles near 280 MHz, ~0.1 W
+less, and 144 Hz scrolling still reaches 141-145 fps (the clock climbs
+to 900-1000 MHz, and late fences boost it).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/gpu/drm/msm/msm_gpu_devfreq.c | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/msm_gpu_devfreq.c b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+index 199ce499690c..07054e8db0e2 100644
+--- a/drivers/gpu/drm/msm/msm_gpu_devfreq.c
++++ b/drivers/gpu/drm/msm/msm_gpu_devfreq.c
+@@ -147,15 +147,14 @@ void msm_devfreq_init(struct msm_gpu *gpu)
+ 		return;
+ 
+ 	/*
+-	 * Setup default values for simple_ondemand governor tuning.  We
+-	 * want to throttle up at low load for the double-buffer case,
+-	 * where due to stalling waiting for vblank we could get stuck
+-	 * below the refresh rate at moderate utilization.  At 50% a
+-	 * 144Hz panel settles at the lowest OPP, just under the
+-	 * threshold, presenting ~100fps; at 20% the frequency settles
+-	 * where each frame fits in its refresh.
++	 * Setup default values for simple_ondemand governor tuning.  Any
++	 * sample above upthreshold jumps to the highest OPP, below it the
++	 * frequency settles near upthreshold - downdifferential / 2 load.
++	 * 20% kept the GPU at 578-726 MHz for a 60 fps video that needs
++	 * 160 MHz; at 50% 144 Hz scrolling still reaches 144 fps (late
++	 * fences boost the clock) and video settles near 280 MHz.
+ 	 */
+-	priv->gpu_devfreq_config.upthreshold = 20;
++	priv->gpu_devfreq_config.upthreshold = 50;
+ 	priv->gpu_devfreq_config.downdifferential = 10;
+ 
+ 	mutex_init(&df->lock);
+-- 
+2.56.1
+
