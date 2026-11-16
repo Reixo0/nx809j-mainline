@@ -1,0 +1,39 @@
+From a8c3ff7ea607cc67485188ca7c980d0734431244 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 23:49:51 +0100
+Subject: [PATCH] alarmtimer: honour the wakeup setting of the alarmtimer
+ device
+
+With wakeup disabled through sysfs (alarmtimer.N.auto/power/wakeup),
+alarm timers neither arm the RTC nor abort a suspend; they fire once
+something else wakes the system. A sleep policy can then keep the
+alarms of a container (Droidloom's Android) from waking the phone while
+it is offline, and set the RTC itself for alarm clocks.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ kernel/time/alarmtimer.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/kernel/time/alarmtimer.c b/kernel/time/alarmtimer.c
+index ea5be5870e51..acd6bc99112e 100644
+--- a/kernel/time/alarmtimer.c
++++ b/kernel/time/alarmtimer.c
+@@ -234,6 +234,14 @@ static int alarmtimer_suspend(struct device *dev)
+ 	if (!rtc)
+ 		return 0;
+ 
++	/*
++	 * Wakeup disabled through sysfs: alarm timers neither arm the RTC
++	 * nor abort the suspend. They fire once the system is woken by
++	 * something else.
++	 */
++	if (!device_may_wakeup(dev))
++		return 0;
++
+ 	/* Find the soonest timer to expire */
+ 	for (i = 0; i < ALARM_NUMTYPE; i++) {
+ 		struct alarm_base *base = &alarm_bases[i];
+-- 
+2.56.1
+
