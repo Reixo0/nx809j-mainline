@@ -174,6 +174,8 @@ class Clients:
                     client = self.clients.setdefault(path, {'started': False})
                     client.update(app=value, owner=sender, uid=connection_user(sender))
             elif interface == CLIENT and member == 'Start':
+                # Clients without a desktop id count for "in use" too.
+                self.clients.setdefault(path, {'started': False}).setdefault('owner', sender)
                 self.starting[(sender, m.get('cookie'))] = path
             elif interface == CLIENT and member == 'Stop':
                 if path in self.clients:
@@ -196,6 +198,10 @@ class Clients:
                 del self.clients[path]
             for key in [k for k in self.starting if k[0] == name]:
                 del self.starting[key]
+
+    def active(self):
+        """Whether geoclue gives anyone a location: its Manager's InUse."""
+        return any(c.get('started') for c in self.clients.values())
 
     def in_use(self):
         return sorted({(c['app'], c.get('uid')) for c in self.clients.values()
@@ -225,10 +231,11 @@ def main():
                 time.sleep(2)
                 continue
 
-        now = clients.in_use()
+        now = (clients.in_use(), clients.active())
         if now != last_location:
             last_location = now
-            write(LOCATION, json.dumps({'apps': [{'app': app, 'uid': uid} for app, uid in now]}))
+            write(LOCATION, json.dumps({'apps': [{'app': app, 'uid': uid} for app, uid in now[0]],
+                                        'inUse': now[1]}))
 
         if time.monotonic() >= next_poll:
             next_poll = time.monotonic() + POLL_SECONDS

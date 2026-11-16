@@ -271,12 +271,14 @@ def location_apps():
 
 
 def location_in_use():
-    """Whether geoclue is giving any app a location, without starting it."""
-    out = subprocess.run(['busctl', '--system', '--auto-start=no', 'get-property',
-                          'org.freedesktop.GeoClue2', '/org/freedesktop/GeoClue2/Manager',
-                          'org.freedesktop.GeoClue2.Manager', 'InUse'],
-                         capture_output=True, text=True).stdout
-    return out.strip() == 'b true'
+    """Whether geoclue is giving anyone a location, as nx809j-privacy-system
+    follows it. Asking geoclue would start it: busctl get-property ignores
+    --auto-start=no, and every poll kept geoclue running."""
+    try:
+        with open(os.path.join(SYSTEM, 'location.json')) as f:
+            return json.load(f).get('inUse') is True
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def write_usage(usage):
