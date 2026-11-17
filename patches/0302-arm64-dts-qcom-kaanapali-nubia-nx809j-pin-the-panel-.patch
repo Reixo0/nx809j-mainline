@@ -1,0 +1,60 @@
+From 1382c6b270e1d423be500b809ea321301ac59726 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 18:39:14 +0100
+Subject: [PATCH] arm64: dts: qcom: kaanapali-nubia-nx809j: pin the panel
+ supplies
+
+The RM692H5 panel's vdd (L11B) and vddio (L12B) were left as ranges
+(1.0-1.292 V and 1.2-1.8 V) in AUTO mode with set-load allowed. The
+panel driver sets neither a voltage nor a load, and qcom-rpmh-regulator
+keeps whatever voltage the firmware left, so the panel ran at 1.0 V /
+1.2 V on some boots and its vdd dropped to low power mode on others.
+Those boots showed corrupted frames (dark lines, stale frames, coloured
+columns) for the whole boot.
+
+Fix both rails at the vendor's values (vdd 1.25 V, rounded up to the
+LDO's 8 mV step; vddio 1.8 V) in high power mode, as the vendor's
+panel supply entries do with their 220 mA and 154 mA loads.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts   | 18 +++++++-----------
+ 1 file changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 157d4203a7e1..22216ea5f5f2 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -672,22 +672,18 @@ vreg_l10b_1p8: ldo10 {
+ 
+ 		vreg_l11b_1p0: ldo11 {
+ 			regulator-name = "vreg_l11b_1p0";
+-			regulator-min-microvolt = <1000000>;
+-			regulator-max-microvolt = <1292000>;
+-			regulator-initial-mode = <RPMH_REGULATOR_MODE_AUTO>;
+-			regulator-allow-set-load;
+-			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+-						   RPMH_REGULATOR_MODE_AUTO>;
++			/* panel vdd: vendor 1.25 V, HPM (220 mA load) */
++			regulator-min-microvolt = <1256000>;
++			regulator-max-microvolt = <1256000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+ 		vreg_l12b_1p8: ldo12 {
+ 			regulator-name = "vreg_l12b_1p8";
+-			regulator-min-microvolt = <1200000>;
++			/* panel vddio: vendor 1.8 V, HPM (154 mA load) */
++			regulator-min-microvolt = <1800000>;
+ 			regulator-max-microvolt = <1800000>;
+-			regulator-initial-mode = <RPMH_REGULATOR_MODE_AUTO>;
+-			regulator-allow-set-load;
+-			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+-						   RPMH_REGULATOR_MODE_AUTO>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+ 		};
+ 
+ 		vreg_l13b_3p0: ldo13 {
+-- 
+2.56.1
+
