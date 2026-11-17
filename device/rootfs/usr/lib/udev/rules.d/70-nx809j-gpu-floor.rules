@@ -1,0 +1,5 @@
+# Denial's GPU interaction floor: while the user touches the screen or a shell
+# animation runs, deniald raises the Adreno GPU's minimum frequency, so the
+# first frames do not run at 160 MHz while simple_ondemand catches up (choppy
+# shade and app drawer). deniald runs as the user with the video group.
+SUBSYSTEM=="devfreq", KERNEL=="3d00000.gpu", RUN+="/usr/bin/chgrp video /sys%p/min_freq", RUN+="/usr/bin/chmod 0664 /sys%p/min_freq"
