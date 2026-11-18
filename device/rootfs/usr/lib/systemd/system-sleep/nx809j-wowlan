@@ -1,0 +1,10 @@
+#!/bin/sh
+# Wi-Fi stays associated through sleep (nx809j-sleep arms wake-on-WLAN just
+# before it suspends). NetworkManager takes a device with wake-on-WLAN set
+# down after every wakeup, to re-check it, which would drop the link that was
+# kept: disarm it here, before logind reports the wakeup to NetworkManager.
+[ "$1" = post ] || exit 0
+for phy in /sys/class/ieee80211/*; do
+	[ -e "$phy" ] && iw phy "${phy##*/}" wowlan disable
+done
+exit 0

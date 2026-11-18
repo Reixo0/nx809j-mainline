@@ -2,9 +2,14 @@
 """Put the phone to sleep while its screen is off, as Android does.
 
 Sleep is s2idle: the SoC powers down, the modem can still wake it for calls
-and messages, but Wi-Fi is off until the next wakeup. So the phone wakes
-itself every few minutes (a maintenance wakeup, like Android's Doze):
-Wi-Fi reconnects, pending pushes arrive and show, then it sleeps again.
+and messages, and Wi-Fi stays associated, as on Android: the PCIe link to
+the Wi-Fi chip is held through sleep (CESTA) and the chip wakes the phone
+for frames addressed to it (wake-on-WLAN: unicast to its MAC, a magic
+packet, or the access point dropping it), so pushes arrive while it sleeps
+and nothing has to reconnect after a wakeup. The phone also wakes itself
+every few minutes (a maintenance wakeup, like Android's Doze) for Android's
+held-back alarms. When wake-on-WLAN cannot be armed (Wi-Fi not connected),
+Wi-Fi drops in sleep and reconnects at the next wakeup.
 
 It sleeps when the screen has been off for a while and nothing needs the
 phone awake:
@@ -344,21 +349,22 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
     return None
 
 
-def android_net(up):
+def android_net(up, cable=True):
     """Plug Droidloom's virtual cable in or out.
 
     While Android is unplugged, mobile data does not wake the phone: no one
-    is there to take the packets. Every wakeup re-creates the Wi-Fi link,
-    host traffic goes out over mobile data meanwhile, and the answers came
-    in during the next sleep and woke the phone again. Calls and SMS reach
-    it through the modem's control channel, not through the IPA.
+    is there to take the packets. When Wi-Fi drops in sleep, every wakeup
+    re-creates the Wi-Fi link, host traffic goes out over mobile data
+    meanwhile, and the answers came in during the next sleep and woke the
+    phone again. Calls and SMS reach it through the modem's control
+    channel, not through the IPA.
 
     Android's wakeup alarms do not wake it either (kernel alarmtimer patch:
     with its wakeup disabled, alarm timers do not arm the RTC). Unplugged,
     its push service retried every 5 s, an alarm Doze does not hold back;
     they fire at the next wakeup. Alarm clocks still ring: suspend() sets
     the RTC for them itself."""
-    for link in glob.glob("/sys/class/net/dlh*"):
+    for link in glob.glob("/sys/class/net/dlh*") if cable else ():
         run(["ip", "link", "set", os.path.basename(link), "up" if up else "down"])
     for path in (IPA_WAKEUP, *glob.glob(ALARM_WAKEUP)):
         try:
@@ -366,6 +372,37 @@ def android_net(up):
                 f.write("enabled" if up else "disabled")
         except OSError as err:
             log(f"cannot change wakeup {path}: {err}")
+
+
+def wifi_keep_armed():
+    """Arm wake-on-WLAN so Wi-Fi stays associated through the sleep.
+
+    NetworkManager keeps a device up across suspend only when it has
+    wake-on-WLAN set; nx809j-wowlan (systemd-sleep hook) disarms it after
+    the wakeup, before NetworkManager hears of it, or NetworkManager would
+    take the link down and reconnect. The chip and its PCIe root port need
+    their wakeup enabled: the PCIe controller only holds the link through
+    sleep for an endpoint armed to wake the phone. True when armed."""
+    if not run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
+        return False
+    try:
+        phy = os.path.basename(os.path.realpath("/sys/class/net/wlan0/phy80211"))
+        mac = open("/sys/class/net/wlan0/address").read().strip()
+        dev = os.path.realpath("/sys/class/net/wlan0/device")
+        for d in (dev, os.path.dirname(dev)):
+            with open(os.path.join(d, "power/wakeup"), "w") as f:
+                f.write("enabled")
+    except OSError as err:
+        log(f"cannot arm wake-on-WLAN: {err}")
+        return False
+    # Unicast frames to the phone wake it (as Android: pushes); the chip
+    # answers ARP and neighbour solicitations itself
+    armed = subprocess.run(["iw", "phy", phy, "wowlan", "enable", "disconnect",
+                            "magic-packet", "patterns", mac],
+                           capture_output=True, text=True)
+    if armed.returncode != 0:
+        log(f"cannot arm wake-on-WLAN: {armed.stderr.strip()}")
+    return armed.returncode == 0
 
 
 def android_push_off():
@@ -423,8 +460,15 @@ def suspend(now_wall, wake):
     except OSError as err:
         log(f"cannot set the wakeup timer: {err}")
         return "no wakeup timer"
-    log(f"sleeping, wakeup in {int(wake - now_wall)} s")
-    unplugged = android_push_off()
+    if wifi_keep_armed():
+        # Wi-Fi stays up: Android keeps its connections and gets its pushes
+        # in sleep. Only mobile data and its alarms stop waking the phone.
+        log(f"sleeping with Wi-Fi kept, wakeup in {int(wake - now_wall)} s")
+        android_net(False, cable=False)
+        unplugged = True
+    else:
+        log(f"sleeping, wakeup in {int(wake - now_wall)} s")
+        unplugged = android_push_off()
     # Root may suspend through block inhibitors: why_awake checked them
     if subprocess.run(["systemctl", "suspend"]).returncode != 0:
         if unplugged:
