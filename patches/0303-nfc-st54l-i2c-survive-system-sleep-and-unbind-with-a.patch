@@ -1,0 +1,335 @@
+From 9fd33d1f6a906c59dc816c060bd31cd3c7cacf20 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 17:06:54 +0100
+Subject: [PATCH] nfc: st54l-i2c: survive system sleep and unbind with an open
+ device
+
+Three ways the driver took the phone down or flooded the log:
+
+- Its threaded interrupt could run while the I2C controller was still
+  suspended: the transfer failed with -EACCES and left the GPI DMA in an
+  error state. Keep the interrupt off from this device's suspend to its
+  resume, which come after and before the controller's.
+- The interrupt is level-triggered and stays asserted while the
+  controller has a packet, so a read that keeps failing ran the handler
+  forever. After 10 failures in a row turn the interrupt off until the
+  next power on.
+- An unbind while Android's NFC HAL held /dev/nfc-nci open freed the
+  state under it: its next write dereferenced the gone I2C client and its
+  read hung the next suspend's freezer. The state is now reference
+  counted and freed with its last user; remove() stops the interrupt,
+  powers the controller off and marks it dead, after which read and
+  write return -ENODEV and poll reports it readable with HUP and ERR.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/nfc/st54l-i2c.c | 158 +++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 140 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/nfc/st54l-i2c.c b/drivers/nfc/st54l-i2c.c
+index 0b6f00c9e4fa..b04212bf4eba 100644
+--- a/drivers/nfc/st54l-i2c.c
++++ b/drivers/nfc/st54l-i2c.c
+@@ -28,6 +28,7 @@
+ #include <linux/gpio/consumer.h>
+ #include <linux/i2c.h>
+ #include <linux/interrupt.h>
++#include <linux/kref.h>
+ #include <linux/miscdevice.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+@@ -65,6 +66,13 @@ static const u8 st54l_core_init_v2[] = { 0x00, 0x00 };
+ /* Packets /dev/nfc-nci holds for a reader that is behind */
+ #define ST54L_RAW_QUEUE		64
+ 
++/*
++ * Failed reads in a row before the interrupt is given up on: the line is
++ * level-triggered and stays asserted while the controller has a packet, so a
++ * dead bus would otherwise run the handler forever.
++ */
++#define ST54L_MAX_FAILURES	10
++
+ /* Firmware debug traces, sent while it polls when traces are on */
+ #define ST54L_PROP_DEBUG_NTF	0x02
+ 
+@@ -80,6 +88,13 @@ enum st54l_owner {
+ };
+ 
+ struct st54l {
++	/*
++	 * An open /dev/nfc-nci outlives an unbind: the state is freed with
++	 * its last user, and "dead" turns the file's calls into -ENODEV.
++	 */
++	struct kref ref;
++	bool dead;
++
+ 	struct i2c_client *client;
+ 	struct nci_dev *ndev;
+ 	struct gpio_desc *reset;
+@@ -95,12 +110,31 @@ struct st54l {
+ 	struct completion reset_ntf;
+ 	u8 mode;
+ 
++	/* Reads that failed in a row; the interrupt is off after too many */
++	unsigned int failures;
++	bool irq_off;
++
+ 	/* /dev/nfc-nci: packets for its reader */
+ 	struct miscdevice misc;
+ 	struct sk_buff_head raw_rx;
+ 	wait_queue_head_t raw_wait;
+ };
+ 
++static void st54l_free(struct kref *ref)
++{
++	struct st54l *st = container_of(ref, struct st54l, ref);
++
++	skb_queue_purge(&st->raw_rx);
++	kfree(st);
++}
++
++static void st54l_put(void *data)
++{
++	struct st54l *st = data;
++
++	kref_put(&st->ref, st54l_free);
++}
++
+ static int st54l_recv(struct st54l *st, u8 *buf, int len)
+ {
+ 	int ret = -EIO;
+@@ -168,8 +202,16 @@ static irqreturn_t st54l_irq(int irq, void *data)
+ 	u8 mt, gid, oid;
+ 
+ 	skb = st54l_read_packet(st);
+-	if (!skb)
++	if (!skb) {
++		if (++st->failures >= ST54L_MAX_FAILURES && !st->irq_off) {
++			st->irq_off = true;
++			disable_irq_nosync(irq);
++			dev_err(&st->client->dev,
++				"reads keep failing, interrupt off until next power on\n");
++		}
+ 		return IRQ_HANDLED;
++	}
++	st->failures = 0;
+ 
+ 	mt = nci_mt(skb->data);
+ 	gid = nci_opcode_gid(nci_opcode(skb->data));
+@@ -222,6 +264,12 @@ static int st54l_power_on(struct st54l *st)
+ 	if (ret)
+ 		return ret;
+ 
++	st->failures = 0;
++	if (st->irq_off) {
++		st->irq_off = false;
++		enable_irq(st->client->irq);
++	}
++
+ 	reinit_completion(&st->reset_ntf);
+ 	gpiod_set_value_cansleep(st->reset, 1);
+ 	usleep_range(5000, 6000);
+@@ -241,6 +289,8 @@ static int st54l_take(struct st54l *st, enum st54l_owner owner)
+ {
+ 	guard(mutex)(&st->lock);
+ 
++	if (st->dead)
++		return -ENODEV;
+ 	if (st->owner != ST54L_FREE)
+ 		return -EBUSY;
+ 	st->owner = owner;
+@@ -376,46 +426,68 @@ static int st54l_raw_nfc_mode(struct st54l *st)
+ 	return st->mode == ST54L_MODE_NFC ? 0 : -EIO;
+ }
+ 
+-static int st54l_raw_open(struct inode *inode, struct file *file)
++/* Under st->lock, so that an unbind waits for it */
++static int st54l_raw_start(struct st54l *st)
+ {
+-	struct st54l *st = container_of(file->private_data, struct st54l, misc);
+ 	int ret;
+ 
+-	ret = st54l_take(st, ST54L_RAW);
+-	if (ret)
+-		return ret;
++	if (st->dead)
++		return -ENODEV;
++	if (st->owner != ST54L_FREE)
++		return -EBUSY;
++	st->owner = ST54L_RAW;
+ 
+ 	ret = st54l_power_on(st);
+ 	if (ret)
+-		goto err_release;
++		goto err_free;
+ 
+ 	if (st->mode != ST54L_MODE_NFC) {
+ 		ret = st54l_raw_nfc_mode(st);
+ 		if (ret) {
+ 			dev_err(&st->client->dev, "NFC mode not on: %d\n", ret);
+ 			st54l_power_off(st);
+-			goto err_release;
++			goto err_free;
+ 		}
+ 	}
+ 
+ 	skb_queue_purge(&st->raw_rx);
+ 	st->running = true;
+-	file->private_data = st;
+ 
+ 	return 0;
+ 
+-err_release:
+-	st54l_release(st);
++err_free:
++	st->owner = ST54L_FREE;
+ 	return ret;
+ }
+ 
++static int st54l_raw_open(struct inode *inode, struct file *file)
++{
++	struct st54l *st = container_of(file->private_data, struct st54l, misc);
++	int ret;
++
++	scoped_guard(mutex, &st->lock)
++		ret = st54l_raw_start(st);
++	if (ret)
++		return ret;
++
++	kref_get(&st->ref);
++	file->private_data = st;
++
++	return 0;
++}
++
+ static int st54l_raw_release(struct inode *inode, struct file *file)
+ {
+ 	struct st54l *st = file->private_data;
+ 
+-	st54l_power_off(st);
+-	skb_queue_purge(&st->raw_rx);
+-	st54l_release(st);
++	scoped_guard(mutex, &st->lock) {
++		/* After an unbind the controller is already off */
++		if (!st->dead)
++			st54l_power_off(st);
++		skb_queue_purge(&st->raw_rx);
++		st->owner = ST54L_FREE;
++	}
++	kref_put(&st->ref, st54l_free);
+ 
+ 	return 0;
+ }
+@@ -431,10 +503,13 @@ static ssize_t st54l_raw_read(struct file *file, char __user *buf, size_t count,
+ 		skb = skb_dequeue(&st->raw_rx);
+ 		if (skb)
+ 			break;
++		if (READ_ONCE(st->dead))
++			return -ENODEV;
+ 		if (file->f_flags & O_NONBLOCK)
+ 			return -EAGAIN;
+ 		ret = wait_event_interruptible(st->raw_wait,
+-					       !skb_queue_empty(&st->raw_rx));
++					       !skb_queue_empty(&st->raw_rx) ||
++					       READ_ONCE(st->dead));
+ 		if (ret)
+ 			return ret;
+ 	}
+@@ -464,7 +539,11 @@ static ssize_t st54l_raw_write(struct file *file, const char __user *buf,
+ 	if (packet[2] != count - NCI_CTRL_HDR_SIZE)
+ 		return -EINVAL;
+ 
+-	ret = st54l_send_buf(st, packet, count);
++	scoped_guard(mutex, &st->lock) {
++		if (st->dead)
++			return -ENODEV;
++		ret = st54l_send_buf(st, packet, count);
++	}
+ 
+ 	return ret ? ret : count;
+ }
+@@ -477,6 +556,9 @@ static __poll_t st54l_raw_poll(struct file *file, poll_table *wait)
+ 	poll_wait(file, &st->raw_wait, wait);
+ 	if (!skb_queue_empty(&st->raw_rx))
+ 		mask |= EPOLLIN | EPOLLRDNORM;
++	/* Readable too, so that a reader goes on to read() and its -ENODEV */
++	if (READ_ONCE(st->dead))
++		mask |= EPOLLIN | EPOLLRDNORM | EPOLLHUP | EPOLLERR;
+ 
+ 	return mask;
+ }
+@@ -497,9 +579,14 @@ static int st54l_probe(struct i2c_client *client)
+ 	struct st54l *st;
+ 	int ret;
+ 
+-	st = devm_kzalloc(dev, sizeof(*st), GFP_KERNEL);
++	st = kzalloc(sizeof(*st), GFP_KERNEL);
+ 	if (!st)
+ 		return -ENOMEM;
++	kref_init(&st->ref);
++	/* Dropped after everything below is released, the interrupt first */
++	ret = devm_add_action_or_reset(dev, st54l_put, st);
++	if (ret)
++		return ret;
+ 
+ 	st->client = client;
+ 	init_completion(&st->reset_ntf);
+@@ -559,12 +646,46 @@ static void st54l_remove(struct i2c_client *client)
+ {
+ 	struct st54l *st = i2c_get_clientdata(client);
+ 
++	disable_irq(client->irq);
+ 	misc_deregister(&st->misc);
++
++	/* An open /dev/nfc-nci keeps st, but loses the controller */
++	scoped_guard(mutex, &st->lock) {
++		if (st->owner == ST54L_RAW)
++			st54l_power_off(st);
++		st->dead = true;
++	}
++	wake_up_interruptible(&st->raw_wait);
++
+ 	nci_unregister_device(st->ndev);
+ 	nci_free_device(st->ndev);
+-	skb_queue_purge(&st->raw_rx);
+ }
+ 
++/*
++ * The handler reads over I2C, which cannot work while the bus controller
++ * sleeps: keep it from running between this device's suspend and resume,
++ * which come after and before the controller's.
++ */
++static int st54l_suspend(struct device *dev)
++{
++	struct st54l *st = dev_get_drvdata(dev);
++
++	disable_irq(st->client->irq);
++
++	return 0;
++}
++
++static int st54l_resume(struct device *dev)
++{
++	struct st54l *st = dev_get_drvdata(dev);
++
++	enable_irq(st->client->irq);
++
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(st54l_pm_ops, st54l_suspend, st54l_resume);
++
+ static const struct of_device_id st54l_of_match[] = {
+ 	{ .compatible = "st,st54l-i2c" },
+ 	{ }
+@@ -581,6 +702,7 @@ static struct i2c_driver st54l_driver = {
+ 	.driver = {
+ 		.name = ST54L_DRIVER_NAME,
+ 		.of_match_table = st54l_of_match,
++		.pm = pm_sleep_ptr(&st54l_pm_ops),
+ 	},
+ 	.probe = st54l_probe,
+ 	.remove = st54l_remove,
+-- 
+2.56.1
+
