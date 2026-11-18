@@ -1,0 +1,86 @@
+From aaa5180f80399e3dbe8e630e5baf1db1dfc9e236 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 21:14:52 +0100
+Subject: [PATCH] PCI: qcom: drop the interconnect and OPP votes at the CESTA
+ hand-off
+
+With the Wi-Fi link held through system suspend, the controller kept its
+interconnect votes and its OPP. Their sleep-set share kept DDR out of
+its low-power mode, and the OPP's required performance state on the
+GDSC domain kept CX at NOM for the whole suspend.
+
+Drop both once the link is handed to CESTA, and restore them on resume:
+the max OPP and the interconnect before the clocks come back, and the
+link-speed based votes once the link is up again.
+
+On the NX809J this takes a 120 s CESTA sleep from DDR always awake to
+DDR in its low-power mode for about 99 s, with Wi-Fi still associated
+and wake-on-WLAN intact.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 26 ++++++++++++++++++++++++--
+ 1 file changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index c8bfbb5b9b04..99e0130095ae 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -1678,6 +1678,9 @@ static void qcom_pcie_cesta_dump(struct qcom_pcie *pcie, const char *when)
+ 		 crm_hw_drv_switch_pending(c->crm, c->drv) ? "pending" : "idle");
+ }
+ 
++static void qcom_pcie_icc_opp_update(struct qcom_pcie *pcie);
++static int qcom_pcie_set_max_opp(struct device *dev);
++
+ /* The link sleeps in L1ss under CESTA; CLKREQ# wakes it. */
+ static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
+ {
+@@ -1720,9 +1723,21 @@ static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
+ 		phy_notify_state(port->phy, enter);
+ 
+ 	/*
+-	 * The interconnect votes stay as they are: the endpoint may still DMA
+-	 * while the system sleeps. Moving them to the CRM is the next step.
++	 * Drop the interconnect and OPP votes too, as for the ADSP: kept, the
++	 * sleep-set bandwidth holds DDR and CX up for the whole suspend.
++	 * Android moves the bandwidth to the CRM (BW_PT) for the endpoint's
++	 * DMA while the link is up; that is not done here yet.
+ 	 */
++	icc_disable(pcie->icc_mem);
++	icc_disable(pcie->icc_cpu);
++	if (pcie->use_pm_opp) {
++		/* Drop the performance vote, or CX stays at NOM in sleep */
++		ret = dev_pm_opp_set_opp(pcie->pci->dev, NULL);
++		if (ret)
++			dev_warn(dev, "CESTA: failed to drop the OPP vote: %d\n", ret);
++		ret = 0;
++	}
++
+ 	pcie->drv_active = true;
+ 
+ 	return 0;
+@@ -1740,6 +1755,11 @@ static int qcom_pcie_cesta_resume(struct qcom_pcie *pcie)
+ 
+ 	pcie->drv_active = false;
+ 
++	if (pcie->use_pm_opp)
++		qcom_pcie_set_max_opp(dev);
++	icc_enable(pcie->icc_cpu);
++	icc_enable(pcie->icc_mem);
++
+ 	/* genpd has the core GDSC back; take the clocks back before PARF. */
+ 	ret = clk_bulk_prepare_enable(res->num_clks, res->clks);
+ 	if (ret) {
+@@ -1780,6 +1800,8 @@ static int qcom_pcie_cesta_resume(struct qcom_pcie *pcie)
+ 		return ret ?: -ETIMEDOUT;
+ 	}
+ 
++	qcom_pcie_icc_opp_update(pcie);
++
+ 	return ret;
+ }
+ 
+-- 
+2.56.1
+
