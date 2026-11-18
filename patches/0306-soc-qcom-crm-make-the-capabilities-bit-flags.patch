@@ -1,0 +1,35 @@
+From f596487b76adc0e1301f83ee80727b96e14b073c Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 11:29:34 +0100
+Subject: [PATCH 306/307] soc: qcom: crm: make the capabilities bit flags
+
+The capabilities are tested as bit masks, BIT(vcd type) in the probe and
+vote paths and the capability itself in get_crm_drv(), but were plain
+enum values 0, 1 and 2: PERF_OL votes were never accepted (& 0) and a
+descriptor or-ing all three (3) left out BW_PT.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/soc/qcom/crm.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/soc/qcom/crm.c b/drivers/soc/qcom/crm.c
+index 9fc4460a65f7..9e783b8f967a 100644
+--- a/drivers/soc/qcom/crm.c
++++ b/drivers/soc/qcom/crm.c
+@@ -247,9 +247,9 @@ enum crm_client {
+  * operations the CRM can perform.
+  */
+ enum crm_capability {
+-	PERF_OL_VOTING_CAPABLE,
+-	BW_VOTING_CAPABLE,
+-	BW_PT_VOTING_CAPABLE,
++	PERF_OL_VOTING_CAPABLE = BIT(PERF_OL_VCD),
++	BW_VOTING_CAPABLE = BIT(BW_VOTE_VCD),
++	BW_PT_VOTING_CAPABLE = BIT(BW_PT_VOTE_VCD),
+ };
+ 
+ /**
+-- 
+2.56.1
+

@@ -1,0 +1,1197 @@
+From f0348566c76848956264decb2fccca12a068485e Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 17:11:31 +0100
+Subject: [PATCH 307/307] PCI: qcom: hold the Wi-Fi link through system suspend
+ with CESTA
+
+On Kaanapali the PCIe0 link to the Wi-Fi chip can be handed to CESTA,
+the hardware that keeps it in L1ss while the system sleeps and wakes it
+for the endpoint, as Android does. Enable that for system suspend with
+wake-on-WLAN armed.
+
+- dts: a CRM node for PCIe (pcie_crm) and, on pcie0, the CRM link, the
+  PCIe state machine and PDC regions, and the vendor state machine
+  program.
+- pcie-qcom: load the state machine and vote D0 through the CRM HW DRV
+  at bring-up. In suspend_noirq, with an endpoint armed for wake, set
+  L1SS_SLEEP, route CLKREQ# through the PDC, vote DRV, then let go of
+  every PCIe clock: from there the CRM sequencer owns the clock tree
+  (core GDSC, pipe mux, rchng clock, TCSR refclk, rails) and stalls if
+  Linux still holds any of it. Resume takes the clocks back, wakes the
+  link and votes D0.
+- phy-qcom-qmp-pcie: PHY_PCIE_CESTA_ENTER/EXIT drop and restore all PHY
+  clocks, the refclk included, and keep the PHY GDSC on the wakeup path.
+- pinctrl-msm: msm_gpio_wakeup_set() for the CLKREQ# wake.
+- crm: HW DRV PERF_OL and power state writes, BW_PT zero votes.
+- gcc-kaanapali: gcc_pcie_0_gdsc is PWRSTS_OFF_ON (as sm8750), so genpd
+  really drops Linux's vote in suspend; with RET_ON the sequencer could
+  not collapse the GDSC and the D0 vote at resume never completed.
+
+Without CONFIG_QCOM_CRM the link takes the plain suspend path as before.
+
+Tested on the RedMagic 11 Pro at Gen2 and Gen3: pm_test=platform, and a
+real s2idle of 108 s woken by a Wi-Fi magic packet; the normal suspend
+path (wake-on-WLAN off) still resumes with the GDSC really off.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../bindings/soc/qcom/qcom,crm.yaml           |  13 +
+ arch/arm64/boot/dts/qcom/kaanapali.dtsi       |  32 +-
+ drivers/clk/qcom/gcc-kaanapali.c              |   7 +-
+ drivers/pci/controller/dwc/pcie-qcom.c        | 334 +++++++++++++++++-
+ drivers/phy/qualcomm/phy-qcom-qmp-pcie.c      |  31 +-
+ drivers/pinctrl/qcom/pinctrl-msm.c            |  49 +++
+ drivers/soc/qcom/crm.c                        | 321 +++++++++++++++++
+ include/linux/phy/phy.h                       |   6 +-
+ include/linux/soc/qcom/irq.h                  |   7 +
+ include/soc/qcom/crm.h                        |  16 +
+ 10 files changed, 799 insertions(+), 17 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/soc/qcom/qcom,crm.yaml b/Documentation/devicetree/bindings/soc/qcom/qcom,crm.yaml
+index a1485db8b747..5914d4550931 100644
+--- a/Documentation/devicetree/bindings/soc/qcom/qcom,crm.yaml
++++ b/Documentation/devicetree/bindings/soc/qcom/qcom,crm.yaml
+@@ -17,6 +17,7 @@ description:
+ properties:
+   compatible:
+     enum:
++      - qcom,kaanapali-pcie-crm
+       - qcom,sm8750-disp-crm
+ 
+   label:
+@@ -26,6 +27,7 @@ properties:
+         items:
+           - enum:
+               - disp_crm
++              - pcie_crm
+ 
+   reg:
+     minItems: 2
+@@ -52,6 +54,17 @@ properties:
+       List of SW DRV IDs used within kernel. May contain holes as some DRVs can
+       be allocated to DSPs / can be spare.
+ 
++  qcom,hw-drv-ids:
++    $ref: /schemas/types.yaml#/definitions/uint32-array
++    minItems: 1
++    maxItems: 8
++    items:
++      minimum: 0
++      maximum: 7
++    description:
++      List of HW DRV IDs the kernel votes for on behalf of a hardware client
++      (such as a PCIe controller), one per power state of that client.
++
+ required:
+   - compatible
+   - label
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali.dtsi b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+index 3df3f6cb9e12..52782d84182e 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali.dtsi
++++ b/arch/arm64/boot/dts/qcom/kaanapali.dtsi
+@@ -2382,13 +2382,31 @@ pcie0: pcie@1c00000 {
+ 			      <0x0 0x40000f20 0x0 0xa8>,
+ 			      <0x0 0x40001000 0x0 0x1000>,
+ 			      <0x0 0x40100000 0x0 0x100000>,
+-			      <0x0 0x01c03000 0x0 0x1000>;
++			      <0x0 0x01c03000 0x0 0x1000>,
++			      <0x0 0x01d07000 0x0 0x7000>,
++			      <0x0 0x0b370000 0x0 0x10000>;
+ 			reg-names = "parf",
+ 				    "dbi",
+ 				    "elbi",
+ 				    "atu",
+ 				    "config",
+-				    "mhi";
++				    "mhi",
++				    "pcie_sm",
++				    "pcie_pdc";
++
++			/* CESTA holds the link through system suspend. */
++			qcom,crm = <&pcie_crm>;
++			qcom,pcie-sm-seq = <0x1c018081 0x70074002 0x50028000 0x28007003
++					    0x80804002 0x70021c01 0x18002802 0x70005000
++					    0x10004000 0x80814002 0x18001c01 0x1c018080
++					    0x1000>;
++			qcom,pcie-sm-branch-seq = <0x04 0x1c 0x24 0x2c 0x00 0x00 0x00>;
++			qcom,pcie-sm-branch-offset = <0x1000>;
++			qcom,pcie-sm-start-offset = <0x1090>;
++			qcom,pcie-clkreq-offset = <0x2c48>;
++			qcom,pcie-clkreq-pin = <103>;
++			qcom,drv-l1ss-timeout-us = <5000>;
++			qcom,aux-clk-freq = <20>;
+ 			#address-cells = <3>;
+ 			#size-cells = <2>;
+ 			ranges = <0x01000000 0x0 0x00000000 0x0 0x40200000 0x0 0x100000>,
+@@ -2554,6 +2572,16 @@ pcie0_phy: phy@1c06000 {
+ 			status = "disabled";
+ 		};
+ 
++		pcie_crm: crm@1d01000 {
++			compatible = "qcom,kaanapali-pcie-crm";
++			label = "pcie_crm";
++			reg = <0x0 0x01d01000 0x0 0x2000>,
++			      <0x0 0x01d05e00 0x0 0x200>;
++			interrupts = <GIC_SPI 641 IRQ_TYPE_EDGE_RISING>;
++			qcom,sw-drv-ids = <0>;
++			qcom,hw-drv-ids = <0>;
++		};
++
+ 		ufs_mem_phy: phy@1d80000 {
+ 			compatible = "qcom,kaanapali-qmp-ufs-phy", "qcom,sm8750-qmp-ufs-phy";
+ 			reg = <0x0 0x01d80000 0x0 0x2000>;
+diff --git a/drivers/clk/qcom/gcc-kaanapali.c b/drivers/clk/qcom/gcc-kaanapali.c
+index dc895424277f..fcd046f76a06 100644
+--- a/drivers/clk/qcom/gcc-kaanapali.c
++++ b/drivers/clk/qcom/gcc-kaanapali.c
+@@ -3142,7 +3142,12 @@ static struct gdsc gcc_pcie_0_gdsc = {
+ 	.pd = {
+ 		.name = "gcc_pcie_0_gdsc",
+ 	},
+-	.pwrsts = PWRSTS_RET_ON,
++	/*
++	 * Really drop the vote on power off: when the link is handed to
++	 * CESTA for system suspend, its sequencer can only collapse the GDSC
++	 * once Linux's vote is gone, and stalls otherwise.
++	 */
++	.pwrsts = PWRSTS_OFF_ON,
+ 	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE | VOTABLE,
+ };
+ 
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index 14c070c7fb71..c8bfbb5b9b04 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -38,6 +38,9 @@
+ #include <linux/types.h>
+ #include <linux/units.h>
+ 
++#include <linux/soc/qcom/irq.h>
++#include <soc/qcom/crm.h>
++
+ #include "../../pci.h"
+ #include "../pci-host-common.h"
+ #include "pcie-designware.h"
+@@ -317,6 +320,30 @@ struct qcom_pcie_port {
+ 	struct list_head perst;
+ };
+ 
++/*
++ * CESTA (Kaanapali): while the system sleeps, the PCIe CRM's HW DRV holds the
++ * link's clocks and power in L1ss and a small state machine in the controller
++ * (pcie_sm) brings them back when the endpoint asserts CLKREQ#. Decoded from
++ * the vendor pci-msm-drv, crm-v2 and pcie-pdc modules.
++ */
++struct qcom_pcie_cesta {
++	struct device *crm;
++	void __iomem *sm;
++	void __iomem *pdc;
++	u32 *sm_seq;
++	int sm_seq_len;
++	u32 *sm_branch;
++	int sm_branch_len;
++	u32 sm_branch_offset;
++	u32 sm_start_offset;
++	u32 drv;		/* HW DRV and PERF_OL VCD: the root complex index */
++	u32 level;		/* PERF_OL level of an active link: Gen + 1 */
++	u32 l1ss_sleep;		/* L1ss sleep timeout in aux clock cycles */
++	u32 clkreq_offset;	/* PARF register that hands CLKREQ# to CESTA */
++	u32 clkreq_pin;		/* TLMM pin of CLKREQ# */
++	bool sm_loaded;
++};
++
+ struct qcom_pcie {
+ 	struct dw_pcie *pci;
+ 	void __iomem *parf;			/* DT parf */
+@@ -332,6 +359,7 @@ struct qcom_pcie {
+ 	bool use_pm_opp;
+ 	struct mutex reset_lock;
+ 	int drv_id;			/* PCIe DRV device id, <0 without */
++	struct qcom_pcie_cesta cesta;	/* .crm NULL without CESTA */
+ 	bool drv_active;
+ 	int wake_irq;
+ 	bool wake_armed;
+@@ -1484,6 +1512,277 @@ static void qcom_pcie_enable_outbound_blocker(struct qcom_pcie *pcie)
+ 	readl(pcie->parf + PARF_SYS_CTRL);
+ }
+ 
++#define PARF_CESTA_L1SS_SLEEP		0x180
++#define PARF_CESTA_L1SS_SLEEP_EN	BIT(31)
++#define PARF_CESTA_CLKREQ_OVERRIDE	0x2b0
++#define PARF_CESTA_CLKREQ_EN		(BIT(0) | BIT(3))
++/* pcie-pdc on Kaanapali: CLKREQ# (GPIO 103) is PDC input 63, config slot 10 */
++#define PCIE_PDC_MAP			0x4800
++#define PCIE_PDC_MAP_CLKREQ		63
++#define PCIE_PDC_CFG			(0x110 + 4 * 10)
++#define PCIE_PDC_CFG_FALLING		0x2
++#define PCIE_PDC_CFG_EN			BIT(3)
++
++enum qcom_pcie_cesta_state {
++	QCOM_PCIE_CESTA_D3COLD,
++	QCOM_PCIE_CESTA_D0,
++	QCOM_PCIE_CESTA_DRV,
++};
++
++/*
++ * PERF_OL levels: 0 off, 1 L1ss sleep, 2 + n Gen n + 1. Power state 0 of the
++ * HW DRV is the link sleeping in L1ss, power state 1 the link active.
++ */
++static int qcom_pcie_cesta_vote(struct qcom_pcie *pcie,
++				enum qcom_pcie_cesta_state state)
++{
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	u32 sleep, active;
++	int ret;
++
++	switch (state) {
++	case QCOM_PCIE_CESTA_D0:
++		sleep = active = c->level;
++		break;
++	case QCOM_PCIE_CESTA_DRV:
++		sleep = 1;
++		active = c->level;
++		break;
++	default:
++		sleep = active = 0;
++		break;
++	}
++
++	ret = crm_write_hw_perf_ol(c->crm, c->drv, 0, c->drv, sleep);
++	if (!ret)
++		ret = crm_write_hw_perf_ol(c->crm, c->drv, 1, c->drv, active);
++	if (!ret)
++		ret = crm_write_hw_pwr_states(c->crm, c->drv);
++	if (ret)
++		dev_err(pcie->pci->dev, "CESTA vote %d failed: %d\n", state, ret);
++
++	return ret;
++}
++
++static void qcom_pcie_cesta_load_sm(struct qcom_pcie *pcie)
++{
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	int i;
++
++	if (c->sm_loaded)
++		return;
++
++	for (i = 0; i < c->sm_seq_len; i++)
++		writel_relaxed(c->sm_seq[i], c->sm + 4 * i);
++	for (i = 0; i < c->sm_branch_len; i++)
++		writel_relaxed(c->sm_branch[i], c->sm + c->sm_branch_offset + 4 * i);
++	writel(readl(c->sm + c->sm_start_offset) | BIT(0), c->sm + c->sm_start_offset);
++
++	c->sm_loaded = true;
++}
++
++static u32 *qcom_pcie_cesta_read_seq(struct device *dev, const char *prop, int *len)
++{
++	u32 *seq;
++	int n;
++
++	n = of_property_count_u32_elems(dev->of_node, prop);
++	if (n <= 0)
++		return ERR_PTR(-EINVAL);
++
++	seq = devm_kcalloc(dev, n, sizeof(*seq), GFP_KERNEL);
++	if (!seq)
++		return ERR_PTR(-ENOMEM);
++
++	if (of_property_read_u32_array(dev->of_node, prop, seq, n))
++		return ERR_PTR(-EINVAL);
++
++	*len = n;
++	return seq;
++}
++
++static int qcom_pcie_cesta_probe(struct qcom_pcie *pcie, struct platform_device *pdev)
++{
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	u32 timeout_us = 5000, aux_mhz = 20;
++	struct device *crm;
++	int speed;
++
++	/* Without the CRM driver the link takes the plain suspend path. */
++	if (!IS_ENABLED(CONFIG_QCOM_CRM) || !of_property_present(np, "qcom,crm"))
++		return 0;
++
++	crm = crm_get(dev);
++	if (IS_ERR_OR_NULL(crm))
++		return dev_err_probe(dev, -EPROBE_DEFER, "CESTA CRM not ready\n");
++
++	c->sm = devm_platform_ioremap_resource_byname(pdev, "pcie_sm");
++	if (IS_ERR(c->sm))
++		return PTR_ERR(c->sm);
++	c->pdc = devm_platform_ioremap_resource_byname(pdev, "pcie_pdc");
++	if (IS_ERR(c->pdc))
++		return PTR_ERR(c->pdc);
++
++	c->sm_seq = qcom_pcie_cesta_read_seq(dev, "qcom,pcie-sm-seq", &c->sm_seq_len);
++	if (IS_ERR(c->sm_seq))
++		return PTR_ERR(c->sm_seq);
++	c->sm_branch = qcom_pcie_cesta_read_seq(dev, "qcom,pcie-sm-branch-seq",
++						&c->sm_branch_len);
++	if (IS_ERR(c->sm_branch))
++		return PTR_ERR(c->sm_branch);
++
++	if (of_property_read_u32(np, "qcom,pcie-sm-branch-offset", &c->sm_branch_offset) ||
++	    of_property_read_u32(np, "qcom,pcie-sm-start-offset", &c->sm_start_offset) ||
++	    of_property_read_u32(np, "qcom,pcie-clkreq-offset", &c->clkreq_offset) ||
++	    of_property_read_u32(np, "qcom,pcie-clkreq-pin", &c->clkreq_pin))
++		return dev_err_probe(dev, -EINVAL, "incomplete CESTA properties\n");
++
++	of_property_read_u32(np, "qcom,drv-l1ss-timeout-us", &timeout_us);
++	of_property_read_u32(np, "qcom,aux-clk-freq", &aux_mhz);
++	c->l1ss_sleep = timeout_us * aux_mhz;
++
++	speed = of_pci_get_max_link_speed(np);
++	c->level = (speed > 0 ? speed : 3) + 1;
++	c->drv = 0;
++	c->crm = crm;
++
++	dev_info(dev, "CESTA: HW DRV %u, active level %u\n", c->drv, c->level);
++
++	return 0;
++}
++
++/* Debug: the vendor's pcie-sm-debug registers plus the PARF CESTA ones. */
++static void qcom_pcie_cesta_dump(struct qcom_pcie *pcie, const char *when)
++{
++	static const u16 regs[] = { 0x1040, 0x1048, 0x1050, 0x1058, 0x1060,
++				    0x1068, 0x1070, 0x1078, 0x1080, 0x1088,
++				    0x1090, 0x1094, 0x1098, 0x109c };
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	struct device *dev = pcie->pci->dev;
++	u32 v[ARRAY_SIZE(regs)];
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(regs); i++)
++		v[i] = readl(c->sm + regs[i]);
++	dev_info(dev, "CESTA %s: sm 1040..1078: %x %x %x %x %x %x %x %x\n", when,
++		 v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
++	dev_info(dev, "CESTA %s: sm 1080 %x 1088 %x 1090..109c %x %x %x %x\n", when,
++		 v[8], v[9], v[10], v[11], v[12], v[13]);
++	dev_info(dev, "CESTA %s: PARF 180 %x 2b0 %x clkreq %x ltssm %x, switch %s\n",
++		 when, readl(pcie->parf + PARF_CESTA_L1SS_SLEEP),
++		 readl(pcie->parf + PARF_CESTA_CLKREQ_OVERRIDE),
++		 readl(pcie->parf + c->clkreq_offset),
++		 readl(pcie->parf + PARF_LTSSM),
++		 crm_hw_drv_switch_pending(c->crm, c->drv) ? "pending" : "idle");
++}
++
++/* The link sleeps in L1ss under CESTA; CLKREQ# wakes it. */
++static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
++{
++	union phy_notify enter = { .pcie_state = PHY_PCIE_CESTA_ENTER };
++	struct qcom_pcie_resources_2_7_0 *res = &pcie->res.v2_7_0;
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	struct device *dev = pcie->pci->dev;
++	struct qcom_pcie_port *port;
++	int ret;
++
++	writel(PARF_CESTA_L1SS_SLEEP_EN, pcie->parf + PARF_CESTA_L1SS_SLEEP);
++	writel(PARF_CESTA_L1SS_SLEEP_EN | c->l1ss_sleep,
++	       pcie->parf + PARF_CESTA_L1SS_SLEEP);
++
++	ret = msm_gpio_wakeup_set(c->clkreq_pin, true);
++	if (ret)
++		dev_warn(dev, "CLKREQ# wakeup not routed: %d\n", ret);
++	writel(PCIE_PDC_MAP_CLKREQ, c->pdc + PCIE_PDC_MAP);
++	writel(PCIE_PDC_CFG_FALLING | PCIE_PDC_CFG_EN, c->pdc + PCIE_PDC_CFG);
++
++	ret = qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_DRV);
++	if (ret) {
++		writel(0, c->pdc + PCIE_PDC_MAP);
++		writel(PCIE_PDC_CFG_FALLING, c->pdc + PCIE_PDC_CFG);
++		msm_gpio_wakeup_set(c->clkreq_pin, false);
++		writel(0, pcie->parf + PARF_CESTA_L1SS_SLEEP);
++		return ret;
++	}
++
++	/*
++	 * From here the CRM sequencer owns the PCIe clock tree (core GDSC,
++	 * pipe mux, rchng clock, TCSR refclk, rails) and keeps it up for as
++	 * long as it holds the link at an active level. Linux lets go of all
++	 * of it now; genpd drops Linux's core GDSC vote right after this
++	 * callback. Anything Linux keeps holding stalls the sequencer on its
++	 * way down, and a wake arriving then never completes.
++	 */
++	clk_bulk_disable_unprepare(res->num_clks, res->clks);
++	list_for_each_entry(port, &pcie->ports, list)
++		phy_notify_state(port->phy, enter);
++
++	/*
++	 * The interconnect votes stay as they are: the endpoint may still DMA
++	 * while the system sleeps. Moving them to the CRM is the next step.
++	 */
++	pcie->drv_active = true;
++
++	return 0;
++}
++
++static int qcom_pcie_cesta_resume(struct qcom_pcie *pcie)
++{
++	union phy_notify exit = { .pcie_state = PHY_PCIE_CESTA_EXIT };
++	struct qcom_pcie_resources_2_7_0 *res = &pcie->res.v2_7_0;
++	struct qcom_pcie_cesta *c = &pcie->cesta;
++	struct device *dev = pcie->pci->dev;
++	struct qcom_pcie_port *port;
++	int ret;
++	u32 val;
++
++	pcie->drv_active = false;
++
++	/* genpd has the core GDSC back; take the clocks back before PARF. */
++	ret = clk_bulk_prepare_enable(res->num_clks, res->clks);
++	if (ret) {
++		dev_err(dev, "CESTA: cannot enable clocks: %d\n", ret);
++		return ret;
++	}
++	list_for_each_entry(port, &pcie->ports, list) {
++		ret = phy_notify_state(port->phy, exit);
++		if (ret)
++			dev_err(dev, "CESTA: PHY did not leave DRV: %d\n", ret);
++	}
++
++	/* Debug, while CESTA is new: where the SM is when the system resumes. */
++	qcom_pcie_cesta_dump(pcie, "resume entry");
++
++	/* Wake the link first, then vote D0: the SM finishes its own wake. */
++	writel(readl(pcie->parf + PARF_PM_CTRL) | REQ_NOT_ENTR_L1,
++	       pcie->parf + PARF_PM_CTRL);
++	if (readl_poll_timeout_atomic(pcie->parf + PARF_LTSSM, val,
++				      FIELD_GET(PARF_LTSSM_STATE_MASK, val) == DW_PCIE_LTSSM_L0,
++				      100, 20000))
++		dev_err(dev, "CESTA: link did not leave L1, LTSSM %#x\n", val);
++	ret = qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_D0);
++	writel(readl(pcie->parf + PARF_PM_CTRL) & ~REQ_NOT_ENTR_L1,
++	       pcie->parf + PARF_PM_CTRL);
++	if (ret)
++		qcom_pcie_cesta_dump(pcie, "D0 vote did not complete");
++
++	writel(0, pcie->parf + PARF_CESTA_L1SS_SLEEP);
++	msm_gpio_wakeup_set(c->clkreq_pin, false);
++	writel(0, c->pdc + PCIE_PDC_MAP);
++	writel(PCIE_PDC_CFG_FALLING, c->pdc + PCIE_PDC_CFG);
++
++	/* The endpoint's driver touches the link right after this. */
++	if (readl_poll_timeout(pcie->parf + PARF_LTSSM, val,
++			       qcom_pcie_link_up(pcie->pci), 1000, 100000)) {
++		dev_err(dev, "CESTA: link down after sleep: LTSSM %#x\n", val);
++		return ret ?: -ETIMEDOUT;
++	}
++
++	return ret;
++}
++
+ static int qcom_pcie_host_init(struct dw_pcie_rp *pp)
+ {
+ 	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
+@@ -1496,10 +1795,21 @@ static int qcom_pcie_host_init(struct dw_pcie_rp *pp)
+ 	if (ret)
+ 		return ret;
+ 
++	if (pcie->cesta.crm) {
++		qcom_pcie_cesta_load_sm(pcie);
++		qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_D0);
++	}
++
+ 	ret = qcom_pcie_phy_power_on(pcie);
+ 	if (ret)
+ 		goto err_deinit;
+ 
++	if (pcie->cesta.crm) {
++		writel(readl(pcie->parf + pcie->cesta.clkreq_offset) | PARF_CESTA_CLKREQ_EN,
++		       pcie->parf + pcie->cesta.clkreq_offset);
++		qcom_pcie_cesta_dump(pcie, "boot");
++	}
++
+ 	if (!pci->suspended) {
+ 		ret = pci_pwrctrl_create_devices(pci->dev);
+ 		if (ret)
+@@ -1569,6 +1879,9 @@ static void qcom_pcie_host_deinit(struct dw_pcie_rp *pp)
+ 
+ 	qcom_pcie_phy_power_off(pcie);
+ 	pcie->cfg->ops->deinit(pcie);
++
++	if (pcie->cesta.crm)
++		qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_D3COLD);
+ }
+ 
+ static void qcom_pcie_host_post_init(struct dw_pcie_rp *pp)
+@@ -2430,6 +2743,10 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	if (of_property_read_bool(dev->of_node, "qcom,drv-supported"))
+ 		pcie->drv_id = of_get_pci_domain_nr(dev->of_node);
+ 
++	ret = qcom_pcie_cesta_probe(pcie, pdev);
++	if (ret)
++		goto err_phy_exit;
++
+ 	/* WAKE# wakes the system while the ADSP holds the link (PCIe DRV). */
+ 	wake = devm_gpiod_get_optional(dev, "wake", GPIOD_IN);
+ 	if (!IS_ERR_OR_NULL(wake)) {
+@@ -2441,7 +2758,7 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	ret = dw_pcie_host_init(pp);
+-	if (!ret && pcie->drv_id >= 0)
++	if (!ret && (pcie->drv_id >= 0 || pcie->cesta.crm))
+ 		pp->bridge->suspend_keeps_link = 1;
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "cannot initialize host\n");
+@@ -2645,8 +2962,13 @@ static int qcom_pcie_wake_armed_one(struct pci_dev *pdev, void *data)
+ {
+ 	bool *armed = data;
+ 
++	/*
++	 * Only an endpoint left in D0 keeps its link: one its driver let the
++	 * PCI core put into D3hot (wake-on-WLAN refused, say) would come back
++	 * across a dead link.
++	 */
+ 	if (!pci_is_bridge(pdev) && pdev->dev.driver &&
+-	    device_may_wakeup(&pdev->dev)) {
++	    device_may_wakeup(&pdev->dev) && pdev->current_state == PCI_D0) {
+ 		*armed = true;
+ 		return 1;
+ 	}
+@@ -2674,11 +2996,14 @@ static int qcom_pcie_drv_suspend(struct qcom_pcie *pcie)
+ 	struct qcom_pcie_port *port;
+ 	int ret;
+ 
+-	if (pcie->drv_id < 0 ||
++	if ((pcie->drv_id < 0 && !pcie->cesta.crm) ||
+ 	    pcie->cfg->ops->get_resources != qcom_pcie_get_resources_2_7_0 ||
+ 	    !dw_pcie_link_up(pci) || !qcom_pcie_wake_armed(pcie))
+ 		return -EOPNOTSUPP;
+ 
++	if (pcie->cesta.crm)
++		return qcom_pcie_cesta_suspend(pcie);
++
+ 	ret = qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_ENABLE);
+ 	if (ret)
+ 		return ret;
+@@ -2709,6 +3034,9 @@ static int qcom_pcie_drv_resume(struct qcom_pcie *pcie)
+ 	struct qcom_pcie_port *port;
+ 	int ret;
+ 
++	if (pcie->cesta.crm)
++		return qcom_pcie_cesta_resume(pcie);
++
+ 	pcie->drv_active = false;
+ 
+ 	ret = qcom_pcie_drv_send(pcie, QCOM_PCIE_DRV_CMD_DISABLE_L1SS_SLEEP);
+diff --git a/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c b/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
+index ac72dde8e5fb..961bcb876b3d 100644
+--- a/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
++++ b/drivers/phy/qualcomm/phy-qcom-qmp-pcie.c
+@@ -5956,29 +5956,35 @@ static int qmp_pcie_set_mode(struct phy *phy, enum phy_mode mode, int submode)
+ }
+ 
+ /*
+- * The ref clock stays on: it only opens the refclk gate, and the processor
+- * holding the link needs it.
++ * For the ADSP DRV the ref clock stays on: it only opens the refclk gate, and
++ * the processor holding the link needs it. Under CESTA the hardware runs the
++ * refclk itself, and a host vote on it stalls CESTA, so it goes too.
+  */
+-static void qmp_pcie_drv_clks_off(struct qmp_pcie *qmp)
++static bool qmp_pcie_drv_clk(struct qmp_pcie *qmp, int i, bool ref)
++{
++	return ref || strcmp(qmp->clks[i].id, "ref");
++}
++
++static void qmp_pcie_drv_clks_off(struct qmp_pcie *qmp, bool ref)
+ {
+ 	int i;
+ 
+ 	for (i = ARRAY_SIZE(qmp_pciephy_clk_l) - 1; i >= 0; i--)
+-		if (strcmp(qmp->clks[i].id, "ref"))
++		if (qmp_pcie_drv_clk(qmp, i, ref))
+ 			clk_disable_unprepare(qmp->clks[i].clk);
+ }
+ 
+-static int qmp_pcie_drv_clks_on(struct qmp_pcie *qmp)
++static int qmp_pcie_drv_clks_on(struct qmp_pcie *qmp, bool ref)
+ {
+ 	int i, ret;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(qmp_pciephy_clk_l); i++) {
+-		if (!strcmp(qmp->clks[i].id, "ref"))
++		if (!qmp_pcie_drv_clk(qmp, i, ref))
+ 			continue;
+ 		ret = clk_prepare_enable(qmp->clks[i].clk);
+ 		if (ret) {
+ 			while (--i >= 0)
+-				if (strcmp(qmp->clks[i].id, "ref"))
++				if (qmp_pcie_drv_clk(qmp, i, ref))
+ 					clk_disable_unprepare(qmp->clks[i].clk);
+ 			return ret;
+ 		}
+@@ -5996,20 +6002,25 @@ static int qmp_pcie_notify_phystate(struct phy *phy, union phy_notify state)
+ {
+ 	struct qmp_pcie *qmp = phy_get_drvdata(phy);
+ 	const struct qmp_phy_cfg *cfg = qmp->cfg;
++	bool ref;
+ 	int ret;
+ 
+ 	switch (state.pcie_state) {
+ 	case PHY_PCIE_DRV_ENTER:
++	case PHY_PCIE_CESTA_ENTER:
++		ref = state.pcie_state == PHY_PCIE_CESTA_ENTER;
+ 		clk_bulk_disable_unprepare(qmp->num_pipe_clks, qmp->pipe_clks);
+-		qmp_pcie_drv_clks_off(qmp);
++		qmp_pcie_drv_clks_off(qmp, ref);
+ 		regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
+ 		device_set_wakeup_path(qmp->dev);
+ 		return 0;
+ 	case PHY_PCIE_DRV_EXIT:
++	case PHY_PCIE_CESTA_EXIT:
++		ref = state.pcie_state == PHY_PCIE_CESTA_EXIT;
+ 		ret = regulator_bulk_enable(cfg->num_vregs, qmp->vregs);
+ 		if (ret)
+ 			return ret;
+-		ret = qmp_pcie_drv_clks_on(qmp);
++		ret = qmp_pcie_drv_clks_on(qmp, ref);
+ 		if (ret)
+ 			goto err_disable_regulators;
+ 		ret = clk_bulk_prepare_enable(qmp->num_pipe_clks, qmp->pipe_clks);
+@@ -6021,7 +6032,7 @@ static int qmp_pcie_notify_phystate(struct phy *phy, union phy_notify state)
+ 	return -EOPNOTSUPP;
+ 
+ err_disable_clks:
+-	qmp_pcie_drv_clks_off(qmp);
++	qmp_pcie_drv_clks_off(qmp, ref);
+ err_disable_regulators:
+ 	regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
+ 	return ret;
+diff --git a/drivers/pinctrl/qcom/pinctrl-msm.c b/drivers/pinctrl/qcom/pinctrl-msm.c
+index 27f06bbc113c..c9d2e0cdb35d 100644
+--- a/drivers/pinctrl/qcom/pinctrl-msm.c
++++ b/drivers/pinctrl/qcom/pinctrl-msm.c
+@@ -1216,6 +1216,54 @@ static int msm_gpio_irq_set_wake(struct irq_data *d, unsigned int on)
+ 	return irq_set_irq_wake(pctrl->irq, on);
+ }
+ 
++static struct msm_pinctrl *msm_wakeup_pctrl;
++
++/**
++ * msm_gpio_wakeup_set() - Route a pin's events to the wakeup controller
++ * @gpio: GPIO number on the (first) TLMM
++ * @enable: Route or stop routing
++ *
++ * For a pin that keeps a function other than GPIO but whose level a wakeup
++ * controller (PDC) must still see while the system sleeps, such as the PCIe
++ * CLKREQ# pin whose assertion brings a sleeping link back. Requesting the pin
++ * as an interrupt would mux it to GPIO, so only the wakeup_enable bit is set.
++ *
++ * Return: 0 on success, -ENODEV before the TLMM probes, -EINVAL for a bad pin,
++ * -EOPNOTSUPP when the pin has no wakeup_enable bit.
++ */
++int msm_gpio_wakeup_set(unsigned int gpio, bool enable)
++{
++	struct msm_pinctrl *pctrl = READ_ONCE(msm_wakeup_pctrl);
++	const struct msm_pingroup *g;
++	unsigned long flags;
++	u32 intr_cfg;
++
++	if (!pctrl)
++		return -ENODEV;
++	if (gpio >= pctrl->chip.ngpio)
++		return -EINVAL;
++
++	g = &pctrl->soc->groups[gpio];
++	if (!g->intr_wakeup_present_bit)
++		return -EOPNOTSUPP;
++
++	raw_spin_lock_irqsave(&pctrl->lock, flags);
++	intr_cfg = msm_readl_intr_cfg(pctrl, g);
++	if (!(intr_cfg & BIT(g->intr_wakeup_present_bit))) {
++		raw_spin_unlock_irqrestore(&pctrl->lock, flags);
++		return -EOPNOTSUPP;
++	}
++	if (enable)
++		intr_cfg |= BIT(g->intr_wakeup_enable_bit);
++	else
++		intr_cfg &= ~BIT(g->intr_wakeup_enable_bit);
++	msm_writel_intr_cfg(intr_cfg, pctrl, g);
++	raw_spin_unlock_irqrestore(&pctrl->lock, flags);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(msm_gpio_wakeup_set);
++
+ static int msm_gpio_irq_reqres(struct irq_data *d)
+ {
+ 	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
+@@ -1664,6 +1712,7 @@ int msm_pinctrl_probe(struct platform_device *pdev,
+ 		return ret;
+ 
+ 	platform_set_drvdata(pdev, pctrl);
++	cmpxchg(&msm_wakeup_pctrl, NULL, pctrl);
+ 
+ 	dev_dbg(&pdev->dev, "Probed Qualcomm pinctrl driver\n");
+ 
+diff --git a/drivers/soc/qcom/crm.c b/drivers/soc/qcom/crm.c
+index 9e783b8f967a..2a22940ffc84 100644
+--- a/drivers/soc/qcom/crm.c
++++ b/drivers/soc/qcom/crm.c
+@@ -24,6 +24,7 @@
+ #define CREATE_TRACE_POINTS
+ #include "trace-crm.h"
+ 
++
+ #undef field_get
+ #define field_get(_mask, _reg) (((_reg) & (_mask)) >> (ffs(_mask) - 1))
+ 
+@@ -47,6 +48,8 @@
+ /* SW DRV has ACTIVE, SLEEP and WAKE PWR STATES */
+ 
+ #define MAX_SW_DRV_PWR_STATES		3
++#define MAX_HW_DRV_PWR_STATES		5
++#define HW_DRV_SWITCH_TIMEOUT_US	10000
+ /* Time out for ACTIVE Only PWR STATE completion IRQ */
+ #define CRM_TIMEOUT_MS			msecs_to_jiffies(10000)
+ 
+@@ -263,12 +266,54 @@ enum crm_capability {
+  * @sw_drv_bw_vote_vcd_regs:	BW_VOTE voting registers
+  * @sw_drv_bw_pt_vote_vcd_regs: BW_PT_VOTE voting registers
+  */
++/*
++ * HW DRV registers. A HW DRV (a hardware client such as the PCIe controller)
++ * votes per power state of its client, and its votes are double buffered: the
++ * CPU fills the idle channel and then switches the DRV over to it.
++ */
++enum crm_hw_ctrl {
++	HW_CHN_STATUS,
++	HW_CHN_SWITCH,
++	HW_CTRL_DISTANCE,
++	HW_CTRL_REG_MAX,
++};
++
++enum crm_hw_client {
++	HW_DRV_BASE,
++	HW_DRV_DISTANCE,
++	HW_DRV_RESOURCE_DISTANCE,
++	HW_PWR_ST0,
++	HW_PWR_ST4 = HW_PWR_ST0 + MAX_HW_DRV_PWR_STATES - 1,
++	HW_CHANNEL_DISTANCE,
++	HW_CLIENT_REG_MAX,
++};
++
+ struct crm_desc {
+ 	u32 crm_capability;
+ 	u32 *cfg_regs;
+ 	u32 sw_drv_perf_ol_vcd_regs[CRM_CLIENT_REG_MAX];
+ 	u32 sw_drv_bw_vote_vcd_regs[CRM_CLIENT_REG_MAX];
+ 	u32 sw_drv_bw_pt_vote_vcd_regs[CRM_CLIENT_REG_MAX];
++	u32 hw_drv_ctrl_regs[HW_CTRL_REG_MAX];
++	u32 hw_drv_perf_ol_vcd_regs[HW_CLIENT_REG_MAX];
++	u32 hw_drv_bw_pt_vote_vcd_regs[HW_CLIENT_REG_MAX];
++};
++
++/**
++ * struct crm_hw_drv: a HW DRV and the votes the CPU keeps for it
++ *
++ * @drv_id:	HW DRV number
++ * @lock:	Serialises cache updates and channel switches
++ * @perf_ol:	PERF_OL votes, [resource][power state]
++ * @num_perf_ol: Number of PERF_OL resources
++ * @num_bw_pt:	Number of BW_PT nodes (always voted 0: bandwidth stays on RPMh)
++ */
++struct crm_hw_drv {
++	u32 drv_id;
++	spinlock_t lock;
++	u32 (*perf_ol)[MAX_HW_DRV_PWR_STATES];
++	u32 num_perf_ol;
++	u32 num_bw_pt;
+ };
+ 
+ /**
+@@ -354,6 +399,8 @@ struct crm_drv_top {
+ 	void __iomem *base;
+ 	struct crm_drv *sw_drvs;
+ 	int num_sw_drvs;
++	struct crm_hw_drv *hw_drvs;
++	int num_hw_drvs;
+ 	int max_sw_drv;
+ 	struct list_head list;
+ 	const struct crm_desc *desc;
+@@ -702,6 +749,191 @@ struct device *crm_get(const struct device *dev)
+ }
+ EXPORT_SYMBOL_GPL(crm_get);
+ 
++static struct crm_hw_drv *crm_find_hw_drv(const struct device *dev, u32 drv_id)
++{
++	struct crm_drv_top *crm;
++	int i;
++
++	if (!dev)
++		return NULL;
++
++	crm = dev_get_drvdata(dev);
++	if (!crm)
++		return NULL;
++
++	for (i = 0; i < crm->num_hw_drvs; i++)
++		if (crm->hw_drvs[i].drv_id == drv_id)
++			return &crm->hw_drvs[i];
++
++	return NULL;
++}
++
++static void __iomem *crm_hw_offset(const struct crm_drv_top *crm, const u32 *regs,
++				   u32 drv_id, u32 resource, u32 pwr_state, u32 ch)
++{
++	return crm->base + regs[HW_DRV_BASE] + drv_id * regs[HW_DRV_DISTANCE] +
++	       resource * regs[HW_DRV_RESOURCE_DISTANCE] +
++	       regs[HW_PWR_ST0 + pwr_state] + ch * regs[HW_CHANNEL_DISTANCE];
++}
++
++/**
++ * crm_write_hw_perf_ol() - Cache a HW DRV's PERF_OL vote for one power state
++ * @dev: CRM device
++ * @drv_id: HW DRV number
++ * @pwr_state: Power state of the HW client
++ * @resource_idx: VCD
++ * @level: Performance level
++ *
++ * The vote takes effect with the next crm_write_hw_pwr_states().
++ *
++ * Return: 0 on success, -EINVAL for a bad DRV, state, VCD or level.
++ */
++int crm_write_hw_perf_ol(const struct device *dev, u32 drv_id, u32 pwr_state,
++			 u32 resource_idx, u32 level)
++{
++	struct crm_hw_drv *hw = crm_find_hw_drv(dev, drv_id);
++	unsigned long flags;
++
++	if (!hw || pwr_state >= MAX_HW_DRV_PWR_STATES ||
++	    resource_idx >= hw->num_perf_ol || level > 7)
++		return -EINVAL;
++
++	spin_lock_irqsave(&hw->lock, flags);
++	hw->perf_ol[resource_idx][pwr_state] = level;
++	spin_unlock_irqrestore(&hw->lock, flags);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(crm_write_hw_perf_ol);
++
++/**
++ * crm_write_hw_pwr_states() - Apply a HW DRV's cached votes
++ * @dev: CRM device
++ * @drv_id: HW DRV number
++ *
++ * Writes every cached vote into the DRV's idle channel and switches the DRV
++ * over to it.
++ *
++ * Return: 0 on success, -EINVAL for a bad DRV, -EIO for a channel state the
++ * hardware should never report, -ETIMEDOUT if the switch does not complete.
++ */
++int crm_write_hw_pwr_states(const struct device *dev, u32 drv_id)
++{
++	struct crm_hw_drv *hw = crm_find_hw_drv(dev, drv_id);
++	const struct crm_desc *desc;
++	struct crm_drv_top *crm;
++	void __iomem *status, *sw;
++	unsigned long flags;
++	u32 cur, ch, r, st, val;
++	int ret;
++
++	if (!hw)
++		return -EINVAL;
++
++	crm = dev_get_drvdata(dev);
++	desc = crm->desc;
++	status = crm->base + desc->hw_drv_ctrl_regs[HW_CHN_STATUS] +
++		 drv_id * desc->hw_drv_ctrl_regs[HW_CTRL_DISTANCE];
++	sw = crm->base + desc->hw_drv_ctrl_regs[HW_CHN_SWITCH] +
++	     drv_id * desc->hw_drv_ctrl_regs[HW_CTRL_DISTANCE];
++
++	spin_lock_irqsave(&hw->lock, flags);
++
++	/* The channel in use: bit 0 or bit 1, or none before the first switch. */
++	cur = readl_relaxed(sw);
++
++	if (cur && !(cur & 0x3)) {
++		spin_unlock_irqrestore(&hw->lock, flags);
++		dev_err(dev, "HW DRV %u: bad channel state %#x\n", drv_id, cur);
++		return -EIO;
++	}
++	ch = cur & BIT(0);
++
++	for (r = 0; r < hw->num_perf_ol; r++)
++		for (st = 0; st < MAX_HW_DRV_PWR_STATES; st++)
++			writel_relaxed(hw->perf_ol[r][st],
++				       crm_hw_offset(crm, desc->hw_drv_perf_ol_vcd_regs,
++						     drv_id, r, st, ch));
++
++	/*
++	 * BW_PT slots stay empty: the bandwidth commands go through the
++	 * interconnect driver's own votes for now. Android writes BCM commands
++	 * here; the CRM keeps the link's bandwidth then, which is the next step.
++	 */
++	if (desc->crm_capability & BW_PT_VOTING_CAPABLE)
++		for (r = 0; r < hw->num_bw_pt; r++)
++			for (st = 0; st < MAX_HW_DRV_PWR_STATES; st++)
++				writel_relaxed(0, crm_hw_offset(crm,
++						desc->hw_drv_bw_pt_vote_vcd_regs,
++						drv_id, r, st, ch));
++
++	writel(BIT(ch), sw);
++	ret = readl_poll_timeout_atomic(status, val, val & BIT(ch), 100,
++					HW_DRV_SWITCH_TIMEOUT_US);
++	if (ret)
++		dev_err(dev, "HW DRV %u: ch %u switch timed out (status %#x, switch %#x)\n",
++			drv_id, ch, val, readl(sw));
++
++	spin_unlock_irqrestore(&hw->lock, flags);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(crm_write_hw_pwr_states);
++
++/* Debug: is a HW DRV channel switch still waiting for the hardware? */
++int crm_hw_drv_switch_pending(const struct device *dev, u32 drv_id)
++{
++	struct crm_drv_top *crm = dev_get_drvdata(dev);
++	const struct crm_desc *desc = crm->desc;
++	u32 off = drv_id * desc->hw_drv_ctrl_regs[HW_CTRL_DISTANCE];
++	u32 sw = readl(crm->base + desc->hw_drv_ctrl_regs[HW_CHN_SWITCH] + off) & 0x3;
++	u32 st = readl(crm->base + desc->hw_drv_ctrl_regs[HW_CHN_STATUS] + off);
++
++	return sw && !(st & sw);
++}
++EXPORT_SYMBOL_GPL(crm_hw_drv_switch_pending);
++
++
++static int crm_probe_hw_drvs(struct crm_drv_top *crm, u32 crm_cfg, u32 crm_cfg_2)
++{
++	struct device_node *dn = crm->dev->of_node;
++	u32 ids[8];
++	int i, n;
++
++	n = of_property_count_u32_elems(dn, "qcom,hw-drv-ids");
++	if (n <= 0 || !crm->desc->hw_drv_ctrl_regs[HW_CTRL_DISTANCE])
++		return 0;
++	if (n > ARRAY_SIZE(ids))
++		return -EINVAL;
++
++	if (of_property_read_u32_array(dn, "qcom,hw-drv-ids", ids, n))
++		return -EINVAL;
++
++	crm->hw_drvs = devm_kcalloc(crm->dev, n, sizeof(*crm->hw_drvs), GFP_KERNEL);
++	if (!crm->hw_drvs)
++		return -ENOMEM;
++
++	for (i = 0; i < n; i++) {
++		struct crm_hw_drv *hw = &crm->hw_drvs[i];
++
++		hw->drv_id = ids[i];
++		spin_lock_init(&hw->lock);
++		hw->num_perf_ol = field_get(crm->desc->cfg_regs[NUM_VCD_VOTED_BY_PERF_OL],
++					    crm_cfg);
++		hw->num_bw_pt = field_get(crm->desc->cfg_regs[NUM_OF_NODES_PT], crm_cfg);
++		hw->perf_ol = devm_kcalloc(crm->dev, hw->num_perf_ol ?: 1,
++					   sizeof(*hw->perf_ol), GFP_KERNEL);
++		if (!hw->perf_ol)
++			return -ENOMEM;
++	}
++	crm->num_hw_drvs = n;
++
++	dev_info(crm->dev, "%d HW DRVs, %u PERF_OL VCDs, %u BW_PT nodes\n", n,
++		 crm->hw_drvs[0].num_perf_ol, crm->hw_drvs[0].num_bw_pt);
++
++	return 0;
++}
++
+ static int crm_probe_get_irqs(struct crm_drv_top *crm)
+ {
+ 	struct crm_drv *drvs = crm->sw_drvs;
+@@ -833,6 +1065,7 @@ static int crm_probe_drvs(struct crm_drv_top *crm, struct device_node *dn)
+ {
+ 	u32 crm_ver, major_ver, minor_ver;
+ 	u32 crm_cfg, crm_cfg_2;
++	int ret;
+ 
+ 	crm_ver = readl_relaxed(crm->cfg + crm->desc->cfg_regs[CRM_VERSION]);
+ 	major_ver = field_get(crm->desc->cfg_regs[MAJOR_VERSION], crm_ver);
+@@ -855,6 +1088,10 @@ static int crm_probe_drvs(struct crm_drv_top *crm, struct device_node *dn)
+ 
+ 	crm_cfg_2 = readl_relaxed(crm->cfg + crm->desc->cfg_regs[CRM_CFG_PARAM_2]);
+ 
++	ret = crm_probe_hw_drvs(crm, crm_cfg, crm_cfg_2);
++	if (ret)
++		return ret;
++
+ 	return crm_probe_set_vcd_caches(crm, crm_cfg, crm_cfg_2);
+ }
+ 
+@@ -976,7 +1213,91 @@ static const struct crm_desc disp_crm_desc_v2 = {
+ 	},
+ };
+ 
++static u32 crm_v3_cfg[] = {
++	[CRM_VERSION]			= 0x0,
++	[MAJOR_VERSION]			= GENMASK(23, 16),
++	[MINOR_VERSION]			= GENMASK(15, 8),
++	[CRM_CFG_PARAM_1]		= 0x4,
++	[NUM_OF_NODES_PT]		= GENMASK(30, 26),
++	[NUM_VCD_VOTED_BY_BW]		= GENMASK(25, 23),
++	[NUM_SW_DRVS]			= GENMASK(22, 18),
++	[NUM_OF_RAILS]			= GENMASK(13, 10),
++	[NUM_VCD_VOTED_BY_PERF_OL]	= GENMASK(9, 6),
++	[CRM_CFG_PARAM_2]		= 0x8,
++	[NUM_OF_NODES]			= GENMASK(30, 26),
++	[CRM_ENABLE]			= 0xc,
++};
++
++/* Android flags only PERF_OL and BW_PT voting for the PCIe CRM. */
++static const struct crm_desc pcie_crm_desc_v3 = {
++	.crm_capability = PERF_OL_VOTING_CAPABLE | BW_PT_VOTING_CAPABLE,
++	.cfg_regs = crm_v3_cfg,
++	.sw_drv_perf_ol_vcd_regs = {
++		[DRV_BASE]			 = 0x3b0,
++		[DRV_DISTANCE]			 = 0x1000,
++		[DRV_RESOURCE_DISTANCE]		 = 0x20,
++		[ACTIVE_VOTE]			 = 0x0,
++		[SLEEP_VOTE]			 = 0x4,
++		[WAKE_VOTE]			 = 0x8,
++		[IRQ_STATUS]			 = 0x10,
++		[IRQ_CLEAR]			 = 0x14,
++		[IRQ_ENABLE]			 = 0x18,
++	},
++	.sw_drv_bw_vote_vcd_regs = {
++		[DRV_BASE]			 = 0x3b0,
++		[DRV_DISTANCE]			 = 0x1000,
++		[DRV_RESOURCE_DISTANCE]		 = 0x10,
++		[ACTIVE_VOTE]			 = 0x40,
++		[SLEEP_VOTE]			 = 0x44,
++		[WAKE_VOTE]			 = 0x48,
++		[IRQ_STATUS]			 = 0x160,
++		[IRQ_CLEAR]			 = 0x164,
++		[IRQ_ENABLE]			 = 0x168,
++	},
++	.sw_drv_bw_pt_vote_vcd_regs = {
++		[DRV_BASE]			 = 0x3b0,
++		[DRV_DISTANCE]			 = 0x1000,
++		[DRV_RESOURCE_DISTANCE]		 = 0x10,
++		[ACTIVE_VOTE]			 = 0x60,
++		[SLEEP_VOTE]			 = 0x64,
++		[WAKE_VOTE]			 = 0x68,
++		[IRQ_STATUS]			 = 0x170,
++		[IRQ_CLEAR]			 = 0x174,
++		[IRQ_ENABLE]			 = 0x178,
++		[CRMB_PT_TRIGGER]		 = 0x270,
++	},
++	/* Decoded from the vendor crm-v2 module (pcie_crm_desc_v3). */
++	.hw_drv_ctrl_regs = {
++		[HW_CHN_STATUS]			 = 0x370,
++		[HW_CHN_SWITCH]			 = 0x374,
++		[HW_CTRL_DISTANCE]		 = 0x1000,
++	},
++	.hw_drv_perf_ol_vcd_regs = {
++		[HW_DRV_BASE]			 = 0x0,
++		[HW_DRV_DISTANCE]		 = 0x1000,
++		[HW_DRV_RESOURCE_DISTANCE]	 = 0x2c,
++		[HW_PWR_ST0]			 = 0x0,
++		[HW_PWR_ST0 + 1]		 = 0x4,
++		[HW_PWR_ST0 + 2]		 = 0x8,
++		[HW_PWR_ST0 + 3]		 = 0xc,
++		[HW_PWR_ST4]			 = 0x10,
++		[HW_CHANNEL_DISTANCE]		 = 0x14,
++	},
++	.hw_drv_bw_pt_vote_vcd_regs = {
++		[HW_DRV_BASE]			 = 0x0,
++		[HW_DRV_DISTANCE]		 = 0x1000,
++		[HW_DRV_RESOURCE_DISTANCE]	 = 0x2c,
++		[HW_PWR_ST0]			 = 0xb0,
++		[HW_PWR_ST0 + 1]		 = 0xb4,
++		[HW_PWR_ST0 + 2]		 = 0xb8,
++		[HW_PWR_ST0 + 3]		 = 0xbc,
++		[HW_PWR_ST4]			 = 0xc0,
++		[HW_CHANNEL_DISTANCE]		 = 0x14,
++	},
++};
++
+ static const struct of_device_id crm_drv_match[] = {
++	{ .compatible = "qcom,kaanapali-pcie-crm", .data = &pcie_crm_desc_v3 },
+ 	{ .compatible = "qcom,sm8750-disp-crm", .data = &disp_crm_desc_v2 },
+ 	{ }
+ };
+diff --git a/include/linux/phy/phy.h b/include/linux/phy/phy.h
+index 6ea3b4e1d7a8..a5ae0ad56033 100644
+--- a/include/linux/phy/phy.h
++++ b/include/linux/phy/phy.h
+@@ -64,11 +64,15 @@ enum phy_ufs_state {
+ /*
+  * PCIe DRV: another processor holds the link in L1 substates while the host
+  * sleeps. On enter the PHY drops what the host votes for and keeps its
+- * configuration; on exit it takes them back.
++ * configuration; on exit it takes them back. With CESTA the hardware itself
++ * runs the PHY's clocks, the reference clock included, while it holds the
++ * link, so the host drops that one too.
+  */
+ enum phy_pcie_state {
+ 	PHY_PCIE_DRV_ENTER,
+ 	PHY_PCIE_DRV_EXIT,
++	PHY_PCIE_CESTA_ENTER,
++	PHY_PCIE_CESTA_EXIT,
+ };
+ 
+ union phy_notify {
+diff --git a/include/linux/soc/qcom/irq.h b/include/linux/soc/qcom/irq.h
+index 72b9231e9fdd..fec14e3547f4 100644
+--- a/include/linux/soc/qcom/irq.h
++++ b/include/linux/soc/qcom/irq.h
+@@ -31,4 +31,11 @@ static inline bool irq_domain_qcom_handle_wakeup(const struct irq_domain *d)
+ 	return (d->flags & IRQ_DOMAIN_FLAG_QCOM_PDC_WAKEUP);
+ }
+ 
++#if IS_ENABLED(CONFIG_PINCTRL_MSM)
++int msm_gpio_wakeup_set(unsigned int gpio, bool enable);
++#else
++static inline int msm_gpio_wakeup_set(unsigned int gpio, bool enable)
++{ return -ENODEV; }
++#endif
++
+ #endif
+diff --git a/include/soc/qcom/crm.h b/include/soc/qcom/crm.h
+index 5411336f4cf2..ebab15b42201 100644
+--- a/include/soc/qcom/crm.h
++++ b/include/soc/qcom/crm.h
+@@ -48,6 +48,10 @@ int crm_write_perf_ol(const struct device *dev, u32 drv_id, const struct crm_cmd
+ int crm_write_bw_vote(const struct device *dev, u32 drv_id, const struct crm_cmd *cmd);
+ int crm_write_bw_pt_vote(const struct device *dev, u32 drv_id, const struct crm_cmd *cmd);
+ struct device *crm_get(const struct device *dev);
++int crm_write_hw_perf_ol(const struct device *dev, u32 drv_id, u32 pwr_state,
++			 u32 resource_idx, u32 level);
++int crm_write_hw_pwr_states(const struct device *dev, u32 drv_id);
++int crm_hw_drv_switch_pending(const struct device *dev, u32 drv_id);
+ #else
+ 
+ static inline int crm_write_perf_ol(const struct device *dev,
+@@ -67,6 +71,18 @@ static inline int crm_write_bw_pt_vote(const struct device *dev,
+ static inline struct device *crm_get(const struct device *dev)
+ { return NULL; }
+ 
++static inline int crm_write_hw_perf_ol(const struct device *dev, u32 drv_id,
++				       u32 pwr_state, u32 resource_idx, u32 level)
++{ return -ENODEV; }
++
++static inline int crm_write_hw_pwr_states(const struct device *dev, u32 drv_id)
++{ return -ENODEV; }
++
++static inline int crm_hw_drv_switch_pending(const struct device *dev, u32 drv_id)
++{
++	return 0;
++}
++
+ #endif /* CONFIG_QCOM_CRM */
+ 
+ #endif /* __SOC_QCOM_CRM_H__ */
+-- 
+2.56.1
+
