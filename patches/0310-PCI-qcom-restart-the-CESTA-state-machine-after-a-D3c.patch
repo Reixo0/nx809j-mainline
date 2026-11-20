@@ -1,0 +1,77 @@
+From e9e6aea5ec9a7ca1ddaf887cc1eef84e6e535925 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 11:41:19 +0100
+Subject: [PATCH] PCI: qcom: restart the CESTA state machine after a D3cold
+ vote
+
+After the plain suspend path votes the link to D3cold, the CESTA state
+machine never serves the next D0 switch: the CRM HW DRV channel stays
+pending ("HW DRV 0: ch 0 switch timed out", "CESTA vote 1 failed: -110")
+and later votes, the CESTA hand-off included, land on the live channel.
+Every resume after a sleep with Wi-Fi off did this.
+
+Remember a successful D3cold vote and, at the next host init, stop the
+state machine, reload its program and start it again before the D0
+vote, as at probe. The D0 vote is then served and a CESTA hand-off
+right after works.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index 99e0130095ae..ec365653cd56 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -342,6 +342,7 @@ struct qcom_pcie_cesta {
+ 	u32 clkreq_offset;	/* PARF register that hands CLKREQ# to CESTA */
+ 	u32 clkreq_pin;		/* TLMM pin of CLKREQ# */
+ 	bool sm_loaded;
++	bool sm_d3cold;		/* voted to D3cold: restart the SM before D0 */
+ };
+ 
+ struct qcom_pcie {
+@@ -1569,9 +1570,19 @@ static void qcom_pcie_cesta_load_sm(struct qcom_pcie *pcie)
+ 	struct qcom_pcie_cesta *c = &pcie->cesta;
+ 	int i;
+ 
+-	if (c->sm_loaded)
++	if (c->sm_loaded && !c->sm_d3cold)
+ 		return;
+ 
++	/*
++	 * After a D3cold vote the SM never serves the next D0 switch: the CRM
++	 * channel stays pending, and later votes land on the live channel.
++	 * Restart the SM from its program, as at probe.
++	 */
++	if (c->sm_loaded) {
++		writel(readl(c->sm + c->sm_start_offset) & ~BIT(0), c->sm + c->sm_start_offset);
++		udelay(10);
++	}
++
+ 	for (i = 0; i < c->sm_seq_len; i++)
+ 		writel_relaxed(c->sm_seq[i], c->sm + 4 * i);
+ 	for (i = 0; i < c->sm_branch_len; i++)
+@@ -1579,6 +1590,7 @@ static void qcom_pcie_cesta_load_sm(struct qcom_pcie *pcie)
+ 	writel(readl(c->sm + c->sm_start_offset) | BIT(0), c->sm + c->sm_start_offset);
+ 
+ 	c->sm_loaded = true;
++	c->sm_d3cold = false;
+ }
+ 
+ static u32 *qcom_pcie_cesta_read_seq(struct device *dev, const char *prop, int *len)
+@@ -1902,8 +1914,8 @@ static void qcom_pcie_host_deinit(struct dw_pcie_rp *pp)
+ 	qcom_pcie_phy_power_off(pcie);
+ 	pcie->cfg->ops->deinit(pcie);
+ 
+-	if (pcie->cesta.crm)
+-		qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_D3COLD);
++	if (pcie->cesta.crm && !qcom_pcie_cesta_vote(pcie, QCOM_PCIE_CESTA_D3COLD))
++		pcie->cesta.sm_d3cold = true;
+ }
+ 
+ static void qcom_pcie_host_post_init(struct dw_pcie_rp *pp)
+-- 
+2.56.1
+
