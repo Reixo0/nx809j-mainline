@@ -9,20 +9,22 @@ for r in /sys/class/remoteproc/remoteproc*; do
 done
 [ -n "${rp:-}" ] || { echo "no modem remoteproc" >&2; exit 0; }
 
-told=
+# Remembered in the runtime dir, so a session restart (Denial) does not
+# repeat it; the runtime dir is gone after a reboot.
+told=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nx809j-modem-crash-notified
 while :; do
 	state=$(cat "$rp/state" 2>/dev/null)
 	if [ "$state" = crashed ]; then
-		if [ -z "$told" ]; then
+		if [ ! -e "$told" ]; then
 			notify-send -u critical -a Phone -i dialog-warning \
 				-h string:desktop-entry:org.denialwm.Calls \
 				"Modem crashed" \
 				"Calls, SMS and mobile data are off until you restart the phone." &&
-				told=1
+				: >"$told"
 			echo "modem crashed, user notified"
 		fi
 	else
-		told=
+		rm -f "$told"
 	fi
 	sleep 30
 done
