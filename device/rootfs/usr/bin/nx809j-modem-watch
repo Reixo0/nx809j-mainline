@@ -1,0 +1,28 @@
+#!/bin/sh
+# A modem restart resets the whole SoC on this phone, so modem recovery is
+# off (udev 80-nx809j-modem-recovery.rules) and a crashed modem stays down
+# until the next reboot. Tell the user once, so calls and SMS do not stay
+# silently dead. Runs in the user session; the 30 s check only runs while
+# the phone is awake, and a crash during sleep is reported on the next wake.
+for r in /sys/class/remoteproc/remoteproc*; do
+	[ "$(cat "$r/name" 2>/dev/null)" = modem ] && rp=$r && break
+done
+[ -n "${rp:-}" ] || { echo "no modem remoteproc" >&2; exit 0; }
+
+told=
+while :; do
+	state=$(cat "$rp/state" 2>/dev/null)
+	if [ "$state" = crashed ]; then
+		if [ -z "$told" ]; then
+			notify-send -u critical -a Phone -i dialog-warning \
+				-h string:desktop-entry:org.denialwm.Calls \
+				"Modem crashed" \
+				"Calls, SMS and mobile data are off until you restart the phone." &&
+				told=1
+			echo "modem crashed, user notified"
+		fi
+	else
+		told=
+	fi
+	sleep 30
+done

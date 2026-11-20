@@ -1,3 +1,4 @@
 enable denial-polkit-agent.service
 enable nx809j-slider.service
 enable nx809j-privacy.service
+enable nx809j-modem-watch.service
