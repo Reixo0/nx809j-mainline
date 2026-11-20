@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rebuild Fedora's FFmpeg (the ffmpeg-free packages: libavcodec-free and the
-# rest) with archlinux/ffmpeg-nx809j's patch, which makes seeking work with
+# rest) with fedora/ffmpeg-nx809j's patch, which makes seeking work with
 # V4L2 hardware decoding. On an aarch64 Fedora host (the phone works).
 #
 # The release gets a .nx809j1 suffix so the packages win over Fedora's same
@@ -17,7 +17,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TAG=${RELEASE_TAG:-nx809j1}
-PATCH=$ROOT/archlinux/ffmpeg-nx809j/0001-avcodec-v4l2_m2m_dec-flush-on-seek-resume-after-LAST.patch
+PATCH=$ROOT/fedora/ffmpeg-nx809j/0001-avcodec-v4l2_m2m_dec-flush-on-seek-resume-after-LAST.patch
 OUT=$(realpath -m "${1:?usage: $0 OUTDIR}")
 [[ $(uname -m) == aarch64 ]] || { echo "run on aarch64" >&2; exit 1; }
 command -v rpmbuild >/dev/null || sudo dnf -y install rpm-build

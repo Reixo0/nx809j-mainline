@@ -1,4 +1,4 @@
-# Fedora has no qbootctl. As archlinux/qbootctl. It must be on the phone
+# Fedora has no qbootctl. It must be on the phone
 # before the first boot: nx809j-mark-boot-successful.service uses it, or ABL
 # counts slot a down.
 Name:           qbootctl

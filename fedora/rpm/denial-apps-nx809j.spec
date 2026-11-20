@@ -1,7 +1,6 @@
 # Denial's phone apps, cross-built by scripts/build-denial.sh from
 # https://github.com/denialwm/denial-apps and packed into apps.tar.gz by
-# scripts/fedora-pkgs.sh, which also sets Version. As
-# archlinux/denial-apps-nx809j: named denial-* in /usr/bin ("settings" and
+# scripts/fedora-pkgs.sh, which also sets Version. Named denial-* in /usr/bin ("settings" and
 # "camera" are too generic for a system path); Messages stays "messages".
 %global debug_package %{nil}
 %global __os_install_post %{nil}

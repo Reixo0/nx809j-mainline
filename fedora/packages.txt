@@ -1,6 +1,5 @@
 # Fedora 45 packages for the NX809J (dnf install --setopt=install_weak_deps=False),
-# on top of Fedora-Container-Base-Generic. Collected during the switch from
-# Arch Linux ARM (phases 1-4): what the development phone has. The release
+# on top of Fedora-Container-Base-Generic: what the development phone has. The release
 # image (scripts/make-fedora-image.sh) installs fewer and lets the
 # dependencies of our RPMs (fedora/rpm) pull in the rest.
 # Base system
@@ -20,14 +19,14 @@ gcc meson ninja-build pkgconf-pkg-config qrtr-devel libzstd-devel xz-devel
 # registers no session and Denial cannot open the display), alsaucm
 # (callaudio waits on the Voice Call verb), pactl
 systemd-pam alsa-ucm-utils pulseaudio-utils pipewire-utils  # pw-play: the ringtone
-# Denial's runtime (as archlinux/denial-nx809j depends); it uses logind as
+# Denial's runtime (what fedora/rpm/denial-nx809j.spec requires); it uses logind as
 # the seat backend, so no seatd
 libinput libseat wayland-utils xorg-x11-server-Xwayland polkit libdrm libxkbcommon
 xkeyboard-config gtk3 zenity rtkit ddcutil xdg-desktop-portal xdg-desktop-portal-gtk
 xdg-desktop-portal-wlr google-noto-sans-fonts google-noto-color-emoji-fonts
 google-noto-sans-cjk-fonts dejavu-sans-fonts liberation-fonts sound-theme-freedesktop
 alsa-lib pipewire-libs
-# Apps the user had on Arch (mission-center is not in Fedora: Flathub)
+# The user's apps (mission-center is not in Fedora: Flathub)
 firefox kitty foot konsole dolphin wqy-zenhei-fonts make  # make: fedora/install-mobile-config-firefox.sh
-# Droidloom's runtime (as its Arch package depends)
+# Droidloom's runtime
 nftables iptables-nft android-tools vulkan-loader

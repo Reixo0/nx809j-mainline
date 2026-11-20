@@ -1,6 +1,6 @@
 # postmarketOS' Firefox configuration for phones. Without it the toolbar's
-# minimum width overflows the 427 px wide (logical) screen. As
-# archlinux/mobile-config-firefox; Fedora's Firefox lives in the libdir.
+# minimum width overflows the 427 px wide (logical) screen. Fedora's Firefox
+# lives in the libdir.
 %global debug_package %{nil}
 
 Name:           mobile-config-firefox

@@ -13,8 +13,6 @@
 # and the Bluetooth (Brahma, WCN7860-style) rampatch and NVM files into qca/:
 #   brhbtfw20.mbn, brhbtnv20.*   (from Android's /vendor/bt_firmware)
 #
-# scripts/pmos-add-firmware.sh puts the same files into a rootfs image offline.
-#
 # Usage: scripts/install-wifi-firmware.sh [user@host]   (default reixo@172.16.42.1)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

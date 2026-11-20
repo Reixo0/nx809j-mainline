@@ -4,7 +4,7 @@ The Mu-Silicium port itself lives in
 [mu-silicium-nx809j](https://github.com/Reixo0/mu-silicium-nx809j), a git
 submodule here (`git submodule update --init uefi/mu-silicium-nx809j`): the
 device package, the driver extraction and patches, the ESP dispatcher
-(`esp-dispatch/`) and the debugging probes. It boots Linux (Arch Linux ARM
+(`esp-dispatch/`) and the debugging probes. It boots Linux (Fedora
 via systemd-boot), started either from `boot_a` or, for dual boot with
 Android, from the Canoe boot manager (below).
 
@@ -46,7 +46,7 @@ ABL -> efisp: Canoe BDS -> persist/efisp.fat
 ```
 
 * A plain boot starts Android; volume up during boot opens Canoe's menu.
-* `nx809j-reboot-linux` (Arch) and, on Android,
+* `nx809j-reboot-linux` (Linux) and, on Android,
   [android-reboot-to-linux](https://github.com/Reixo0/android-reboot-to-linux)
   (KernelSU module, or **Linux** in the power menu's restart options) write
   Canoe's boot-once record `canoe-once:linux` into the command field of

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Build the Fedora release images for the NX809J on an aarch64 Fedora host
-# (the phone itself works), as root. The counterpart of
-# scripts/make-arch-image.sh:
+# (the phone itself works), as root:
 #
 #   linux.img   root file system for the `linux` partition: Denial, its apps,
 #               our RPMs (fedora/rpm); grows to the partition on first boot
@@ -129,8 +128,8 @@ useradd -m -G wheel,audio,video,input,render,dmail "$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
 passwd -l root >/dev/null
 systemctl enable ${SERVICES[*]}
-# Fedora's presets turn these on. sshd stays off with a known password, as
-# on the Arch image; dnf's metadata refresh would wake the phone hourly
+# Fedora's presets turn these on. sshd stays off with a known password;
+# dnf's metadata refresh would wake the phone hourly
 systemctl disable sshd.service dnf-makecache.timer
 EOF
 umount "$M/proc" "$M/dev"

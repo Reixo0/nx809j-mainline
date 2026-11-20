@@ -1,5 +1,4 @@
-# Fedora has no tqftpserv (only seen in review, bug 2221422). As
-# archlinux/tqftpserv.
+# Fedora has no tqftpserv (only seen in review, bug 2221422).
 Name:           tqftpserv
 Version:        1.3
 Release:        1%{?dist}

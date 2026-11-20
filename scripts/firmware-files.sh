@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Print the phone's firmware files for the rootfs, one per line, as
 # "<path under /usr/lib/firmware>:<source file>". Used by
-# scripts/pmos-add-firmware.sh (offline image) and
 # scripts/install-device-files.sh (any rootfs directory).
 #
 # Sources: out/firmware (scripts/pack-firmware.py, from the phone's firmware

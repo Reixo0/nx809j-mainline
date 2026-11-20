@@ -26,15 +26,9 @@ SoC: Snapdragon 8 Elite Gen 5 — upstream **Kaanapali** (SM8850), downstream `c
 | `device/` | Distribution-neutral phone files (`device/rootfs`: services, rmtfs and modem setup, udev rules, UCM); see `device/README.md` |
 | `scripts/install-device-files.sh` | Install `device/rootfs`, all firmware and the modules into any systemd root filesystem |
 | `scripts/firmware-files.sh` | List of the phone's firmware files and where they come from (used by the two install scripts) |
-| `pmos/` | postmarketOS device port (`device-nubia-nx809j`, prebuilt `linux-nubia-nx809j`) |
-| `scripts/pmos-kernel-pkg.sh` | Package `out/kernel` for pmOS and copy the port into `tools/pmaports` |
-| `scripts/pmos-prepare-root.sh` | Copy/grow pmbootstrap's root image, make `/boot` nofail |
-| `scripts/nbd-root.sh` | Serve the pmOS root image to the phone over USB (NBD, no root needed) |
-| `scripts/make-super-image.sh` | Shrink the pmOS image into a sparse `linux_root` image for `super` |
-| `scripts/super-dm-cmdline.py` | Read `super`'s LP metadata, print `dm-mod.create=` for `linux_root` |
 | `scripts/host-usb-nat.sh` | One-time (sudo): ufw NAT so the phone gets internet through the PC |
 | `scripts/install-modules.sh` | Install out/modules into the running phone's rootfs over SSH (needed for Wi-Fi/BT drivers) |
-| `audio/topology/Nubia-NX809J.m4`, `scripts/build-topology.sh` | AudioReach topology (DSP graph), built with the m4 library of [infiniti-mainline/audioreach-topology](https://github.com/infiniti-mainline/audioreach-topology) cloned to `tools/dl/infiniti-tplg`; installed by `pmos-add-firmware.sh` |
+| `audio/topology/Nubia-NX809J.m4`, `scripts/build-topology.sh` | AudioReach topology (DSP graph), built with the m4 library of [infiniti-mainline/audioreach-topology](https://github.com/infiniti-mainline/audioreach-topology) cloned to `tools/dl/infiniti-tplg`; packaged in `nx809j-device` (`fedora/rpm/nx809j-device.spec`) |
 | `scripts/install-wifi-firmware.sh` | Install the phone's Wi-Fi (and Bluetooth) firmware from dump/ into the running rootfs under ath12k's names |
 | `scripts/phone-sh.py` | Run a command in the busybox initramfs shell (172.16.42.1:23) |
 | `scripts/get-pstore.sh` | After a hang, from Android: save the previous kernel's ramoops log and tell if it was mainline |
@@ -93,64 +87,6 @@ Read logs from a failed boot after returning to Android:
 ```bash
 adb shell su -c 'cat /sys/fs/pstore/*'
 ```
-
-## Root filesystem inside super (fast, no PC needed)
-
-postmarketOS can live in a logical partition `linux_root` inside `super`'s free
-space (12.8 GiB free on stock layout). Android's partitions and `userdata` are
-not touched. The kernel maps it with dm-init from the cmdline.
-
-```bash
-scripts/make-super-image.sh 9G                    # phone off / image unused
-# phone: superfastboot -> `fastboot reboot recovery` -> "Enter fastboot"
-fastboot getvar is-userspace                      # yes
-fastboot getvar snapshot-update-status            # none / merged
-fastboot create-logical-partition linux_root 9663676416
-fastboot flash linux_root out/pmos/linux_root.simg
-# boot any mainline image once, then read super's metadata (read-only):
-ssh reixo@172.16.42.1 'sudo dd if=/dev/sda7 bs=4096 count=256' > super-head.bin
-scripts/mkboot.sh nx809j.root=dm "$(scripts/super-dm-cmdline.py super-head.bin)"
-fastboot flash boot_a out/boot.img                # from superfastboot
-```
-
-Back up `super`'s first 1 MiB (its partition tables) before creating the
-partition. A full ROM flash that rewrites `super` removes `linux_root`; OTAs
-need some free space in `super` for snapshots.
-
-## postmarketOS over USB (Android untouched)
-
-The rootfs lives on the PC and the phone mounts it over NBD across the USB
-network. Android's userdata is metadata-encrypted (TEE keys), so mainline
-can't use space there; nothing here writes to the phone's UFS.
-
-One-time setup:
-
-```bash
-sudo pacman -S pmbootstrap
-pmbootstrap --aports ~/nx809j_linux/tools/pmaports init   # edge, nubia, nx809j, console
-sudo scripts/host-usb-nat.sh                              # ufw: NBD port + NAT for the phone
-```
-
-Build and run:
-
-```bash
-scripts/build.sh && scripts/pmos-kernel-pkg.sh
-pmbootstrap install --split
-scripts/pmos-prepare-root.sh                              # -> out/pmos/nubia-nx809j-root.img
-scripts/mkboot.sh nx809j.root=nbd                         # boot image that switch_roots to NBD
-scripts/nbd-root.sh                                       # keep running while pmOS is up
-fastboot flash boot_a out/boot.img
-ssh <user>@172.16.42.1
-```
-
-Notes:
-- The phone's init waits up to a minute for the server, then falls back to
-  the busybox shell (`scripts/phone-sh.py`).
-- `nbd-root.sh` allows multiple clients: a hard-reset phone leaves a dead
-  connection behind that would block the next boot otherwise.
-- `usb0` is unmanaged by NetworkManager (losing it would drop the rootfs);
-  `nx809j-usb-uplink.service` sets the default route via the PC and DNS.
-- Shut down with `sudo poweroff` rather than holding power.
 
 ## Notes / known unknowns for first boot
 
@@ -214,12 +150,11 @@ Notes:
 - [x] SoCCP (attached; pmic-glink lives here on Kaanapali) and ADSP (loaded from built-in firmware)
 - [x] Battery/charger via battmgr, USB-C via UCSI. Battery power is worked out from voltage and current (patch 0224); `nx809j-power` measures drain over a period, sleep included
 - [x] USB-C data roles (patches 0041-0059): pmic-glink/UCSI switches the controller between device mode (USB network shell to the PC) and host mode (game controllers, drives) on its own. SuperSpeed works: an NVMe enclosure enumerates at 10 Gbit/s and reads at about 530 MB/s. Needs a USB 3 cable; the cable in the box is USB 2 only, so the PC link stays at 480 Mbit/s. The GCC pipe clock input of the USB3 PHY was missing from `kaanapali.dtsi` (patch 0058). exFAT and NTFS (ntfs3) are modules
-- [x] postmarketOS Plasma Mobile: rootfs in `super` (linux_root, dm-init) or over NBD from the PC; internet via the PC
 - [ ] CDSP
 - [x] Display: MSM DRM + `panel-raydium-rm692h5` (DSC, 60 Hz), brightness, blank/unblank
 - [x] Display: 60, 90, 120 and 144 Hz modes (patches 0060-0066), picked in Settings → Display; the panel gets 144 frames per second (vkmark). The msm DSI host sized the DSC link of this 10 bpc command mode panel 30/24 too slow, which held every rate to ~60 frames per second (patch 0065). Browsers (Qt WebEngine) still animate at 60
 - [x] External display over USB-C (patches 0219-0221, 0226-0228): DisplayPort alternate mode with audio. A display plugged in while the panel is off comes up (the DP PHY is released when the DP controller suspends, and the display controller stays up while DP is), and a stopping command mode encoder releases its DSC
-- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407), with CLX and limits enabled as upstream. GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/pmos-add-firmware.sh`
+- [x] GPU: Adreno 840, Mesa freedreno GLES 3.2 (kmscube) and Turnip Vulkan 1.4 (vkmark 31407), with CLX and limits enabled as upstream. GMU/SQE from linux-firmware in `tools/dl/linux-firmware`, firmware in the rootfs via `scripts/install-device-files.sh`
 - [x] Touchscreen: Synaptics S3910 (TouchComm v1) on SPI19, multitouch; driver = upstream v2 TCM I2C series + our SPI support
 - [x] Fan and liquid cooling pump (patches 0108-0109): the fan is a 25 kHz PWM fan on a PMH0101 LPG channel (output inverted at PMIC GPIO9, L8B supply, tachometer on GPIO211, 3 pulses per turn), driven by mainline `pwm-fan` (about 22,000 RPM at full speed). The micropump is an Awinic AWP1921 piezo driver on I2C5 (0x44); our `awp1921` driver follows the stock register sequence and has the stock off/low/mid/high levels. Both are cooling devices of the prime core and GPU thermal zones: fan levels 1-5 from 45 to 65 °C, pump low/mid/high from 50 to 60 °C, 4 °C hysteresis. Manual control: hwmon `pwm1` or `cooling_device*/cur_state`. The CPU clusters also throttle passively from 90 °C (patch 0225, from linux-perpetua)
 - [x] Shoulder triggers and RGB lights (patches 0231-0233): an Awinic AW96205 capacitive sensor under each trigger (i2c9 and i2c20), brought up with the vendor register file and reported as BTN_TL and BTN_TR; `nx809j-triggers` merges both into one gamepad ("RedMagic shoulder triggers") and a udev rule hides the raw devices from games. All nine RGB lights (patches 0231-0235) are LEDs of an Awinic AW22127 on i2c5, driven through the program in its flash: the logo and the "game mode" light (`rgb:logo`, `rgb:gamemode`), the trigger lights (`rgb:trigger-left`, `rgb:trigger-right`) and the fan's four zones (`rgb:fan-1` to `rgb:fan-4`). The program runs one effect task per group, so each light changes on its own, with breathing and blinking on the chip (pattern trigger). Phone Settings' Lights page sets them and Denial puts them back at login; a udev rule lets the desktop user write them. Neither driver writes the chips' flash
@@ -229,7 +164,7 @@ Notes:
 - [x] Bluetooth: the Brahma half of the combo (product 0x21) on UART18, as a WCN7860 (patches 0022-0026, from the OnePlus 15 / Pad 4 work, see Credits): the controller needs a PERI baud rate command before the speed change, then takes the ELF rampatch qca/brhbtfw20.mbn and qca/brhbtnv20.bin. Its public address comes from persist (`nx809j-bt-addr.service`, read only). Scans and is the default controller in bluetoothctl. Earbuds play music over A2DP (AAC) with `BT_RFCOMM` and `INPUT_UINPUT`; the device files keep them in music mode and keep their output awake for 2 minutes of silence
 - [x] Speakers (patches 0067-0073): two Awinic AW88461 amplifiers on i2c_hub_3, fed from primary MI2S data line SD1 (SD0 carries their feedback), stock tuning from `aw882xx_acf.bin`. Sound card "Nubia-NX809J", our topology, and a UCM profile in the device package, so PipeWire and Plasma show a speaker output with working volume. 32-bit streams play silence on the speakers, so their stream is 16-bit
 - [x] Microphone (patches 0074-0088): the WCD9395 codec on SoundWire (RX swr1, TX swr2, as on the MTP), bottom mic = analog AMIC4, a "Mic" input in the UCM profile. The other analog inputs: AMIC3 (back or side) and AMIC5 (weak) pick up sound, AMIC1 does not
-- [x] Headphones (patches 0089-0102): the WCD9395 headphone amplifier in HPH PCM (HiFi) mode, as stock, over SoundWire port 9 (HPH PCM patches from the KONKR Pocket FIT / SM8750 work, see Credits). It needed the SoundWire stream synchronization point period programmed (patch 0094) and a 24-bit RX codec DMA (patch 0095; 16-bit delivers nothing). The headphone stream is 32-bit, so software volume keeps the low bits: with 16-bit, low volume crackled. A class-H fix (patch 0102) removed background static. Plugging and unplugging switches between the Headphones and Speaker outputs on its own. Use the PipeWire audio backend (`apk add postmarketos-base-ui-audio-backend-pipewire`, which replaces the PulseAudio one): it picks the 32-bit format on its own
+- [x] Headphones (patches 0089-0102): the WCD9395 headphone amplifier in HPH PCM (HiFi) mode, as stock, over SoundWire port 9 (HPH PCM patches from the KONKR Pocket FIT / SM8750 work, see Credits). It needed the SoundWire stream synchronization point period programmed (patch 0094) and a 24-bit RX codec DMA (patch 0095; 16-bit delivers nothing). The headphone stream is 32-bit, so software volume keeps the low bits: with 16-bit, low volume crackled. A class-H fix (patch 0102) removed background static. Plugging and unplugging switches between the Headphones and Speaker outputs on its own. PipeWire picks the 32-bit format on its own
 - [x] USB audio: a game controller's headphone port works (snd-usb-audio)
 - [x] Headset mic (patches 0103-0107): the 3.5 mm jack's mic and ground run through the WCD9395 USB-SS switch (i2c3, 0x0e), as on stock; without it the ground floats and headsets screech. The switch driver gets a headset jack mode (USB passes through, jack switches on, ground/mic swapped for OMTP/CTIA headsets), with the register sequence of the downstream driver, and MBHC picks the wiring before reporting. The headset limit had to be scaled for the 2.7 V mic bias (2.55 V; a headset mic sits near 2.1 V). Plugging a headset switches the output to Headphones and the input to "Headset microphone" (AMIC2); the UCM splits the stereo capture PCM by channel (bottom mic 0, headset mic 1), since PipeWire keeps devices on one PCM in separate profiles. Also fixes a mainline register address (MG2_MISC, patch 0103)
 - [x] Earpiece in calls: one AW88461 on the stock Receiver profile

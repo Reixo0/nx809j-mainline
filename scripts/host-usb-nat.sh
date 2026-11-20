@@ -5,7 +5,7 @@
 #  - /etc/sysctl.d/90-nx809j-usb-nat.conf: IPv4 forwarding on
 #  - /etc/ufw/before.rules: NAT (masquerade) for 172.16.42.0/24 only
 #  - ufw route rule: forward traffic coming from 172.16.42.0/24 only
-#  - ufw rule for the NBD rootfs server (scripts/nbd-root.sh)
+#  - ufw rule for an NBD rootfs server (nx809j.root=nbd)
 #
 # Undo: remove the sysctl file and the "nx809j" block in before.rules,
 #       `ufw delete` the two rules, then `ufw reload`.

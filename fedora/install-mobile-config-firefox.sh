@@ -1,5 +1,5 @@
 #!/bin/bash
-# postmarketOS's mobile Firefox configuration (as archlinux/mobile-config-firefox),
+# postmarketOS's mobile Firefox configuration (as fedora/rpm/mobile-config-firefox.spec),
 # for Fedora's Firefox, which lives in /usr/lib64/firefox.
 # Usage: sudo fedora/install-mobile-config-firefox.sh [DESTDIR]
 set -euo pipefail

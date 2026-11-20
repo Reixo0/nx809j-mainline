@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Prepare the Fedora RPMs of the NX809J (the counterpart of
-# scripts/arch-pkgs.sh): fills an rpmbuild tree with fedora/rpm/*.spec and
+# Prepare the Fedora RPMs of the NX809J: fills an rpmbuild tree with fedora/rpm/*.spec and
 # their sources, our builds packed as tarballs.
 #
 #   linux-nx809j    <- out/kernel, out/modules (scripts/build.sh)
@@ -17,7 +16,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 K=$ROOT/out/kernel
-A=$ROOT/archlinux
+F=$ROOT/fedora
 T=$ROOT/out/fedora/rpmbuild
 DENIAL_BUILD=$(realpath "${DENIAL_BUILD:-$HOME/denial-build}")
 STAGE=$(realpath -m "${STAGE:-$DENIAL_BUILD/stage-fedora}")
@@ -62,10 +61,10 @@ setspec nx809j-device "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y%m%d
 gitver() { echo "r$(git -C "$1" rev-list --count HEAD).g$(git -C "$1" rev-parse --short=9 HEAD)"; }
 if [[ -d $STAGE/denial ]]; then
   pack "$STAGE/denial" denial.tar.gz
-  cp "$A"/denial-nx809j/{nx809j-denial.service,nx809j-denial.tmpfiles,outputs.conf,denial-session.target,dev.denial.Settings.desktop} "$T/SOURCES/"
+  cp "$F"/denial-nx809j/{nx809j-denial.service,nx809j-denial.tmpfiles,outputs.conf,denial-session.target,dev.denial.Settings.desktop} "$T/SOURCES/"
   setspec denial-nx809j "$(gitver "$DENIAL_BUILD/denial")"
   pack "$STAGE/phonewave" phonewave.tar.gz
-  cp "$A/phonewave-nx809j/nx809j-sensors-hexagonrpcd.service" "$T/SOURCES/"
+  cp "$F/phonewave-nx809j/nx809j-sensors-hexagonrpcd.service" "$T/SOURCES/"
   setspec phonewave-nx809j "$(gitver "$DENIAL_BUILD/phonewave")"
   pack "$STAGE/apps" apps.tar.gz
   setspec denial-apps-nx809j "$(gitver "$DENIAL_BUILD/denial-apps")"
@@ -75,7 +74,7 @@ else
 fi
 
 # Sources of the packages built from upstream
-cp "$A/hexagonrpc/0001-hexagonrpcd-create-the-audio-PD.patch" "$T/SOURCES/"
+cp "$F/hexagonrpc/0001-hexagonrpcd-create-the-audio-PD.patch" "$T/SOURCES/"
 cp "$ROOT"/fedora/iris-vaapi/*.patch "$T/SOURCES/"
 ls -1 "$T/SPECS"
 echo "now on an aarch64 Fedora host: fedora/build-rpms.sh <copy of $T>"

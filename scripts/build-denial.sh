@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cross-build Denial, Phonewave's services and Denial's apps on an x86-64 host,
-# with the phone's own libraries as the sysroot. Leaves what scripts/arch-pkgs.sh
+# with the phone's own libraries as the sysroot. Leaves what scripts/fedora-pkgs.sh
 # packs in $DENIAL_BUILD/stage/{denial,phonewave,apps}.
 #
 #   DENIAL_BUILD=dir scripts/build-denial.sh   (default: ~/denial-build)

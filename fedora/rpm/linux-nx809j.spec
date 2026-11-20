@@ -1,7 +1,7 @@
 # NX809J: mainline kernel for the Nubia RedMagic 11 Pro, built by
 # scripts/build.sh from https://github.com/Reixo0/linux (branch nx809j) and
 # packed into kernel.tar.gz by scripts/fedora-pkgs.sh, which also sets Version
-# and krel. As archlinux/linux-nx809j.
+# and krel.
 #
 # Image and DTB stay in /usr/lib/modules/<krel> (RPM has no business on the
 # FAT ESP); %%posttrans copies them to /boot/nx809j, where systemd-boot loads

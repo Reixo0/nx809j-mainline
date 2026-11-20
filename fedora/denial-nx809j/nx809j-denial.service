@@ -38,7 +38,7 @@ StateDirectory=nx809j
 StateDirectoryMode=0755
 ExecStartPre=+/bin/sh -c 'test -e /var/lib/nx809j/outputs.conf || install -o 1000 -g 1000 -m 0644 /usr/share/nx809j/outputs.conf /var/lib/nx809j/'
 # The session is the first user (uid 1000). The image names it in a drop-in:
-# %h, %u and %U would mean root here, see scripts/make-arch-image.sh
+# %h, %u and %U would mean root here, see scripts/make-fedora-image.sh
 ExecStart=/usr/lib/denial/native/deniald --device /dev/dri/by-path/platform-9801000.display-controller-card --render-device /dev/dri/by-path/platform-9801000.display-controller-render --output-config /var/lib/nx809j/outputs.conf --wayland --flutter-bundle /usr/lib/denial/shell
 Environment=DENIAL_SETTINGS_BINARY=/usr/lib/denial/settings/denial-settings
 AmbientCapabilities=CAP_SYS_NICE

@@ -1,7 +1,7 @@
 # NX809J: the device files (device/rootfs: services, rmtfs drop-in, udev
 # rules, UCM, ...) and our AudioReach topology, packed into
 # device-files.tar.gz by scripts/fedora-pkgs.sh, which also sets Version.
-# As archlinux/nx809j-device. The phone's own firmware is not here:
+# The phone's own firmware is not here:
 # firmware/nx809j-firmware.sh copies it from Android.
 %global debug_package %{nil}
 %global __os_install_post %{nil}

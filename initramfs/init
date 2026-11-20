@@ -59,7 +59,7 @@ setup_usb() {
 	echo ">> USB network up on $UDC: shell on 172.16.42.1:23 (nc)"
 }
 
-# nx809j.root=nbd: use the rootfs the PC serves over NBD (scripts/nbd-root.sh)
+# nx809j.root=nbd: use a rootfs the PC serves over NBD (port 10809)
 nbd_root() {
 	NBD_SERVER=172.16.42.2
 	NBD_PORT=10809

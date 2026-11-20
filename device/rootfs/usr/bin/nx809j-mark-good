@@ -1,7 +1,7 @@
 #!/bin/sh
 # Keep the running kernel as the known-good fallback: its Image and DTB go to
 # /boot/nx809j/good, its modules to /usr/lib/modules-good, and systemd-boot
-# gets an "Arch Linux (known good)" entry that boots them. Copying the Image
+# gets a "Fedora (known good)" entry that boots them. Copying the Image
 # alone is not enough: the display driver and most others are modules, and the
 # next kernel install replaces them. nx809j.modules=good on that entry makes
 # nx809j-good-modules.service mount the saved modules over the current ones.
@@ -30,11 +30,11 @@ rm -rf "/usr/lib/modules-good/$R.new"
 cp -a "/usr/lib/modules/$R" "/usr/lib/modules-good/$R.new"
 rm -rf "/usr/lib/modules-good/$R"
 mv "/usr/lib/modules-good/$R.new" "/usr/lib/modules-good/$R"
-sed -e 's/^title .*/title   Arch Linux (known good)/' \
+sed -e 's/^title .*/title   Fedora (known good)/' \
     -e 's|/nx809j/Image|/nx809j/good/Image|' \
     -e 's|/nx809j/kaanapali-nubia-nx809j.dtb|/nx809j/good/kaanapali-nubia-nx809j.dtb|' \
     -e '/^options/s/$/ nx809j.modules=good/' \
-    "$L/nx809j.conf" > "$L/nx809j-good.conf.new"
+    "$L/nx809j-fedora.conf" > "$L/nx809j-good.conf.new"
 mv "$L/nx809j-good.conf.new" "$L/nx809j-good.conf"
 sync
 echo "kept $(uname -v | cut -d' ' -f1) as the known-good kernel ($L/nx809j-good.conf)"

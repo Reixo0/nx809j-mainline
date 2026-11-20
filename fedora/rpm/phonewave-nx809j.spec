@@ -2,8 +2,7 @@
 # (sensors), braun (cameras), dmail (modem) and callaudio (call audio),
 # cross-built by scripts/build-denial.sh from
 # https://github.com/denialwm/phonewave and packed into phonewave.tar.gz by
-# scripts/fedora-pkgs.sh, which also sets Version. As
-# archlinux/phonewave-nx809j. Its fingerprint stack is left out: that writes
+# scripts/fedora-pkgs.sh, which also sets Version. Its fingerprint stack is left out: that writes
 # to persist and RPMB.
 %global debug_package %{nil}
 %global __os_install_post %{nil}

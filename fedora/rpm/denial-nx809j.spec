@@ -1,7 +1,6 @@
 # Denial, cross-built by scripts/build-denial.sh (SYSROOT= a Fedora sysroot)
 # from https://github.com/denialwm/denial and packed into denial.tar.gz by
-# scripts/fedora-pkgs.sh, which also sets Version. As archlinux/denial-nx809j;
-# the session runs on tty1 from nx809j-denial.service, adapted from Phonewave
+# scripts/fedora-pkgs.sh, which also sets Version. The session runs on tty1 from nx809j-denial.service, adapted from Phonewave
 # (devices/nx809j, MIT).
 %global debug_package %{nil}
 %global __os_install_post %{nil}

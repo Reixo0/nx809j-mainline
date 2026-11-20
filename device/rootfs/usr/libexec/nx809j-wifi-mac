@@ -4,8 +4,8 @@
 # the persist partition ("wifiaddr:0xDC 0xF0 ..."). Read it with debugfs -c
 # (opens the filesystem read-only, no mount, so no journal replay) and hand
 # it to udev as a .link file, applied when wlan0 appears.
-# NetworkManager still uses its stable per-network addresses on top
-# (postmarketOS default); this is the device address underneath.
+# NetworkManager may still use stable per-network addresses on top;
+# this is the device address underneath.
 set -eu
 part=/dev/disk/by-partlabel/persist
 link=/run/systemd/network/10-nx809j-wlan-mac.link

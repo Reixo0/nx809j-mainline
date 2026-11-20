@@ -5,12 +5,3 @@
 /tools/
 # Partition dumps contain device-unique data (IMEI/EFS in modemst*, persist, keys)
 /dump/
-# Built by scripts/pmos-kernel-pkg.sh
-/pmos/linux-nubia-nx809j/kernel.tar.gz
-/pmos/device-nubia-nx809j/device-files.tar.gz
-# Built by scripts/arch-pkgs.sh
-/archlinux/linux-nx809j/kernel.tar.gz
-/archlinux/nx809j-device/device-files.tar.gz
-/archlinux/denial-nx809j/denial.tar.gz
-/archlinux/phonewave-nx809j/phonewave.tar.gz
-/archlinux/denial-apps-nx809j/apps.tar.gz

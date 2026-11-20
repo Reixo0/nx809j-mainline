@@ -39,7 +39,7 @@ cp "$R/nx809j/dispatch.efi" "$M/nx809j/"
 cp "$R/nx809j/mu/MU.fd" "$M/nx809j/mu/"
 $B entry set --id android-a --title Android --image boot_a.efi --role active \
 	--mode 2 --devinfo-repair never --default
-$B entry set --id linux --title "Arch Linux" --image nx809j/dispatch.efi
+$B entry set --id linux --title "Linux" --image nx809j/dispatch.efi
 $B entry set --id android-backup --title "Android (unpatched)" \
 	--image boot_backup.efi --role backup --mode 2
 $B config set-policy --menu-mode silent --key-window-ms 1200

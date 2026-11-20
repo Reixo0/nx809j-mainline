@@ -1,4 +1,4 @@
-# The "Arch Linux (known good)" boot entry (nx809j-mark-good) boots a saved
+# The "Fedora (known good)" boot entry (nx809j-mark-good) boots a saved
 # kernel whose modules may since have been replaced: mount the modules saved
 # with it over the current ones before anything loads a module.
 [Unit]

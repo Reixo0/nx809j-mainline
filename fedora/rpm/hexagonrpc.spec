@@ -1,5 +1,5 @@
 # Serves the ADSP's sensor and audio configuration. Fedora has no hexagonrpc.
-# As archlinux/hexagonrpc, with the same patch (Source1, copied from there by
+# With fedora/hexagonrpc's audio PD patch (Source1, copied from there by
 # scripts/fedora-pkgs.sh).
 %global commit da7a3742ab8d5273a281b70ee11f16fb2cb6a690
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
