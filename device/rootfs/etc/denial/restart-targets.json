@@ -1,0 +1,6 @@
+{
+  "targets": [
+    { "label": "System", "icon": "restart", "unit": "nx809j-reboot-linux.service" },
+    { "label": "Android", "icon": "android" }
+  ]
+}

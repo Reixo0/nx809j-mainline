@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart into Linux (arms the dual-boot record in misc)
+# Started by Denial's power menu (Restart > System): a plain reboot starts
+# Android, the boot manager's default.
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nx809j-reboot-linux
