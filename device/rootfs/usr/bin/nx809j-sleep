@@ -6,10 +6,12 @@ and messages, and Wi-Fi stays associated, as on Android: the PCIe link to
 the Wi-Fi chip is held through sleep (CESTA) and the chip wakes the phone
 for frames addressed to it (wake-on-WLAN: unicast to its MAC, a magic
 packet, or the access point dropping it), so pushes arrive while it sleeps
-and nothing has to reconnect after a wakeup. The phone also wakes itself
-every few minutes (a maintenance wakeup, like Android's Doze) for Android's
-held-back alarms. When wake-on-WLAN cannot be armed (Wi-Fi not connected),
-Wi-Fi drops in sleep and reconnects at the next wakeup.
+and nothing has to reconnect after a wakeup. The phone also wakes itself now
+and then (a maintenance wakeup) for what Doze does not hold back, such as
+the heartbeats of Android's push connection, and for Doze's own maintenance
+windows. When wake-on-WLAN cannot be armed (Wi-Fi not connected), Wi-Fi
+drops in sleep and reconnects at the next wakeup, and the maintenance
+wakeups come more often, for the pushes.
 
 It sleeps when the screen has been off for a while and nothing needs the
 phone awake:
@@ -52,6 +54,8 @@ little before it.
 Settings, as environment variables (seconds):
   NX809J_SLEEP_AFTER      screen off this long before sleeping (15)
   NX809J_SLEEP_WAKE_EVERY maintenance wakeup interval (300)
+  NX809J_SLEEP_WAKE_EVERY_WIFI
+                          the same while Wi-Fi is kept in sleep (900)
   NX809J_SLEEP_AWAKE_FOR  stay up this long after a wakeup (30)
   NX809J_SLEEP_NET_BYTES  traffic per second that counts as busy (30000)
 """
@@ -66,6 +70,7 @@ import time
 
 SLEEP_AFTER = int(os.environ.get("NX809J_SLEEP_AFTER", "15"))
 WAKE_EVERY = int(os.environ.get("NX809J_SLEEP_WAKE_EVERY", "300"))
+WAKE_EVERY_WIFI = int(os.environ.get("NX809J_SLEEP_WAKE_EVERY_WIFI", "900"))
 AWAKE_FOR = int(os.environ.get("NX809J_SLEEP_AWAKE_FOR", "30"))
 NET_BYTES = int(os.environ.get("NX809J_SLEEP_NET_BYTES", "30000"))
 # Wake this long before an Android alarm clock; closer than ALARM_NEAR, stay up
@@ -396,10 +401,11 @@ def android_net(up, cable=True, ipa=False):
 
 def wake_patterns(mac, addrs):
     """Frames that wake the phone, as iw patterns: sent to the phone itself
-    and carrying TCP, UDP, an ARP request, an IPv6 neighbour solicitation or
-    a key. Pings and other LAN chatter do not; "-" matches any byte. The
-    address is in the pattern because access points also send multicasts
-    (mDNS) to each station's own MAC."""
+    and carrying TCP, UDP, an ARP request or IPv6 neighbour solicitation for
+    its address, or a key. Pings and other LAN chatter do not; "-" matches
+    any byte. The address is in the pattern because access points also send
+    multicasts (mDNS, other devices' solicitations) to each station's own
+    MAC."""
     def frame(*fields):
         out = mac.split(":") + ["-"] * 6
         for offset, data in fields:
@@ -409,15 +415,16 @@ def wake_patterns(mac, addrs):
     patterns = []
     for addr in addrs:
         dst = addr.packed.hex(":")
-        for proto in ("06", "11"):
-            patterns.append(
-                frame((12, "08:00"), (23, proto), (30, dst)) if addr.version == 4
-                else frame((12, "86:dd"), (20, proto), (38, dst)))
-    # The chip takes 22 patterns in all
-    return patterns[:19] + [
-        frame((12, "86:dd"), (20, "3a"), (54, "87")),
-        frame((12, "08:06"), (20, "00:01")),
-        frame((12, "88:8e"))]
+        if addr.version == 4:
+            patterns += [frame((12, "08:00"), (23, "06"), (30, dst)),
+                         frame((12, "08:00"), (23, "11"), (30, dst)),
+                         frame((12, "08:06"), (20, "00:01"), (38, dst))]
+        else:
+            patterns += [frame((12, "86:dd"), (20, "06"), (38, dst)),
+                         frame((12, "86:dd"), (20, "11"), (38, dst)),
+                         frame((12, "86:dd"), (20, "3a"), (54, "87"), (62, dst))]
+    # The chip takes 22 patterns in all, the key included: seven addresses
+    return patterns[:21] + [frame((12, "88:8e"))]
 
 
 def wifi_addresses():
@@ -479,6 +486,54 @@ def wifi_revive():
     run(["ip", "link", "set", "wlan0", "up"])
 
 
+def android_netns_ss():
+    """The ss command for Android's network, or None."""
+    pid = run(["pgrep", "-x", "logd"]).split()
+    if not pid or not glob.glob("/sys/class/net/dlh*"):
+        return None
+    return ["nsenter", "-t", pid[0], "-n", "ss"]
+
+
+def android_reset(ss, *states, port=()):
+    """Reset Android's internet connections in these states. Connections to
+    the host (Droidloom's own services) are left alone."""
+    select = [w for state in states for w in ("state", state)]
+    peers = set()
+    for line in run([*ss, "-tnH", *select, *port]).splitlines():
+        f = line.split()
+        # The peer is the last field
+        if len(f) < 4:
+            continue
+        addr = f[-1].rsplit(":", 1)[0].strip("[]")
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if (getattr(ip, "ipv4_mapped", None) or ip).is_global:
+            peers.add(addr)
+    for addr in sorted(peers):
+        run([*ss, "-K", "-tn", *select, *port, "dst",
+             f"[{addr}]" if ":" in addr else addr])
+    return len(peers)
+
+
+def android_drop_closing():
+    """Reset Android's connections whose next packet is only a goodbye.
+
+    Wi-Fi stays up, and any packet wakes the phone: the server ends an idle
+    Private DNS connection (DNS over TLS, port 853) seconds after each use,
+    and answers the end of connections Android is closing. Android opens a
+    new one when it needs it. Other connections may carry pushes."""
+    ss = android_netns_ss()
+    if ss is None:
+        return
+    n = android_reset(ss, "established", port=("dport", "=", ":853"))
+    n += android_reset(ss, "close-wait", "fin-wait-1", "fin-wait-2",
+                       "last-ack", "closing")
+    if n:
+        time.sleep(0.3)  # the resets leave through the cable
+
+
 def android_push_off(ipa=True):
     """Close Android's internet connections before Wi-Fi goes away in sleep.
 
@@ -491,35 +546,19 @@ def android_push_off(ipa=True):
     The other connections are reset too: a server that closes an idle one
     (Private DNS over TLS does within minutes) gets no answer from the
     unplugged Android and resends its FIN for a long time, and over mobile
-    data, which stays up in sleep, every resend wakes the phone.
-    Connections to the host (Droidloom's own services) are left alone."""
-    pid = run(["pgrep", "-x", "logd"]).split()
-    if not pid or not glob.glob("/sys/class/net/dlh*"):
+    data, which stays up in sleep, every resend wakes the phone."""
+    ss = android_netns_ss()
+    if ss is None:
         return False
-    netns = ["nsenter", "-t", pid[0], "-n", "ss"]
-    peers = set()
-    for line in run([*netns, "-tnH", "state", "connected"]).splitlines():
-        f = line.split()
-        if len(f) < 4:
-            continue
-        addr = f[-1].rsplit(":", 1)[0].strip("[]")
-        try:
-            ip = ipaddress.ip_address(addr)
-        except ValueError:
-            continue
-        if (getattr(ip, "ipv4_mapped", None) or ip).is_global:
-            peers.add(addr)
-    for addr in sorted(peers):
-        run([*netns, "-K", "state", "connected", "dst", f"[{addr}]"
-             if ":" in addr else addr])
+    android_reset(ss, "connected")
     time.sleep(0.3)  # the resets leave through the cable
     android_net(False, ipa=ipa)
     return True
 
 
-def suspend(now_wall, wake, ipa=True):
-    """Sleep until `wake` (seconds since the epoch) at the latest; mobile data
-    wakes the phone if `ipa`."""
+def suspend(now_wall, wake, kept, ipa=True):
+    """Sleep until `wake` (seconds since the epoch) at the latest, with Wi-Fi
+    `kept` (wake-on-WLAN armed); mobile data wakes the phone if `ipa`."""
     alarm = android_alarm_clock()
     if alarm is not None and alarm > now_wall - 60:
         if alarm - now_wall < ALARM_NEAR:
@@ -535,12 +574,13 @@ def suspend(now_wall, wake, ipa=True):
     except OSError as err:
         log(f"cannot set the wakeup timer: {err}")
         return "no wakeup timer"
-    if wifi_keep_armed():
+    if kept:
         # Wi-Fi stays up: Android keeps its connections and gets its pushes
         # in sleep. Only its alarms stop waking the phone.
         log(f"sleeping with Wi-Fi kept, wakeup in {int(wake - now_wall)} s"
             + ("" if ipa else ", mobile data wakeups off"))
         android_net(False, cable=False, ipa=ipa)
+        android_drop_closing()
         unplugged = True
     else:
         log(f"sleeping, wakeup in {int(wake - now_wall)} s"
@@ -648,15 +688,18 @@ def main():
         if why is None:
             events = wakeup_events()
             wall = time.time()
-            if maintenance is None or maintenance <= wall + 5:
-                maintenance = wall + WAKE_EVERY
+            kept = wifi_keep_armed()
+            due = wall + (WAKE_EVERY_WIFI if kept else WAKE_EVERY)
+            if maintenance is None or maintenance <= wall + 5 or due < maintenance:
+                maintenance = due
             if not dozing and not on_charger():
                 dozing = android_doze(True)
             asleep = (suspend_count(), boottime())
             unplugged_android = True
             mobile_wakes = [t for t in mobile_wakes
                             if boottime() - t < MOBILE_WAKES_WINDOW]
-            why = suspend(wall, maintenance, len(mobile_wakes) < MOBILE_WAKES_MAX)
+            why = suspend(wall, maintenance, kept,
+                          len(mobile_wakes) < MOBILE_WAKES_MAX)
             if why is None:
                 time.sleep(5)
                 continue
