@@ -1,0 +1,261 @@
+From be84ebcb9e20e5d28618cbe83959aabd4324e3bd Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:50 +0100
+Subject: [PATCH 312/316] bus: mhi: host: add a suspend that leaves the device
+ in M2
+
+In M3 a device waits for the host and does not bring up the link by
+itself. A device that must wake the host from system suspend, such as a
+Wi-Fi chip in wake-on-WLAN on a host that keeps the link, has to stay
+idle in M2 (the vendor stack calls it fast suspend).
+
+Add mhi_pm_fast_suspend() and mhi_pm_fast_resume(). They wait for the
+device to be in M2, stop its interrupts and their handlers, which are
+IRQF_NO_SUSPEND and would access a link the host may no longer own, and
+mark the host suspended. The device is not touched. Resume processes
+what it reported meanwhile.
+
+QRTR must not unprepare its channels then, nor read the device state:
+tell it with mhi_pm_is_suspended().
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/bus/mhi/host/pm.c | 126 ++++++++++++++++++++++++++++++++++++++
+ include/linux/mhi.h       |  30 +++++++++
+ net/qrtr/mhi.c            |  13 +++-
+ 3 files changed, 166 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/bus/mhi/host/pm.c b/drivers/bus/mhi/host/pm.c
+index ced83fbb1a51..60a512350a5f 100644
+--- a/drivers/bus/mhi/host/pm.c
++++ b/drivers/bus/mhi/host/pm.c
+@@ -1047,6 +1047,132 @@ int mhi_pm_resume_force(struct mhi_controller *mhi_cntrl)
+ }
+ EXPORT_SYMBOL_GPL(mhi_pm_resume_force);
+ 
++static void mhi_fast_irqs(struct mhi_controller *mhi_cntrl, bool enable)
++{
++	struct mhi_event *mhi_event = mhi_cntrl->mhi_event;
++	int i;
++
++	if (enable)
++		enable_irq(mhi_cntrl->irq[0]);
++	else
++		disable_irq(mhi_cntrl->irq[0]);
++
++	for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++) {
++		if (mhi_event->offload_ev)
++			continue;
++
++		if (enable)
++			enable_irq(mhi_cntrl->irq[mhi_event->irq]);
++		else
++			disable_irq(mhi_cntrl->irq[mhi_event->irq]);
++	}
++}
++
++/* An idle device is in M2 already; a busy one is not waited for long */
++#define MHI_FAST_SUSPEND_MS	1000
++
++int mhi_pm_fast_suspend(struct mhi_controller *mhi_cntrl)
++{
++	struct mhi_event *mhi_event = mhi_cntrl->mhi_event;
++	struct mhi_chan *itr, *tmp;
++	int ret, i;
++
++	if (mhi_cntrl->pm_state == MHI_PM_DISABLE)
++		return -EINVAL;
++
++	if (MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state))
++		return -EIO;
++
++	if (atomic_read(&mhi_cntrl->dev_wake) ||
++	    atomic_read(&mhi_cntrl->pending_pkts))
++		return -EBUSY;
++
++	/* An idle device reports M1, and the host then moves it to M2 */
++	ret = wait_event_timeout(mhi_cntrl->state_event,
++				 mhi_cntrl->pm_state == MHI_PM_M2 ||
++				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
++				 msecs_to_jiffies(MHI_FAST_SUSPEND_MS));
++	if (MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state))
++		return -EIO;
++	if (!ret)
++		return -EBUSY;
++
++	/*
++	 * The interrupts are IRQF_NO_SUSPEND: left on, their handlers would
++	 * access the device in system sleep, when the link may belong to
++	 * someone else. Stop them, and let what they started finish.
++	 */
++	mhi_fast_irqs(mhi_cntrl, false);
++	for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++)
++		if (!mhi_event->offload_ev)
++			tasklet_kill(&mhi_event->task);
++	flush_work(&mhi_cntrl->st_worker);
++
++	write_lock_irq(&mhi_cntrl->pm_lock);
++	if (mhi_cntrl->pm_state != MHI_PM_M2 ||
++	    atomic_read(&mhi_cntrl->dev_wake) ||
++	    atomic_read(&mhi_cntrl->pending_pkts)) {
++		write_unlock_irq(&mhi_cntrl->pm_lock);
++		mhi_fast_irqs(mhi_cntrl, true);
++		return -EBUSY;
++	}
++	/* Host only: no transition of the device, so none to validate */
++	mhi_cntrl->fast_saved_pm_state = mhi_cntrl->pm_state;
++	mhi_cntrl->pm_state = MHI_PM_M3;
++	write_unlock_irq(&mhi_cntrl->pm_lock);
++
++	list_for_each_entry_safe(itr, tmp, &mhi_cntrl->lpm_chans, node) {
++		mutex_lock(&itr->mutex);
++		if (itr->mhi_dev)
++			mhi_notify(itr->mhi_dev, MHI_CB_LPM_ENTER);
++		mutex_unlock(&itr->mutex);
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(mhi_pm_fast_suspend);
++
++int mhi_pm_fast_resume(struct mhi_controller *mhi_cntrl)
++{
++	struct mhi_event *mhi_event = mhi_cntrl->mhi_event;
++	struct mhi_chan *itr, *tmp;
++	int i;
++
++	if (!mhi_cntrl->fast_saved_pm_state)
++		return -EINVAL;
++
++	list_for_each_entry_safe(itr, tmp, &mhi_cntrl->lpm_chans, node) {
++		mutex_lock(&itr->mutex);
++		if (itr->mhi_dev)
++			mhi_notify(itr->mhi_dev, MHI_CB_LPM_EXIT);
++		mutex_unlock(&itr->mutex);
++	}
++
++	write_lock_irq(&mhi_cntrl->pm_lock);
++	/* An error found meanwhile stays */
++	if (mhi_cntrl->pm_state == MHI_PM_M3)
++		mhi_cntrl->pm_state = mhi_cntrl->fast_saved_pm_state;
++	mhi_cntrl->fast_saved_pm_state = 0;
++	write_unlock_irq(&mhi_cntrl->pm_lock);
++
++	mhi_fast_irqs(mhi_cntrl, true);
++
++	/* Catch up on what the device reported, and on a crash, without an IRQ */
++	mhi_intvec_threaded_handler(mhi_cntrl->irq[0], mhi_cntrl);
++	for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++)
++		if (!mhi_event->offload_ev && !mhi_event->cl_manage)
++			tasklet_schedule(&mhi_event->task);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(mhi_pm_fast_resume);
++
++bool mhi_pm_is_suspended(struct mhi_controller *mhi_cntrl)
++{
++	return MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state);
++}
++EXPORT_SYMBOL_GPL(mhi_pm_is_suspended);
++
+ int __mhi_device_get_sync(struct mhi_controller *mhi_cntrl)
+ {
+ 	int ret;
+diff --git a/include/linux/mhi.h b/include/linux/mhi.h
+index 65e8a397cc50..38f7b7f4f3b6 100644
+--- a/include/linux/mhi.h
++++ b/include/linux/mhi.h
+@@ -349,6 +349,7 @@ struct mhi_controller_config {
+  * @db_access: DB access states
+  * @ee: MHI device execution environment
+  * @dev_state: MHI device state
++ * @fast_saved_pm_state: PM state to go back to from a fast suspend, or 0
+  * @dev_wake: Device wakeup count
+  * @pending_pkts: Pending packets for the controller
+  * @M0: Counter to track number of device MHI state changes
+@@ -430,6 +431,7 @@ struct mhi_controller {
+ 	u32 db_access;
+ 	enum mhi_ee_type ee;
+ 	enum mhi_state dev_state;
++	u32 fast_saved_pm_state;
+ 	atomic_t dev_wake;
+ 	atomic_t pending_pkts;
+ 	u32 M0, M2, M3;
+@@ -693,6 +695,34 @@ int mhi_pm_resume(struct mhi_controller *mhi_cntrl);
+  */
+ int mhi_pm_resume_force(struct mhi_controller *mhi_cntrl);
+ 
++/**
++ * mhi_pm_fast_suspend - Suspend the host side of MHI only
++ * @mhi_cntrl: MHI controller
++ *
++ * For a device that must wake the host by itself while the link stays up: the
++ * device is not sent to M3, where it waits for the host, but stays idle in M2.
++ * Until mhi_pm_fast_resume() the MHI core neither touches the device nor takes
++ * its interrupts. Undo it with mhi_pm_fast_resume() only.
++ *
++ * Return: 0 on success, -EBUSY if the device is not idle, or another negative
++ * error code
++ */
++int mhi_pm_fast_suspend(struct mhi_controller *mhi_cntrl);
++
++/**
++ * mhi_pm_fast_resume - Resume from mhi_pm_fast_suspend()
++ * @mhi_cntrl: MHI controller
++ *
++ * Return: 0 on success, -EINVAL if the host was not suspended that way
++ */
++int mhi_pm_fast_resume(struct mhi_controller *mhi_cntrl);
++
++/**
++ * mhi_pm_is_suspended - Whether the host side of MHI is suspended
++ * @mhi_cntrl: MHI controller
++ */
++bool mhi_pm_is_suspended(struct mhi_controller *mhi_cntrl);
++
+ /**
+  * mhi_download_rddm_image - Download ramdump image from device for
+  *                           debugging purpose.
+diff --git a/net/qrtr/mhi.c b/net/qrtr/mhi.c
+index e9a4bb92ce76..5c7cb68edd52 100644
+--- a/net/qrtr/mhi.c
++++ b/net/qrtr/mhi.c
+@@ -167,11 +167,15 @@ static int __maybe_unused qcom_mhi_qrtr_pm_suspend_late(struct device *dev)
+ 	struct mhi_device *mhi_dev = container_of(dev, struct mhi_device, dev);
+ 	enum mhi_state state;
+ 
+-	state = mhi_get_mhi_state(mhi_dev->mhi_cntrl);
+ 	/*
+ 	 * If the device is in suspend state, then no need for the
+-	 * client driver to unprepare the channels.
++	 * client driver to unprepare the channels. A device that stays in M2
++	 * to wake the host keeps them too (mhi_pm_fast_suspend()).
+ 	 */
++	if (mhi_pm_is_suspended(mhi_dev->mhi_cntrl))
++		return 0;
++
++	state = mhi_get_mhi_state(mhi_dev->mhi_cntrl);
+ 	if (state == MHI_STATE_M3)
+ 		return 0;
+ 
+@@ -187,12 +191,15 @@ static int __maybe_unused qcom_mhi_qrtr_pm_resume_early(struct device *dev)
+ 	enum mhi_state state;
+ 	int rc;
+ 
+-	state = mhi_get_mhi_state(mhi_dev->mhi_cntrl);
+ 	/*
+ 	 * If the device is in suspend state, we won't unprepare channels
+ 	 * in suspend callback, therefore no need to prepare channels when
+ 	 * resume.
+ 	 */
++	if (mhi_pm_is_suspended(mhi_dev->mhi_cntrl))
++		return 0;
++
++	state = mhi_get_mhi_state(mhi_dev->mhi_cntrl);
+ 	if (state == MHI_STATE_M3)
+ 		return 0;
+ 
+-- 
+2.56.1
+

@@ -1,0 +1,95 @@
+From 891790f76ec2349e3a597d3c45b56240087bfce5 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:51 +0100
+Subject: [PATCH 314/316] wifi: ath12k: leave the chip in M2 for WoW on a host
+ that keeps the link
+
+With MHI in M3 the chip matches WoW patterns but never asks for the link
+to wake the host. Suspend MHI on the host only where the host keeps the
+link and the chip has a wake MSI. If the chip is not idle in time, use
+M3 as before.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/pci.c | 34 ++++++++++++++++++++++++++-
+ drivers/net/wireless/ath/ath12k/pci.h |  2 ++
+ 2 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index f66f4661150d..2030144cee0f 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1191,9 +1191,34 @@ void ath12k_pci_ext_irq_disable(struct ath12k_base *ab)
+ 	ath12k_pci_sync_ext_irqs(ab);
+ }
+ 
++/*
++ * In M3 the chip waits for the host: it matches WoW patterns but never asks
++ * for the link. The vendor stack leaves it idle in M2 and suspends MHI on the
++ * host only ("fast M3"), so the chip can bring the link up by itself and wake
++ * the host with the wake MSI.
++ */
++static bool ath12k_pci_use_fast_m3(struct ath12k_base *ab)
++{
++	return ab->suspend_keeps_link && ath12k_pci_priv(ab)->wake_irq &&
++	       device_may_wakeup(ab->dev);
++}
++
+ int ath12k_pci_hif_suspend(struct ath12k_base *ab)
+ {
+ 	struct ath12k_pci *ar_pci = ath12k_pci_priv(ab);
++	int ret;
++
++	if (ath12k_pci_use_fast_m3(ab)) {
++		/* WoW is on: a wake may come from here on */
++		WRITE_ONCE(ar_pci->wake_irq_armed, true);
++		ret = mhi_pm_fast_suspend(ar_pci->mhi_ctrl);
++		if (!ret) {
++			ar_pci->mhi_fast_suspended = true;
++			return 0;
++		}
++		ath12k_warn(ab, "chip not idle for a fast suspend (%d), using M3\n",
++			    ret);
++	}
+ 
+ 	ath12k_mhi_suspend(ar_pci);
+ 
+@@ -1204,6 +1229,13 @@ int ath12k_pci_hif_resume(struct ath12k_base *ab)
+ {
+ 	struct ath12k_pci *ar_pci = ath12k_pci_priv(ab);
+ 
++	WRITE_ONCE(ar_pci->wake_irq_armed, false);
++
++	if (ar_pci->mhi_fast_suspended) {
++		ar_pci->mhi_fast_suspended = false;
++		return mhi_pm_fast_resume(ar_pci->mhi_ctrl);
++	}
++
+ 	ath12k_mhi_resume(ar_pci);
+ 
+ 	return 0;
+@@ -1868,7 +1900,7 @@ static __maybe_unused int ath12k_pci_pm_suspend_late(struct device *dev)
+ 
+ 	/*
+ 	 * Suspended into wake-on-WLAN on a host that keeps the link, the chip
+-	 * stays in D0 with MHI in M3, as on the vendor stack: saving the state
++	 * stays in D0, as on the vendor stack: saving the state
+ 	 * keeps the PCI core from putting it and its root port into D3hot.
+ 	 */
+ 	if (!ret && ab->suspend_keeps_link && ath12k_core_wow_suspended(ab)) {
+diff --git a/drivers/net/wireless/ath/ath12k/pci.h b/drivers/net/wireless/ath/ath12k/pci.h
+index f65f3e7a51f3..7e658b9bb790 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.h
++++ b/drivers/net/wireless/ath/ath12k/pci.h
+@@ -140,6 +140,8 @@ struct ath12k_pci {
+ 	/* The WoW wake vector's IRQ, 0 without one */
+ 	int wake_irq;
+ 	bool wake_irq_armed;
++	/* MHI left out of M3 through a WoW suspend (vendor "fast M3") */
++	bool mhi_fast_suspended;
+ };
+ 
+ struct ath12k_pci_driver {
+-- 
+2.56.1
+

@@ -1,0 +1,102 @@
+From 0c8686fbc140098d947418ddab7c8b840cdf8f65 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:50 +0100
+Subject: [PATCH 311/316] PCI: qcom: wait for an idle link before the CESTA
+ hand-off
+
+At the hand-off Linux lets go of the PCIe clocks, PHY and reference
+clock right after the DRV vote, and the sequencer needs some ms to put
+the link to sleep. An endpoint that uses the link in between finds it
+without clocks: the state machine never leaves its active level, the
+endpoint raises WAKE# after 1.8 s and answers nothing from then on. The
+Wi-Fi chip uses the link at each beacon, about every 100 ms, so it hung
+in some 5-15 % of the sleeps.
+
+With the vote in place and the clocks still on, wait for such a burst
+and then for 4 ms of L1 idle, at most 250 ms in all, and only then arm
+L1ss sleep. In a loop of 100 short sleeps, alternating, the chip hung in
+0 of 50 with the wait and in 7 of 49 without.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c | 47 +++++++++++++++++++++++---
+ 1 file changed, 42 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index ec365653cd56..758cac51a8ca 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -1693,6 +1693,39 @@ static void qcom_pcie_cesta_dump(struct qcom_pcie *pcie, const char *when)
+ static void qcom_pcie_icc_opp_update(struct qcom_pcie *pcie);
+ static int qcom_pcie_set_max_opp(struct device *dev);
+ 
++static u32 qcom_pcie_ltssm(struct qcom_pcie *pcie)
++{
++	return FIELD_GET(PARF_LTSSM_STATE_MASK, readl(pcie->parf + PARF_LTSSM));
++}
++
++/*
++ * The sequencer takes some ms to put an idle link to sleep. An endpoint that
++ * uses the link meanwhile finds it without clocks, as Linux has let go of
++ * them. It uses it in short bursts (the Wi-Fi chip at each beacon): hand the
++ * link over right after one.
++ */
++#define QCOM_PCIE_SETTLE_IDLE_US	4000
++#define QCOM_PCIE_SETTLE_MAX_US		250000
++
++static void qcom_pcie_cesta_settle(struct qcom_pcie *pcie)
++{
++	ktime_t start = ktime_get(), idle = start, now;
++	bool used = false;
++
++	for (;;) {
++		now = ktime_get();
++		if (qcom_pcie_ltssm(pcie) != DW_PCIE_LTSSM_L1_IDLE) {
++			used = true;
++			idle = now;
++		}
++		if (used && ktime_us_delta(now, idle) >= QCOM_PCIE_SETTLE_IDLE_US)
++			break;
++		if (ktime_us_delta(now, start) >= QCOM_PCIE_SETTLE_MAX_US)
++			break;
++		usleep_range(100, 150);
++	}
++}
++
+ /* The link sleeps in L1ss under CESTA; CLKREQ# wakes it. */
+ static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
+ {
+@@ -1703,10 +1736,6 @@ static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
+ 	struct qcom_pcie_port *port;
+ 	int ret;
+ 
+-	writel(PARF_CESTA_L1SS_SLEEP_EN, pcie->parf + PARF_CESTA_L1SS_SLEEP);
+-	writel(PARF_CESTA_L1SS_SLEEP_EN | c->l1ss_sleep,
+-	       pcie->parf + PARF_CESTA_L1SS_SLEEP);
+-
+ 	ret = msm_gpio_wakeup_set(c->clkreq_pin, true);
+ 	if (ret)
+ 		dev_warn(dev, "CLKREQ# wakeup not routed: %d\n", ret);
+@@ -1718,10 +1747,18 @@ static int qcom_pcie_cesta_suspend(struct qcom_pcie *pcie)
+ 		writel(0, c->pdc + PCIE_PDC_MAP);
+ 		writel(PCIE_PDC_CFG_FALLING, c->pdc + PCIE_PDC_CFG);
+ 		msm_gpio_wakeup_set(c->clkreq_pin, false);
+-		writel(0, pcie->parf + PARF_CESTA_L1SS_SLEEP);
+ 		return ret;
+ 	}
+ 
++	/*
++	 * Only now: wait while Linux still holds the clocks, with the vote in
++	 * place, so that the sequencer gets a link that stays idle.
++	 */
++	qcom_pcie_cesta_settle(pcie);
++	writel(PARF_CESTA_L1SS_SLEEP_EN, pcie->parf + PARF_CESTA_L1SS_SLEEP);
++	writel(PARF_CESTA_L1SS_SLEEP_EN | c->l1ss_sleep,
++	       pcie->parf + PARF_CESTA_L1SS_SLEEP);
++
+ 	/*
+ 	 * From here the CRM sequencer owns the PCIe clock tree (core GDSC,
+ 	 * pipe mux, rchng clock, TCSR refclk, rails) and keeps it up for as
+-- 
+2.56.1
+

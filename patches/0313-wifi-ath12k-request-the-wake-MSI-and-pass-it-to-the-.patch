@@ -1,0 +1,218 @@
+From b27105414ba8f7fcc9596ad000ef0dae094a78b8 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:51 +0100
+Subject: [PATCH 313/316] wifi: ath12k: request the wake MSI and pass it to the
+ firmware
+
+The firmware wakes a host that keeps the link through suspend with an
+MSI of its own, whose data the host passes in the QMI host capabilities
+(wake_msi), as the vendor host does. Without it the firmware matches a
+WoW wake event but has no way to tell the host.
+
+Give Peach a vector for it, keep its interrupt on through suspend, and
+report a wakeup event when it fires while WoW is armed.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/core.h      |  3 +
+ drivers/net/wireless/ath/ath12k/pci.c       | 80 ++++++++++++++++++++-
+ drivers/net/wireless/ath/ath12k/pci.h       |  3 +
+ drivers/net/wireless/ath/ath12k/qmi.c       |  5 ++
+ drivers/net/wireless/ath/ath12k/wifi7/pci.c | 13 +++-
+ 5 files changed, 102 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 30451c730159..4d94a98f21c9 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -951,6 +951,9 @@ struct ath12k_base {
+ 	bool power_save_blocked;
+ 	/* The host holds the link through suspend (Qualcomm PCIe DRV). */
+ 	bool suspend_keeps_link;
++	/* MSI data the firmware raises to wake the host from WoW (QMI wake_msi) */
++	bool wake_msi_valid;
++	u32 wake_msi;
+ 	struct platform_device *pdev;
+ 	struct device *dev;
+ 	struct ath12k_qmi qmi;
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index 6ce771bb685f..f66f4661150d 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -341,8 +341,74 @@ static void ath12k_pci_free_ext_irq(struct ath12k_base *ab, int num_ext_irq_grp)
+ 	}
+ }
+ 
++static irqreturn_t ath12k_pci_wake_interrupt_handler(int irq, void *arg)
++{
++	struct ath12k_base *ab = arg;
++	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
++
++	ath12k_dbg(ab, ATH12K_DBG_PCI, "wake msi\n");
++
++	/*
++	 * MSIs cannot be armed as wakeup interrupts: wake the system here. The
++	 * link may not be the host's now, so no access to the chip.
++	 */
++	if (READ_ONCE(ab_pci->wake_irq_armed))
++		pm_wakeup_hard_event(ab->dev);
++
++	return IRQ_HANDLED;
++}
++
++/*
++ * The firmware wakes a host that keeps the link through suspend with an
++ * MSI of its own, whose data the host passes in QMI host capabilities
++ * (wake_msi), as the vendor host does. Without it the firmware matches the
++ * WoW wake event but cannot tell the host.
++ */
++static void ath12k_pci_config_wake_irq(struct ath12k_base *ab)
++{
++	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
++	const struct ath12k_msi_config *msi_config = ab_pci->msi_config;
++	const struct ath12k_msi_user *user = NULL;
++	int i, irq, ret;
++
++	if (!test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
++		return;
++
++	for (i = 0; i < msi_config->total_users; i++)
++		if (!strcmp(msi_config->users[i].name, "WAKE"))
++			user = &msi_config->users[i];
++	if (!user)
++		return;
++
++	irq = ath12k_pci_get_msi_irq(ab->dev, user->base_vector);
++	if (irq < 0)
++		return;
++
++	/* Kept enabled through suspend: it is how the firmware wakes us */
++	ret = request_irq(irq, ath12k_pci_wake_interrupt_handler,
++			  IRQF_NO_SUSPEND, "wlan_wake", ab);
++	if (ret) {
++		ath12k_warn(ab, "failed to request the wake irq: %d\n", ret);
++		return;
++	}
++
++	ab_pci->wake_irq = irq;
++	ab->wake_msi = ab_pci->msi_ep_base_data + user->base_vector;
++	ab->wake_msi_valid = true;
++	ath12k_dbg(ab, ATH12K_DBG_PCI, "wake msi data %u irq %d\n",
++		   ab->wake_msi, irq);
++}
++
+ static void ath12k_pci_free_irq(struct ath12k_base *ab)
+ {
++	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
++
++	if (ab_pci->wake_irq) {
++		free_irq(ab_pci->wake_irq, ab);
++		ab_pci->wake_irq = 0;
++		ab->wake_msi_valid = false;
++	}
++
+ 	ath12k_pci_free_ce_irq(ab, ab->hw_params->ce_count);
+ 	ath12k_pci_free_ext_irq(ab, ATH12K_EXT_IRQ_GRP_NUM_MAX);
+ }
+@@ -1652,6 +1718,8 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
+ 		goto err_free_irq;
+ 	}
+ 
++	ath12k_pci_config_wake_irq(ab);
++
+ 	/* Invoke arch_init here so that arch-specific init operations
+ 	 * can utilize already initialized ab fields, such as HAL SRNGs.
+ 	 */
+@@ -1803,17 +1871,27 @@ static __maybe_unused int ath12k_pci_pm_suspend_late(struct device *dev)
+ 	 * stays in D0 with MHI in M3, as on the vendor stack: saving the state
+ 	 * keeps the PCI core from putting it and its root port into D3hot.
+ 	 */
+-	if (!ret && ab->suspend_keeps_link && ath12k_core_wow_suspended(ab))
++	if (!ret && ab->suspend_keeps_link && ath12k_core_wow_suspended(ab)) {
++		struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
++
+ 		pci_save_state(to_pci_dev(dev));
+ 
++		/* The firmware wakes the host with the wake MSI */
++		if (ab_pci->wake_irq)
++			WRITE_ONCE(ab_pci->wake_irq_armed, true);
++	}
++
+ 	return ret;
+ }
+ 
+ static __maybe_unused int ath12k_pci_pm_resume_early(struct device *dev)
+ {
+ 	struct ath12k_base *ab = dev_get_drvdata(dev);
++	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+ 	int ret;
+ 
++	WRITE_ONCE(ab_pci->wake_irq_armed, false);
++
+ 	ret = ath12k_core_resume_early(ab);
+ 	if (ret)
+ 		ath12k_warn(ab, "failed to early resume core: %d\n", ret);
+diff --git a/drivers/net/wireless/ath/ath12k/pci.h b/drivers/net/wireless/ath/ath12k/pci.h
+index 0e0e2020c6ae..f65f3e7a51f3 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.h
++++ b/drivers/net/wireless/ath/ath12k/pci.h
+@@ -137,6 +137,9 @@ struct ath12k_pci {
+ 	const struct ath12k_pci_reg_base *reg_base;
+ 
+ 	u32 window_reg_addr;
++	/* The WoW wake vector's IRQ, 0 without one */
++	int wake_irq;
++	bool wake_irq_armed;
+ };
+ 
+ struct ath12k_pci_driver {
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
+index 38a061856333..dd63d0a6e67d 100644
+--- a/drivers/net/wireless/ath/ath12k/qmi.c
++++ b/drivers/net/wireless/ath/ath12k/qmi.c
+@@ -2405,6 +2405,11 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
+ 	req.cal_done_valid = 1;
+ 	req.cal_done = ab->qmi.cal_done;
+ 
++	if (ab->wake_msi_valid) {
++		req.wake_msi_valid = 1;
++		req.wake_msi = ab->wake_msi;
++	}
++
+ 	if (ab->hw_params->qmi_cnss_feature_bitmap) {
+ 		req.feature_list_valid = 1;
+ 		req.feature_list = ab->hw_params->qmi_cnss_feature_bitmap;
+diff --git a/drivers/net/wireless/ath/ath12k/wifi7/pci.c b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
+index 739c5757d63e..1744f38f7f88 100644
+--- a/drivers/net/wireless/ath/ath12k/wifi7/pci.c
++++ b/drivers/net/wireless/ath/ath12k/wifi7/pci.c
+@@ -53,6 +53,17 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
+ 			{ .name = "DP", .num_vectors = 8, .base_vector = 8 },
+ 		},
+ 	},
++	{
++		/* As the vendor host: a vector of its own for the WoW wake. */
++		.total_vectors = 32,
++		.total_users = 4,
++		.users = (struct ath12k_msi_user[]) {
++			{ .name = "MHI", .num_vectors = 3, .base_vector = 0 },
++			{ .name = "CE", .num_vectors = 5, .base_vector = 3 },
++			{ .name = "DP", .num_vectors = 8, .base_vector = 8 },
++			{ .name = "WAKE", .num_vectors = 1, .base_vector = 16 },
++		},
++	},
+ };
+ 
+ static const struct ath12k_pci_ops ath12k_wifi7_pci_ops_qcn9274 = {
+@@ -169,7 +180,7 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
+ 		break;
+ 	case PEACH_DEVICE_ID:
+ 		ab->id.bdf_search = ATH12K_BDF_SEARCH_BUS_AND_BOARD;
+-		ab_pci->msi_config = &ath12k_wifi7_msi_config[0];
++		ab_pci->msi_config = &ath12k_wifi7_msi_config[1];
+ 		ab->static_window_map = false;
+ 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_wcn7850;
+ 		/* PEACH_PCIE_REMAP_BAR_CTRL_OFFSET in downstream cnss2 */
+-- 
+2.56.1
+

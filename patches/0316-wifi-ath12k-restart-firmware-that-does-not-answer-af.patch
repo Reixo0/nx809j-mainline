@@ -1,0 +1,248 @@
+From a1d87dda33ec8c3820a54ec4c215f83fb1355ab7 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:51 +0100
+Subject: [PATCH 316/316] wifi: ath12k: restart firmware that does not answer
+ after a WoW suspend
+
+When the chip hangs in sleep, the WoW wakeup times out. No crash is
+reported, so nothing restarts it: Wi-Fi was dead until a reboot, which
+took minutes, as MHI waits 90 s for every answer.
+
+Start a recovery on a failed HIF resume or a WoW wakeup timeout. Take
+the device down before anything that would wait for it: skip the
+coredump, restore the PCI configuration saved at probe, reset the chip
+and power MHI off without waiting for it. Enable the interrupts also
+when the HIF resume fails, as the recovery disables them once more.
+
+The chip was restarted in 8 of 8 hangs with the link up, and Wi-Fi came
+back after the interface was opened again. Recovery from a hang that
+took the link down is not tested.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/core.c | 40 ++++++++++++++++++++++----
+ drivers/net/wireless/ath/ath12k/core.h |  3 ++
+ drivers/net/wireless/ath/ath12k/mhi.c  |  8 ++++++
+ drivers/net/wireless/ath/ath12k/mhi.h  |  1 +
+ drivers/net/wireless/ath/ath12k/pci.c  | 18 ++++++++++++
+ drivers/net/wireless/ath/ath12k/pci.h  |  2 ++
+ drivers/net/wireless/ath/ath12k/wow.c  | 11 +++++--
+ 7 files changed, 75 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
+index e77551df29ad..11c436ab8379 100644
+--- a/drivers/net/wireless/ath/ath12k/core.c
++++ b/drivers/net/wireless/ath/ath12k/core.c
+@@ -1749,11 +1749,33 @@ static void ath12k_core_cal_restart(struct work_struct *work)
+ 		ath12k_err(ab, "failed to power up after calibration: %d\n", ret);
+ }
+ 
++/* The firmware no longer answers, and reported no crash: restart the device */
++void ath12k_core_fw_unresponsive(struct ath12k_base *ab)
++{
++	if (test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags) ||
++	    test_and_set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
++		return;
++
++	ath12k_warn(ab, "firmware does not answer, restarting it\n");
++	set_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags);
++	set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
++	queue_work(ab->workqueue_aux, &ab->reset_work);
++}
++
++static void ath12k_core_reset_power_down(struct ath12k_base *ab)
++{
++	ath12k_hif_irq_disable(ab);
++	ath12k_hif_ce_irq_disable(ab);
++
++	ath12k_hif_power_down(ab, false);
++}
++
+ static void ath12k_core_reset(struct work_struct *work)
+ {
+ 	struct ath12k_base *ab = container_of(work, struct ath12k_base, reset_work);
+ 	struct ath12k_hw_group *ag = ab->ag;
+ 	int reset_count, fail_cont_count, i;
++	bool unresponsive;
+ 	long time_left;
+ 
+ 	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))) {
+@@ -1801,17 +1823,25 @@ static void ath12k_core_reset(struct work_struct *work)
+ 	ab->is_reset = true;
+ 	atomic_set(&ab->recovery_count, 0);
+ 
+-	ath12k_coredump_collect(ab);
++	/*
++	 * Nothing to collect from firmware that does not answer, and register
++	 * accesses would wait for it: take the device down first.
++	 */
++	unresponsive = test_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags);
++	if (unresponsive)
++		ath12k_core_reset_power_down(ab);
++	else
++		ath12k_coredump_collect(ab);
++
+ 	ath12k_core_pre_reconfigure_recovery(ab);
+ 
+ 	ath12k_core_post_reconfigure_recovery(ab);
+ 
+ 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
+ 
+-	ath12k_hif_irq_disable(ab);
+-	ath12k_hif_ce_irq_disable(ab);
+-
+-	ath12k_hif_power_down(ab, false);
++	if (!unresponsive)
++		ath12k_core_reset_power_down(ab);
++	clear_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags);
+ 
+ 	/* prepare for power up */
+ 	ab->qmi.num_radios = U8_MAX;
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 4d94a98f21c9..3a30ad8cc52b 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -265,6 +265,8 @@ enum ath12k_dev_flags {
+ 	ATH12K_FLAG_RAW_MODE,
+ 	ATH12K_FLAG_HW_CRYPTO_DISABLED,
+ 	ATH12K_FLAG_RECOVERY,
++	/* The firmware answers nothing and reports no crash */
++	ATH12K_FLAG_UNRESPONSIVE,
+ 	ATH12K_FLAG_UNREGISTERING,
+ 	ATH12K_FLAG_REGISTERED,
+ 	ATH12K_FLAG_QMI_FAIL,
+@@ -1282,6 +1284,7 @@ int ath12k_core_resume(struct ath12k_base *ab);
+ int ath12k_core_suspend(struct ath12k_base *ab);
+ int ath12k_core_suspend_late(struct ath12k_base *ab);
+ bool ath12k_core_wow_suspended(struct ath12k_base *ab);
++void ath12k_core_fw_unresponsive(struct ath12k_base *ab);
+ void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
+ u8 ath12k_get_num_partner_link(struct ath12k *ar);
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/mhi.c b/drivers/net/wireless/ath/ath12k/mhi.c
+index ee87f00bc5de..5a92cd2a9eba 100644
+--- a/drivers/net/wireless/ath/ath12k/mhi.c
++++ b/drivers/net/wireless/ath/ath12k/mhi.c
+@@ -513,6 +513,14 @@ void ath12k_mhi_stop(struct ath12k_pci *ab_pci, bool is_suspend)
+ 	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_DEINIT);
+ }
+ 
++/* For a device that did not answer and that the caller reset */
++void ath12k_mhi_force_stop(struct ath12k_pci *ab_pci)
++{
++	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_FORCE_POWER_OFF);
++	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_DEINIT);
++	clear_bit(ATH12K_MHI_SUSPEND, &ab_pci->mhi_state);
++}
++
+ void ath12k_mhi_suspend(struct ath12k_pci *ab_pci)
+ {
+ 	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SUSPEND);
+diff --git a/drivers/net/wireless/ath/ath12k/mhi.h b/drivers/net/wireless/ath/ath12k/mhi.h
+index 367432676385..34c902c47696 100644
+--- a/drivers/net/wireless/ath/ath12k/mhi.h
++++ b/drivers/net/wireless/ath/ath12k/mhi.h
+@@ -33,6 +33,7 @@ enum ath12k_mhi_state {
+ 
+ int ath12k_mhi_start(struct ath12k_pci *ar_pci);
+ void ath12k_mhi_stop(struct ath12k_pci *ar_pci, bool is_suspend);
++void ath12k_mhi_force_stop(struct ath12k_pci *ar_pci);
+ int ath12k_mhi_register(struct ath12k_pci *ar_pci);
+ void ath12k_mhi_unregister(struct ath12k_pci *ar_pci);
+ void ath12k_mhi_set_mhictrl_reset(struct ath12k_base *ab);
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index 2030144cee0f..100b5085702c 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1586,6 +1586,19 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
+ 	/* restore aspm in case firmware bootup fails */
+ 	ath12k_pci_aspm_restore(ab_pci);
+ 
++	if (test_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags)) {
++		/* MHI would wait long for every answer: reset the chip first */
++		clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
++		/* A link that went down took the chip's configuration along */
++		if (ab_pci->pci_state &&
++		    !pci_load_saved_state(ab_pci->pdev, ab_pci->pci_state))
++			pci_restore_state(ab_pci->pdev);
++		ath12k_pci_msi_disable(ab_pci);
++		ath12k_pci_sw_reset(ab_pci->ab, false);
++		ath12k_mhi_force_stop(ab_pci);
++		return;
++	}
++
+ 	ath12k_pci_force_wake(ab_pci->ab);
+ 	ath12k_pci_msi_disable(ab_pci);
+ 	ath12k_mhi_stop(ab_pci, is_suspend);
+@@ -1752,6 +1765,9 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
+ 
+ 	ath12k_pci_config_wake_irq(ab);
+ 
++	pci_save_state(pdev);
++	ab_pci->pci_state = pci_store_saved_state(pdev);
++
+ 	/* Invoke arch_init here so that arch-specific init operations
+ 	 * can utilize already initialized ab fields, such as HAL SRNGs.
+ 	 */
+@@ -1775,6 +1791,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
+ 	/* __free_irq() expects the caller to have cleared the affinity hint */
+ 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
+ 	ath12k_pci_free_irq(ab);
++	kfree(ab_pci->pci_state);
+ 
+ err_ce_free:
+ 	ath12k_ce_free_pipes(ab);
+@@ -1829,6 +1846,7 @@ static void ath12k_pci_remove(struct pci_dev *pdev)
+ 
+ 	ath12k_hal_srng_deinit(ab);
+ 	ath12k_ce_free_pipes(ab);
++	kfree(ab_pci->pci_state);
+ 
+ 	ab_pci->device_family_ops->arch_deinit(ab);
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/pci.h b/drivers/net/wireless/ath/ath12k/pci.h
+index 7e658b9bb790..6f203354edab 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.h
++++ b/drivers/net/wireless/ath/ath12k/pci.h
+@@ -142,6 +142,8 @@ struct ath12k_pci {
+ 	bool wake_irq_armed;
+ 	/* MHI left out of M3 through a WoW suspend (vendor "fast M3") */
+ 	bool mhi_fast_suspended;
++	/* The configuration as probed */
++	struct pci_saved_state *pci_state;
+ };
+ 
+ struct ath12k_pci_driver {
+diff --git a/drivers/net/wireless/ath/ath12k/wow.c b/drivers/net/wireless/ath/ath12k/wow.c
+index 60ce37a6717b..2332165eec39 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.c
++++ b/drivers/net/wireless/ath/ath12k/wow.c
+@@ -996,17 +996,22 @@ int ath12k_wow_op_resume(struct ieee80211_hw *hw)
+ 	lockdep_assert_wiphy(hw->wiphy);
+ 
+ 	ret = ath12k_hif_resume(ar->ab);
++
++	/* Also on an error: the recovery disables them once more */
++	ath12k_hif_ce_irq_enable(ar->ab);
++	ath12k_hif_irq_enable(ar->ab);
++
+ 	if (ret) {
+ 		ath12k_warn(ar->ab, "failed to resume hif: %d\n", ret);
++		ath12k_core_fw_unresponsive(ar->ab);
+ 		goto exit;
+ 	}
+ 
+-	ath12k_hif_ce_irq_enable(ar->ab);
+-	ath12k_hif_irq_enable(ar->ab);
+-
+ 	ret = ath12k_wow_wakeup(ar);
+ 	if (ret) {
+ 		ath12k_warn(ar->ab, "failed to wakeup from wow: %d\n", ret);
++		if (ret == -ETIMEDOUT)
++			ath12k_core_fw_unresponsive(ar->ab);
+ 		goto exit;
+ 	}
+ 
+-- 
+2.56.1
+

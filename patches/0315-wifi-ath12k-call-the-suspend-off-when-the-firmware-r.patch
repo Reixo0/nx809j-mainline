@@ -1,0 +1,113 @@
+From 8a5b3976b30b9682271bfa546eb3887aa429844d Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:25:51 +0100
+Subject: [PATCH 315/316] wifi: ath12k: call the suspend off when the firmware
+ refuses WoW
+
+Busy firmware may not complete the WoW suspend. The suspend then went on
+without WoW, which drops the connection and reloads the firmware, and
+WoW fails more often after a reload. Undo the WoW setup and return
+-EBUSY instead, for the host to try again. After 3 refusals in a row go
+on without WoW, as before.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/wow.c | 41 ++++++++++++++++++++++++++-
+ drivers/net/wireless/ath/ath12k/wow.h |  4 +++
+ 2 files changed, 44 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/wow.c b/drivers/net/wireless/ath/ath12k/wow.c
+index 3778f528d388..60ce37a6717b 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.c
++++ b/drivers/net/wireless/ath/ath12k/wow.c
+@@ -75,7 +75,7 @@ int ath12k_wow_enable(struct ath12k *ar)
+ 
+ 	ath12k_warn(ab, "htc suspend not complete, failing after %d tries\n", i);
+ 
+-	return -ETIMEDOUT;
++	return -EBUSY;
+ }
+ 
+ int ath12k_wow_wakeup(struct ath12k *ar)
+@@ -858,6 +858,30 @@ static int ath12k_wow_set_keepalive(struct ath12k *ar,
+ 	return 0;
+ }
+ 
++/* The firmware did not enter WoW: take back what was set up for it. */
++static void ath12k_wow_undo_suspend(struct ath12k *ar)
++{
++	int ret;
++
++	ret = ath12k_wow_set_keepalive(ar, WMI_STA_KEEPALIVE_METHOD_NULL_FRAME,
++				       WMI_STA_KEEPALIVE_INTERVAL_DISABLE);
++	if (ret)
++		ath12k_warn(ar->ab, "failed to disable wow keepalive: %d\n", ret);
++
++	ret = ath12k_wow_clear_hw_filter(ar);
++	if (ret)
++		ath12k_warn(ar->ab, "failed to clear hw filter: %d\n", ret);
++
++	ret = ath12k_wow_protocol_offload(ar, false);
++	if (ret)
++		ath12k_warn(ar->ab, "failed to clear wow protocol offload events: %d\n",
++			    ret);
++
++	ret = ath12k_wow_cleanup(ar);
++	if (ret)
++		ath12k_warn(ar->ab, "failed to clear wow wakeup events: %d\n", ret);
++}
++
+ int ath12k_wow_op_suspend(struct ieee80211_hw *hw,
+ 			  struct cfg80211_wowlan *wowlan)
+ {
+@@ -910,10 +934,25 @@ int ath12k_wow_op_suspend(struct ieee80211_hw *hw,
+ 	}
+ 
+ 	ret = ath12k_wow_enable(ar);
++	if (ret == -EBUSY && ar->wow.refused < ATH12K_WOW_REFUSED_MAX) {
++		/*
++		 * The firmware is busy and stays up with its connection. Call
++		 * the suspend off, for the host to try again later: suspending
++		 * without WoW drops the connection and reloads the firmware,
++		 * and WoW fails more often after a reload.
++		 */
++		ar->wow.refused++;
++		ath12k_warn(ar->ab, "wow refused (%u in a row), suspend called off\n",
++			    ar->wow.refused);
++		ath12k_wow_undo_suspend(ar);
++		return -EBUSY;
++	}
+ 	if (ret) {
+ 		ath12k_warn(ar->ab, "failed to start wow: %d\n", ret);
++		ar->wow.refused = 0;
+ 		goto cleanup;
+ 	}
++	ar->wow.refused = 0;
+ 
+ 	ath12k_hif_irq_disable(ar->ab);
+ 	ath12k_hif_ce_irq_disable(ar->ab);
+diff --git a/drivers/net/wireless/ath/ath12k/wow.h b/drivers/net/wireless/ath/ath12k/wow.h
+index 273705956815..22309137de40 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.h
++++ b/drivers/net/wireless/ath/ath12k/wow.h
+@@ -8,6 +8,8 @@
+ #define ATH12K_WOW_H
+ 
+ #define ATH12K_WOW_RETRY_NUM		10
++/* Suspends called off in a row before one goes on without WoW */
++#define ATH12K_WOW_REFUSED_MAX		3
+ #define ATH12K_WOW_RETRY_WAIT_MS	200
+ #define ATH12K_WOW_PATTERNS		22
+ 
+@@ -15,6 +17,8 @@ struct ath12k_wow {
+ 	u32 max_num_patterns;
+ 	struct completion wakeup_completed;
+ 	struct wiphy_wowlan_support wowlan_support;
++	/* Suspends in a row the firmware refused WoW for */
++	u32 refused;
+ };
+ 
+ struct ath12k_pkt_pattern {
+-- 
+2.56.1
+
