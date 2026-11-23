@@ -76,13 +76,25 @@ NET_WINDOW = 10
 NET_SETTLE = 25
 AWAKE_MAX = 75
 POLL = 2
+# Seconds after a wakeup before checking that Wi-Fi came back up
+WIFI_CHECK_DELAY = 20
 # After an early wakeup (Android alarm, mobile data), sleep again after this
 # long
 ANDROID_ALARM_WINDOW = 4
+# After a wakeup by a packet (a push), sleep again after this long
+WIFI_AWAKE_FOR = 10
+# The Wi-Fi chip's wakeups: its wakeup source goes away with wake-on-WLAN,
+# disarmed at every wakeup, so they are known by its interrupt
+WIFI_WAKEUP = "irq:wifi"
 # An Android wakelock keeps the phone up for at most this long; while Android
 # is offline after an alarm, for at most WAKELOCK_OFFLINE
 WAKELOCK_MAX = 600
 WAKELOCK_OFFLINE = 30
+# Mobile data may wake the phone (the modem needs the IPA data path to reach
+# Linux: it crashed once waiting on it); after this many early mobile-data
+# wakeups within MOBILE_WAKES_WINDOW seconds it may not, until they age out
+MOBILE_WAKES_MAX = 3
+MOBILE_WAKES_WINDOW = 3600
 HOLD = "/run/nx809j-sleep/hold"
 IPA_WAKEUP = "/sys/devices/platform/soc@0/3f40000.ipa/power/wakeup"
 ALARM_WAKEUP = "/sys/bus/platform/devices/alarmtimer.*/power/wakeup"
@@ -247,13 +259,17 @@ WAKE_IRQS = {"131072": "modem", "196608": "adsp"}
 
 
 def wake_irq_counts():
-    """Message interrupts from the modem and ADSP (GLINK), by remote."""
+    """Wake interrupts from the Wi-Fi chip, and message interrupts from the
+    modem and ADSP (GLINK), by sender."""
     counts = {}
     try:
         for line in open("/proc/interrupts"):
             f = line.split()
-            if f and f[-1] == "glink-smem" and f[-3] in WAKE_IRQS:
-                counts[WAKE_IRQS[f[-3]]] = sum(int(x) for x in f[1:-4] if x.isdigit())
+            if not f or f[-1] not in ("glink-smem", "wlan_wake"):
+                continue
+            name = "wifi" if f[-1] == "wlan_wake" else WAKE_IRQS.get(f[-3])
+            if name:
+                counts[name] = sum(int(x) for x in f[1:-4] if x.isdigit())
     except OSError:
         pass
     return counts
@@ -313,8 +329,8 @@ def wakeup_irq():
     return irq
 
 
-def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
-              android_alarm_until):
+def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
+              uplink_since, android_alarm_until):
     if screen_on():
         return "screen on"
     if now - screen_off_since < SLEEP_AFTER:
@@ -324,7 +340,7 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
         # Woken early: Android stays offline, the phone sleeps again soon
         if now < android_alarm_until:
             return "early wakeup"
-    elif now - awake_since < AWAKE_FOR:
+    elif now - awake_since < awake_for:
         return "just woke"
     # Pushes held during sleep arrive some seconds after the link to Google
     # is up again; it is made anew whenever the route changes.
@@ -349,11 +365,14 @@ def why_awake(now, screen_off_since, awake_since, net_rate, uplink_since,
     return None
 
 
-def android_net(up, cable=True):
+def android_net(up, cable=True, ipa=False):
     """Plug Droidloom's virtual cable in or out.
 
-    While Android is unplugged, mobile data does not wake the phone: no one
-    is there to take the packets. When Wi-Fi drops in sleep, every wakeup
+    Unplugged with `ipa` False, mobile data does not wake the phone either.
+    It does by default: the modem crashed in sleep once when a bearer switch
+    did not complete, with the IPA data path unable to wake Linux, and
+    Android keeps it able to. suspend() turns it off only after mobile data
+    woke the phone early several times. When Wi-Fi drops in sleep, every wakeup
     re-creates the Wi-Fi link, host traffic goes out over mobile data
     meanwhile, and the answers came in during the next sleep and woke the
     phone again. Calls and SMS reach it through the modem's control
@@ -367,11 +386,48 @@ def android_net(up, cable=True):
     for link in glob.glob("/sys/class/net/dlh*") if cable else ():
         run(["ip", "link", "set", os.path.basename(link), "up" if up else "down"])
     for path in (IPA_WAKEUP, *glob.glob(ALARM_WAKEUP)):
+        on = up or (ipa and path == IPA_WAKEUP)
         try:
             with open(path, "w") as f:
-                f.write("enabled" if up else "disabled")
+                f.write("enabled" if on else "disabled")
         except OSError as err:
             log(f"cannot change wakeup {path}: {err}")
+
+
+def wake_patterns(mac, addrs):
+    """Frames that wake the phone, as iw patterns: sent to the phone itself
+    and carrying TCP, UDP, an ARP request, an IPv6 neighbour solicitation or
+    a key. Pings and other LAN chatter do not; "-" matches any byte. The
+    address is in the pattern because access points also send multicasts
+    (mDNS) to each station's own MAC."""
+    def frame(*fields):
+        out = mac.split(":") + ["-"] * 6
+        for offset, data in fields:
+            out += ["-"] * (offset - len(out)) + data.split(":")
+        return ":".join(out)
+
+    patterns = []
+    for addr in addrs:
+        dst = addr.packed.hex(":")
+        for proto in ("06", "11"):
+            patterns.append(
+                frame((12, "08:00"), (23, proto), (30, dst)) if addr.version == 4
+                else frame((12, "86:dd"), (20, proto), (38, dst)))
+    # The chip takes 22 patterns in all
+    return patterns[:19] + [
+        frame((12, "86:dd"), (20, "3a"), (54, "87")),
+        frame((12, "08:06"), (20, "00:01")),
+        frame((12, "88:8e"))]
+
+
+def wifi_addresses():
+    """The phone's own addresses on Wi-Fi, IPv4 first."""
+    addrs = []
+    for line in run(["ip", "-o", "addr", "show", "dev", "wlan0"]).splitlines():
+        m = re.search(r" inet6? ([^/ ]+)", line)
+        if m:
+            addrs.append(ipaddress.ip_address(m.group(1)))
+    return sorted(addrs, key=lambda a: (a.version, a.is_link_local))
 
 
 def wifi_keep_armed():
@@ -395,17 +451,35 @@ def wifi_keep_armed():
     except OSError as err:
         log(f"cannot arm wake-on-WLAN: {err}")
         return False
-    # Unicast frames to the phone wake it (as Android: pushes); the chip
-    # answers ARP and neighbour solicitations itself
     armed = subprocess.run(["iw", "phy", phy, "wowlan", "enable", "disconnect",
-                            "magic-packet", "patterns", mac],
+                            "magic-packet", "patterns", *wake_patterns(mac, wifi_addresses())],
                            capture_output=True, text=True)
     if armed.returncode != 0:
         log(f"cannot arm wake-on-WLAN: {armed.stderr.strip()}")
     return armed.returncode == 0
 
 
-def android_push_off():
+def wifi_revive():
+    """Reconnect Wi-Fi when a wakeup left the interface down.
+
+    A Wi-Fi firmware crash in sleep fails the resume; ath12k restarts the
+    chip, but leaves the interface down for the next open, and
+    NetworkManager, back from its own sleep, still counts it connected and
+    never opens it again: Wi-Fi stays dead until a reboot. Opening it lets
+    wpa_supplicant associate again (nmcli refuses a device it counts
+    connected)."""
+    try:
+        with open("/sys/class/net/wlan0/flags") as f:
+            flags = int(f.read(), 16)
+    except (OSError, ValueError):
+        return
+    if flags & 1 or run(["nmcli", "-t", "radio", "wifi"]).strip() != "enabled":
+        return
+    log("Wi-Fi left down after a wakeup: reconnecting")
+    run(["ip", "link", "set", "wlan0", "up"])
+
+
+def android_push_off(ipa=True):
     """Close Android's internet connections before Wi-Fi goes away in sleep.
 
     Wi-Fi drops without a word, so Google's server would keep sending
@@ -439,12 +513,13 @@ def android_push_off():
         run([*netns, "-K", "state", "connected", "dst", f"[{addr}]"
              if ":" in addr else addr])
     time.sleep(0.3)  # the resets leave through the cable
-    android_net(False)
+    android_net(False, ipa=ipa)
     return True
 
 
-def suspend(now_wall, wake):
-    """Sleep until `wake` (seconds since the epoch) at the latest."""
+def suspend(now_wall, wake, ipa=True):
+    """Sleep until `wake` (seconds since the epoch) at the latest; mobile data
+    wakes the phone if `ipa`."""
     alarm = android_alarm_clock()
     if alarm is not None and alarm > now_wall - 60:
         if alarm - now_wall < ALARM_NEAR:
@@ -462,13 +537,15 @@ def suspend(now_wall, wake):
         return "no wakeup timer"
     if wifi_keep_armed():
         # Wi-Fi stays up: Android keeps its connections and gets its pushes
-        # in sleep. Only mobile data and its alarms stop waking the phone.
-        log(f"sleeping with Wi-Fi kept, wakeup in {int(wake - now_wall)} s")
-        android_net(False, cable=False)
+        # in sleep. Only its alarms stop waking the phone.
+        log(f"sleeping with Wi-Fi kept, wakeup in {int(wake - now_wall)} s"
+            + ("" if ipa else ", mobile data wakeups off"))
+        android_net(False, cable=False, ipa=ipa)
         unplugged = True
     else:
-        log(f"sleeping, wakeup in {int(wake - now_wall)} s")
-        unplugged = android_push_off()
+        log(f"sleeping, wakeup in {int(wake - now_wall)} s"
+            + ("" if ipa else ", mobile data wakeups off"))
+        unplugged = android_push_off(ipa)
     # Root may suspend through block inhibitors: why_awake checked them
     if subprocess.run(["systemctl", "suspend"]).returncode != 0:
         if unplugged:
@@ -484,6 +561,7 @@ def main():
     now = time.monotonic()
     screen_off_since = now
     awake_since = now
+    awake_for = AWAKE_FOR
     was_on = True
     net = [(now, net_bytes())]
     reason = None
@@ -495,6 +573,11 @@ def main():
     maintenance = None
     android_alarm_until = None
     dozing = False
+    # Boot times of early wakeups by mobile data: the monotonic clock stops in
+    # sleep, so the window would last most of a night
+    mobile_wakes = []
+    # Monotonic time to check that Wi-Fi came back after a wakeup
+    wifi_check = None
     last_route = uplink()
     uplink_since = now if last_route else None
     while True:
@@ -510,19 +593,34 @@ def main():
             # kernel's alarm timer cancel the sleep: no wakeup irq then
             cause = ("Android alarm" if "rtc" in irq
                      or (irq == "none recorded" and "alarmtimer.1.auto" in fired)
-                     else "mobile data" if "(ipa)" in irq else None)
+                     else "mobile data" if "(ipa)" in irq
+                     else "Wi-Fi" if WIFI_WAKEUP in fired else None)
             early = (maintenance is not None and time.time() < maintenance - 5
                      and cause is not None and not screen_on())
+            # A packet: Android is online for it, and the maintenance wakeup
+            # stays due. A lost connection takes a full wakeup.
+            packet = (early and cause == "Wi-Fi"
+                      and run(["iw", "dev", "wlan0", "link"]).startswith("Connected"))
+            early = early and cause != "Wi-Fi"
             log(f"woke after {int(slept)} s, wakeup irq {irq}"
                 + (f", wakeup sources: {' '.join(fired)}" if fired else "")
-                + (f", {cause}: Android stays offline" if early else ""))
+                + (f", {cause}: Android stays offline" if early else
+                   ", Wi-Fi packet" if packet else ""))
+            wifi_check = now + WIFI_CHECK_DELAY
+            if early and cause == "mobile data":
+                mobile_wakes.append(boottime())
             if early:
                 android_alarm_until = now + ANDROID_ALARM_WINDOW
             else:
                 android_alarm_until = None
-                maintenance = None
+                if not packet:
+                    maintenance = None
+                awake_for = WIFI_AWAKE_FOR if packet else AWAKE_FOR
                 awake_since = now
                 net = []
+        if wifi_check is not None and now >= wifi_check and asleep is None:
+            wifi_check = None
+            wifi_revive()
         on = screen_on()
         if on:
             was_on = True
@@ -545,8 +643,8 @@ def main():
         net = [s for s in net if now - s[0] <= NET_WINDOW]
         span = net[-1][0] - net[0][0]
         rate = int((net[-1][1] - net[0][1]) / span) if span >= 4 else NET_BYTES + 1
-        why = why_awake(now, screen_off_since, awake_since, rate, uplink_since,
-                        android_alarm_until)
+        why = why_awake(now, screen_off_since, awake_since, awake_for, rate,
+                        uplink_since, android_alarm_until)
         if why is None:
             events = wakeup_events()
             wall = time.time()
@@ -556,7 +654,9 @@ def main():
                 dozing = android_doze(True)
             asleep = (suspend_count(), boottime())
             unplugged_android = True
-            why = suspend(wall, maintenance)
+            mobile_wakes = [t for t in mobile_wakes
+                            if boottime() - t < MOBILE_WAKES_WINDOW]
+            why = suspend(wall, maintenance, len(mobile_wakes) < MOBILE_WAKES_MAX)
             if why is None:
                 time.sleep(5)
                 continue
