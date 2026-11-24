@@ -1,0 +1,164 @@
+From 26729f82a8cc127b73526ba36739ff0a7f841dae Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 20:36:07 +0100
+Subject: [PATCH 318/318] wifi: ath12k: recover from a PCIe link loss
+
+When the PCIe link goes down (on the NX809J, so far only right after a
+WoW suspend) the host bridge runs the PCI error recovery: the root port
+is reset, which on Qualcomm hosts asserts PERST and powers the chip off
+and on through its power sequencer, and the link trains again. ath12k
+had no error handlers, so the PCI core marked the device as failed for
+good and dropped every later config access. The firmware restart could
+not restore the BARs after the power cycle and never finished, leaving
+Wi-Fi dead until a reboot.
+
+Add the handlers. error_detected holds restarts back while the link is
+reset, slot_reset restores the configuration saved at probe, and resume
+boots the firmware from scratch through the existing reset work. A WoW
+resume that finds the chip reset skips the MHI resume and asks mac80211
+for a restart.
+
+Tested by running pci_host_handle_link_down() on the root port with
+Wi-Fi connected: the chip is power-cycled, the firmware is up 1.2 s
+later and Wi-Fi reconnects without a reboot; WoW sleeps work after it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/core.c | 20 +++++++++++
+ drivers/net/wireless/ath/ath12k/core.h |  2 ++
+ drivers/net/wireless/ath/ath12k/pci.c  | 50 ++++++++++++++++++++++++++
+ drivers/net/wireless/ath/ath12k/wow.c  |  6 +++-
+ 4 files changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
+index 11c436ab8379..2722994e10d8 100644
+--- a/drivers/net/wireless/ath/ath12k/core.c
++++ b/drivers/net/wireless/ath/ath12k/core.c
+@@ -1762,6 +1762,26 @@ void ath12k_core_fw_unresponsive(struct ath12k_base *ab)
+ 	queue_work(ab->workqueue_aux, &ab->reset_work);
+ }
+ 
++/*
++ * The PCIe link went down and the bus resets the chip: hold every restart
++ * back until the link is up again, then boot the firmware from scratch.
++ */
++void ath12k_core_link_lost(struct ath12k_base *ab)
++{
++	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
++	set_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags);
++	set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
++}
++
++void ath12k_core_link_back(struct ath12k_base *ab)
++{
++	if (test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))
++		return;
++
++	set_bit(ATH12K_FLAG_UNRESPONSIVE, &ab->dev_flags);
++	queue_work(ab->workqueue_aux, &ab->reset_work);
++}
++
+ static void ath12k_core_reset_power_down(struct ath12k_base *ab)
+ {
+ 	ath12k_hif_irq_disable(ab);
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+index 3a30ad8cc52b..c5e29b26d1ce 100644
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -1285,6 +1285,8 @@ int ath12k_core_suspend(struct ath12k_base *ab);
+ int ath12k_core_suspend_late(struct ath12k_base *ab);
+ bool ath12k_core_wow_suspended(struct ath12k_base *ab);
+ void ath12k_core_fw_unresponsive(struct ath12k_base *ab);
++void ath12k_core_link_lost(struct ath12k_base *ab);
++void ath12k_core_link_back(struct ath12k_base *ab);
+ void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
+ u8 ath12k_get_num_partner_link(struct ath12k *ar);
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+index 100b5085702c..f20ecdb9cef2 100644
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -1956,6 +1956,55 @@ static const struct dev_pm_ops __maybe_unused ath12k_pci_pm_ops = {
+ 				     ath12k_pci_pm_resume_early)
+ };
+ 
++/*
++ * The link went down (on a phone, mostly right after a WoW suspend) and the
++ * host bridge resets the root port, which powers the chip off and on again.
++ * Let it, then boot the firmware from scratch. Without these callbacks the
++ * PCI core marks the device as failed for good and drops every config
++ * access, so the restart can not even restore the BARs.
++ */
++static pci_ers_result_t ath12k_pci_error_detected(struct pci_dev *pdev,
++						  pci_channel_state_t state)
++{
++	struct ath12k_base *ab = pci_get_drvdata(pdev);
++
++	if (!ab || state == pci_channel_io_perm_failure)
++		return PCI_ERS_RESULT_DISCONNECT;
++
++	ath12k_warn(ab, "PCIe link lost, resetting the chip\n");
++	ath12k_core_link_lost(ab);
++
++	return PCI_ERS_RESULT_NEED_RESET;
++}
++
++static pci_ers_result_t ath12k_pci_slot_reset(struct pci_dev *pdev)
++{
++	struct ath12k_base *ab = pci_get_drvdata(pdev);
++	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
++
++	/* The chip came back from a power cycle with an empty configuration */
++	if (ab_pci->pci_state &&
++	    !pci_load_saved_state(pdev, ab_pci->pci_state))
++		pci_restore_state(pdev);
++	pci_set_master(pdev);
++
++	return PCI_ERS_RESULT_RECOVERED;
++}
++
++static void ath12k_pci_error_resume(struct pci_dev *pdev)
++{
++	struct ath12k_base *ab = pci_get_drvdata(pdev);
++
++	ath12k_info(ab, "PCIe link back, restarting the firmware\n");
++	ath12k_core_link_back(ab);
++}
++
++static const struct pci_error_handlers ath12k_pci_err_handler = {
++	.error_detected = ath12k_pci_error_detected,
++	.slot_reset = ath12k_pci_slot_reset,
++	.resume = ath12k_pci_error_resume,
++};
++
+ int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
+ 			       struct ath12k_pci_driver *driver)
+ {
+@@ -1982,6 +2031,7 @@ int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
+ 	pci_driver->remove = ath12k_pci_remove;
+ 	pci_driver->shutdown = ath12k_pci_shutdown;
+ 	pci_driver->driver.pm = &ath12k_pci_pm_ops;
++	pci_driver->err_handler = &ath12k_pci_err_handler;
+ 	pci_driver->dev_groups = ath12k_mac_groups;
+ 
+ 	return pci_register_driver(pci_driver);
+diff --git a/drivers/net/wireless/ath/ath12k/wow.c b/drivers/net/wireless/ath/ath12k/wow.c
+index e988cf865fd2..ae9820c5b9b3 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.c
++++ b/drivers/net/wireless/ath/ath12k/wow.c
+@@ -992,7 +992,11 @@ int ath12k_wow_op_resume(struct ieee80211_hw *hw)
+ 
+ 	lockdep_assert_wiphy(hw->wiphy);
+ 
+-	ret = ath12k_hif_resume(ar->ab);
++	/* The link went down in the sleep and the chip was reset */
++	if (test_bit(ATH12K_FLAG_UNRESPONSIVE, &ar->ab->dev_flags))
++		ret = -ENOLINK;
++	else
++		ret = ath12k_hif_resume(ar->ab);
+ 
+ 	/* Also on an error: the recovery disables them once more */
+ 	ath12k_hif_ce_irq_enable(ar->ab);
+-- 
+2.56.1
+
