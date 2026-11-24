@@ -1,0 +1,109 @@
+From 234792c147dd48f9578b09f2d3540aa8182cdf20 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 20:15:45 +0100
+Subject: [PATCH 317/317] wifi: ath12k: do not retry a WoW suspend the firmware refuses
+
+When the firmware is busy it answers the WoW enable with an HTC
+suspend NACK. The driver resent the request up to 10 times, 200 ms
+apart, until the firmware gave in. On the NX809J (WCN7850-class
+peach chip) a suspend accepted after several refusals was followed
+by firmware crashes in its sleep handling and, once, by a PCIe link
+that went down right after the suspend and never recovered.
+
+Hand the first refusal to the caller instead: op_suspend calls the
+system suspend off and the host tries again later, as the vendor
+driver does. Allow 30 refusals in a row (was 3) before a suspend
+goes on without WoW, as each refusal is now one NACK instead of ten.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/wow.c | 45 +++++++++++++--------------
+ drivers/net/wireless/ath/ath12k/wow.h |  4 +--
+ 2 files changed, 22 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/wow.c b/drivers/net/wireless/ath/ath12k/wow.c
+index 2332165eec39..e988cf865fd2 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.c
++++ b/drivers/net/wireless/ath/ath12k/wow.c
+@@ -39,41 +39,38 @@ static inline bool ath12k_wow_is_p2p_vdev(struct ath12k_vif *ahvif)
+ int ath12k_wow_enable(struct ath12k *ar)
+ {
+ 	struct ath12k_base *ab = ar->ab;
+-	int i, ret;
++	int ret;
+ 
+ 	clear_bit(ATH12K_FLAG_HTC_SUSPEND_COMPLETE, &ab->dev_flags);
+ 
+ 	/* The firmware might be busy and it can not enter WoW immediately.
+ 	 * In that case firmware notifies host with
+ 	 * ATH12K_HTC_MSG_NACK_SUSPEND message, asking host to try again
+-	 * later. Per the firmware team there could be up to 10 loops.
++	 * later. Do not retry here: the caller calls the system suspend
++	 * off and the host tries again later. Retrying at once until the
++	 * firmware gives in was followed by firmware crashes and a dead
++	 * PCIe link right after the suspend.
+ 	 */
+-	for (i = 0; i < ATH12K_WOW_RETRY_NUM; i++) {
+-		reinit_completion(&ab->htc_suspend);
+-
+-		ret = ath12k_wmi_wow_enable(ar);
+-		if (ret) {
+-			ath12k_warn(ab, "failed to issue wow enable: %d\n", ret);
+-			return ret;
+-		}
+-
+-		ret = wait_for_completion_timeout(&ab->htc_suspend, 3 * HZ);
+-		if (ret == 0) {
+-			ath12k_warn(ab,
+-				    "timed out while waiting for htc suspend completion\n");
+-			return -ETIMEDOUT;
+-		}
++	reinit_completion(&ab->htc_suspend);
+ 
+-		if (test_bit(ATH12K_FLAG_HTC_SUSPEND_COMPLETE, &ab->dev_flags))
+-			/* success, suspend complete received */
+-			return 0;
++	ret = ath12k_wmi_wow_enable(ar);
++	if (ret) {
++		ath12k_warn(ab, "failed to issue wow enable: %d\n", ret);
++		return ret;
++	}
+ 
+-		ath12k_warn(ab, "htc suspend not complete, retrying (try %d)\n",
+-			    i);
+-		msleep(ATH12K_WOW_RETRY_WAIT_MS);
++	ret = wait_for_completion_timeout(&ab->htc_suspend, 3 * HZ);
++	if (ret == 0) {
++		ath12k_warn(ab,
++			    "timed out while waiting for htc suspend completion\n");
++		return -ETIMEDOUT;
+ 	}
+ 
+-	ath12k_warn(ab, "htc suspend not complete, failing after %d tries\n", i);
++	if (test_bit(ATH12K_FLAG_HTC_SUSPEND_COMPLETE, &ab->dev_flags))
++		/* success, suspend complete received */
++		return 0;
++
++	ath12k_dbg(ab, ATH12K_DBG_WOW, "htc suspend not complete, firmware busy\n");
+ 
+ 	return -EBUSY;
+ }
+diff --git a/drivers/net/wireless/ath/ath12k/wow.h b/drivers/net/wireless/ath/ath12k/wow.h
+index 22309137de40..1cfc17d11dd2 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.h
++++ b/drivers/net/wireless/ath/ath12k/wow.h
+@@ -7,10 +7,8 @@
+ #ifndef ATH12K_WOW_H
+ #define ATH12K_WOW_H
+ 
+-#define ATH12K_WOW_RETRY_NUM		10
+ /* Suspends called off in a row before one goes on without WoW */
+-#define ATH12K_WOW_REFUSED_MAX		3
+-#define ATH12K_WOW_RETRY_WAIT_MS	200
++#define ATH12K_WOW_REFUSED_MAX		30
+ #define ATH12K_WOW_PATTERNS		22
+ 
+ struct ath12k_wow {
+-- 
+2.56.1
+
