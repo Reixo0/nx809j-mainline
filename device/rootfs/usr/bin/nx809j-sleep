@@ -72,6 +72,12 @@ and a wakeup of unknown cause (the modem, an SMS perhaps) gets a few seconds
 more. A Doze maintenance window keeps the phone up too, at most
 MAINTENANCE_MAX.
 
+On mobile data, with Wi-Fi not connected, the phone does the same: Android
+stays online through sleep and keeps its push connection over mobile data
+(the modem wakes the phone for its packets), the phone follows Android's
+alarms, and its wakeups are as short. Only with neither link up does Android
+go offline in sleep, with the maintenance wakeups.
+
 Settings, as environment variables (seconds):
   NX809J_SLEEP_AFTER      screen off this long before sleeping (15)
   NX809J_SLEEP_WAKE_EVERY maintenance wakeup interval (300)
@@ -115,7 +121,7 @@ ANDROID_ALARM_WINDOW = 4
 # SETTLE_MAX the usual checks take over. Checked every SETTLE_POLL.
 QUIET = 1.0
 NET_GRACE = 3
-SETTLE_MIN = {"Wi-Fi": 0.5, "Android alarm": 1.0}
+SETTLE_MIN = {"Wi-Fi": 0.5, "mobile data": 0.5, "Android alarm": 1.0}
 SETTLE_UNKNOWN = 3.0
 SETTLE_MAX = 30
 SETTLE_POLL = 0.2
@@ -233,7 +239,8 @@ def link_packets():
     counts = {}
     for dev in glob.glob("/sys/class/net/*"):
         name = os.path.basename(dev)
-        stats = (("tx_packets",) if name == "wlan0" else
+        stats = (("tx_packets",) if name == "wlan0"
+                 or name.startswith("rmnet_data") else
                  ("rx_packets", "tx_packets") if name.startswith("dlh") else ())
         for stat in stats:
             try:
@@ -732,9 +739,28 @@ def android_push_off(ipa=True):
     return True
 
 
+def online_in_sleep():
+    """How Android stays online through the next sleep: "Wi-Fi" (wake-on-WLAN
+    armed), "mobile data" (Wi-Fi not connected, the route to the internet
+    over the modem), or None: it goes offline."""
+    if wifi_keep_armed():
+        return "Wi-Fi"
+    if uplink().startswith("rmnet"):
+        return "mobile data"
+    return None
+
+
+def still_online(kept):
+    """Whether the link Android stayed online on is still up after a wakeup."""
+    if kept == "Wi-Fi":
+        return run(["iw", "dev", "wlan0", "link"]).startswith("Connected")
+    return kept == "mobile data" and uplink().startswith("rmnet")
+
+
 def suspend(now_wall, wake, kept, ipa=True):
-    """Sleep until `wake` (seconds since the epoch) at the latest, with Wi-Fi
-    `kept` (wake-on-WLAN armed); mobile data wakes the phone if `ipa`.
+    """Sleep until `wake` (seconds since the epoch) at the latest, with Android
+    online on `kept` ("Wi-Fi", "mobile data" or None); mobile data wakes the
+    phone if `ipa` (always while Android is online on it).
     Returns why it did not sleep (or None), and the time it wakes for an
     Android alarm (or None)."""
     alarm, android_wake, tag = android_alarms()
@@ -761,9 +787,11 @@ def suspend(now_wall, wake, kept, ipa=True):
         log(f"cannot set the wakeup timer: {err}")
         return "no wakeup timer", None
     if kept:
-        # Wi-Fi stays up: Android keeps its connections and gets its pushes
-        # in sleep. Only its alarms stop waking the phone.
-        log(f"sleeping with Wi-Fi kept, wakeup in {int(wake - now_wall)} s"
+        # Android keeps its connections and gets its pushes in sleep. Only
+        # its alarms stop waking the phone: it wakes for the next one itself.
+        if kept == "mobile data":
+            ipa = True
+        log(f"sleeping on {kept}, wakeup in {int(wake - now_wall)} s"
             + (f" for Android alarm {tag}" if for_android else "")
             + ("" if ipa else ", mobile data wakeups off"))
         android_net(False, cable=False, ipa=ipa)
@@ -836,9 +864,9 @@ def main():
                            and time.time() >= android_due - 5)
             due_for = android_due if for_android else None
             android_due = None
-            # Wi-Fi kept and still up: sleep again as soon as Android would
-            if (slept_kept and not screen_on() and run(
-                    ["iw", "dev", "wlan0", "link"]).startswith("Connected")):
+            # Android stayed online and its link is still up: sleep again as
+            # soon as Android would
+            if not screen_on() and still_online(slept_kept):
                 log(f"woke after {int(slept)} s, wakeup irq {irq}"
                     + (f", wakeup sources: {' '.join(fired)}" if fired else "")
                     + (f", {cause}" if cause else ", cause unknown")
@@ -918,7 +946,7 @@ def main():
         if why is None:
             events = wakeup_events()
             wall = time.time()
-            kept = wifi_keep_armed()
+            kept = online_in_sleep()
             due = wall + (WAKE_EVERY_WIFI if kept else WAKE_EVERY)
             if maintenance is None or maintenance <= wall + 5 or due < maintenance:
                 maintenance = due
