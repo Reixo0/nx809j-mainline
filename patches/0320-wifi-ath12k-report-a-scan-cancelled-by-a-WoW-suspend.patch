@@ -1,0 +1,82 @@
+From 2722c571b927830d8d61cbe4da66dc1c977df12a Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 17:46:41 +0100
+Subject: [PATCH 320/320] wifi: ath12k: report a scan cancelled by a WoW
+ suspend before sleeping
+
+mac80211 cancels a running hw scan when it suspends and leaves it to the
+driver to report the scan's end. ath12k reports it from vdev_clean_wk, a
+wiphy work, which cannot run while the suspend holds the wiphy lock. So
+mac80211 resumed with its hw scan still running ("resume with hardware
+scan still in progress") and refused every later scan with -EBUSY until
+userspace aborted it; net-detect never started either.
+
+End any scan at the start of the WoW suspend and run vdev_clean_wk there.
+The scan timeout work is cancelled without waiting, as it takes the
+wiphy lock.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/net/wireless/ath/ath12k/mac.c | 18 ++++++++++++++++++
+ drivers/net/wireless/ath/ath12k/mac.h |  1 +
+ drivers/net/wireless/ath/ath12k/wow.c |  3 +++
+ 3 files changed, 22 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/ath12k/mac.c b/drivers/net/wireless/ath/ath12k/mac.c
+index 0701f3a99dd2..92194f0db8d0 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.c
++++ b/drivers/net/wireless/ath/ath12k/mac.c
+@@ -5411,6 +5411,24 @@ static void ath12k_scan_abort(struct ath12k *ar)
+ 	spin_unlock_bh(&ar->data_lock);
+ }
+ 
++/*
++ * End any scan now and report it to mac80211. Its end is reported from
++ * vdev_clean_wk, a wiphy work; queued while the wiphy lock is held (by a
++ * suspend), it runs only after the resume, so mac80211 resumes with its
++ * hw scan still running and refuses every later scan.
++ */
++void ath12k_mac_scan_flush(struct ath12k *ar)
++{
++	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
++
++	lockdep_assert_wiphy(hw->wiphy);
++
++	ath12k_scan_abort(ar);
++	/* Not _sync: the timeout work takes the wiphy lock held here */
++	cancel_delayed_work(&ar->scan.timeout);
++	wiphy_work_flush(hw->wiphy, &ar->scan.vdev_clean_wk);
++}
++
+ static void ath12k_scan_timeout_work(struct work_struct *work)
+ {
+ 	struct ath12k *ar = container_of(work, struct ath12k,
+diff --git a/drivers/net/wireless/ath/ath12k/mac.h b/drivers/net/wireless/ath/ath12k/mac.h
+index ac20b3a022fd..7ed5a88bdb3e 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.h
++++ b/drivers/net/wireless/ath/ath12k/mac.h
+@@ -185,6 +185,7 @@ int ath12k_mac_wait_tx_complete(struct ath12k *ar);
+ struct ath12k_link_vif *ath12k_mac_wow_nd_vdev_get(struct ath12k *ar,
+ 						   bool *created);
+ void ath12k_mac_wow_nd_vdev_put(struct ath12k_link_vif *arvif);
++void ath12k_mac_scan_flush(struct ath12k *ar);
+ void ath12k_mac_handle_beacon(struct ath12k *ar, struct sk_buff *skb);
+ void ath12k_mac_handle_beacon_miss(struct ath12k *ar,
+ 				   struct ath12k_link_vif *arvif);
+diff --git a/drivers/net/wireless/ath/ath12k/wow.c b/drivers/net/wireless/ath/ath12k/wow.c
+index 1062eaedebc8..1a1d94a2187f 100644
+--- a/drivers/net/wireless/ath/ath12k/wow.c
++++ b/drivers/net/wireless/ath/ath12k/wow.c
+@@ -945,6 +945,9 @@ int ath12k_wow_op_suspend(struct ieee80211_hw *hw,
+ 
+ 	lockdep_assert_wiphy(hw->wiphy);
+ 
++	/* mac80211 cancelled a running scan: finish it before sleeping */
++	ath12k_mac_scan_flush(ar);
++
+ 	ret =  ath12k_wow_cleanup(ar);
+ 	if (ret) {
+ 		ath12k_warn(ar->ab, "failed to clear wow wakeup events: %d\n",
+-- 
+2.56.1
+

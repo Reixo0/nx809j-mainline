@@ -1,0 +1,69 @@
+From f07d2c3487d782e059ebde198463395e19668454 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 17:46:49 +0100
+Subject: [PATCH 322/322] arm64: dts: qcom: kaanapali-nubia-nx809j: let SOCCP
+ and the ADSP wake the phone
+
+The charger runs on SOCCP: without wakeup-source on its GLINK edge, a
+charger plugged in while the phone slept was only seen at the next
+wakeup, up to minutes later. Android lets these messages wake it.
+
+Add the ADSP sleep state handshake too (sleepstate/sleepstate_see SMP2P
+entries and the qcom,smp2p-sleepstate node), as the vendor device tree
+has it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../boot/dts/qcom/kaanapali-nubia-nx809j.dts  | 36 +++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+index 22216ea5f5f2..f6e86c0165d0 100644
+--- a/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
++++ b/arch/arm64/boot/dts/qcom/kaanapali-nubia-nx809j.dts
+@@ -2539,6 +2539,42 @@ map-pump {							\
+ 		cooling-device = <&micropump 3 3>;			\
+ 	};
+ 
++/*
++ * The charger runs on SOCCP: its messages (a charger plugged in, the battery
++ * state) must wake the phone, as on Android, or a plug is only seen at the
++ * next wakeup.
++ */
++&remoteproc_soccp {
++	glink-edge {
++		wakeup-source;
++	};
++};
++
++/*
++ * The audio DSP holds back what it has for the host (sensor events) while
++ * the host sleeps, unless the host sleep-state handshake is there.
++ */
++&{/smp2p-adsp} {
++	sleepstate_smp2p_out: sleepstate-out {
++		qcom,entry-name = "sleepstate";
++		#qcom,smem-state-cells = <1>;
++	};
++
++	sleepstate_smp2p_in: sleepstate-in {
++		qcom,entry-name = "sleepstate_see";
++		interrupt-controller;
++		#interrupt-cells = <2>;
++	};
++};
++
++/ {
++	smp2p-sleepstate {
++		compatible = "qcom,smp2p-sleepstate";
++		qcom,smem-states = <&sleepstate_smp2p_out 0>;
++		interrupts-extended = <&sleepstate_smp2p_in 0 IRQ_TYPE_EDGE_RISING>;
++	};
++};
++
+ &{/thermal-zones/cpu-1-0-0-thermal} {
+ 	cooling-maps {
+ 		FAN_MAPS(cpu_1_0_0)
+-- 
+2.56.1
+
