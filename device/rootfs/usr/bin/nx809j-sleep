@@ -264,24 +264,54 @@ def net_bytes():
     return total
 
 
+# Traffic that shows an app at work, counted by nftables: Android's internet
+# traffic (routed through its links, either way) and the phone's own unicast
+# on Wi-Fi and mobile data. Left out: Linux talking to Android itself (adb,
+# Droidloom's services: its adb link alone sends a keepalive every second),
+# multicast announcements after each resume, ARP, and received Wi-Fi frames
+# (other devices' broadcasts never stop).
+COUNT_TABLE = "nx809j_sleep"
+COUNT_RULES = f"""destroy table inet {COUNT_TABLE}
+table inet {COUNT_TABLE} {{
+	counter android {{}}
+	counter wlan0 {{}}
+	counter mobile {{}}
+	chain forward {{
+		type filter hook forward priority filter; policy accept;
+		iifname "dl*" counter name "android"
+		oifname "dl*" counter name "android"
+	}}
+	chain output {{
+		type filter hook output priority filter; policy accept;
+		oifname "wlan0" ip daddr != 224.0.0.0/4 counter name "wlan0"
+		oifname "wlan0" ip6 daddr != ff00::/8 counter name "wlan0"
+		oifname "rmnet_data*" ip daddr != 224.0.0.0/4 counter name "mobile"
+		oifname "rmnet_data*" ip6 daddr != ff00::/8 counter name "mobile"
+	}}
+}}
+"""
+_counting = None
+
+
 def link_packets():
-    """Packets sent on Wi-Fi, and to and from Android, by interface: where the
-    answer to a wake packet, or an app's work, shows. Received Wi-Fi packets
-    are left out: other devices' broadcasts never stop."""
-    counts = {}
-    for dev in glob.glob("/sys/class/net/*"):
-        name = os.path.basename(dev)
-        stats = (("tx_packets",) if name == "wlan0"
-                 or name.startswith("rmnet_data") else
-                 ("rx_packets", "tx_packets") if name.startswith(("dlh", "dlm"))
-                 else ())
-        for stat in stats:
-            try:
-                with open(os.path.join(dev, "statistics", stat)) as f:
-                    counts[name] = counts.get(name, 0) + int(f.read())
-            except (OSError, ValueError):
-                pass
-    return counts
+    """Packets that show an app at work (see COUNT_RULES), by kind: where
+    the answer to a wake packet, or an app's work, shows."""
+    global _counting
+    if _counting is None:
+        r = subprocess.run(["nft", "-f", "-"], input=COUNT_RULES,
+                           capture_output=True, text=True)
+        _counting = r.returncode == 0
+        if not _counting:
+            log(f"cannot count traffic with nftables: {r.stderr.strip()}")
+    if not _counting:
+        return {}
+    try:
+        data = json.loads(run(["nft", "-j", "list", "counters", "table", "inet",
+                               COUNT_TABLE]) or "{}")
+    except ValueError:
+        return {}
+    return {c["counter"]["name"]: c["counter"]["packets"]
+            for c in data.get("nftables", []) if "counter" in c}
 
 
 def wakeup_active():
@@ -364,15 +394,17 @@ def android_alarms():
     if not now or not nxt:
         return clock, None, None
     wake = time.time() + (int(nxt.group(1)) - int(now.group(1))) / 1000
-    # Its tag: the first wakeup alarm whose window holds that time (Android
-    # may deliver a windowed alarm at any point of it, often at the end)
-    due, tag = int(nxt.group(1)), "?"
+    # Its tag: of the wakeup alarms whose window holds that time (Android
+    # may deliver a windowed alarm at any point of it, often at the end), the
+    # one with the narrowest window: a daily alarm with an 18 h window holds
+    # nearly every time and named every wakeup
+    due, tag, best = int(nxt.group(1)), "?", None
     for m in re.finditer(r"_WAKEUP #\d+: Alarm\{\S+ type \d+ origWhen \d+ "
                          r"whenElapsed (\d+) ([^}]*)\}\s+tag=(\S+)\s+.*?window=(\S+)", out):
-        start = int(m.group(1))
-        if start <= due <= start + duration(m.group(4)) * 1000 + 1:
+        start, window = int(m.group(1)), duration(m.group(4)) * 1000
+        if start <= due <= start + window + 1 and (best is None or window < best):
+            best = window
             tag = m.group(3).replace("*walarm*:", "") + " (" + m.group(2) + ")"
-            break
     return clock, wake, tag
 
 
