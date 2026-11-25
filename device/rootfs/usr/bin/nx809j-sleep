@@ -174,6 +174,8 @@ HOLD = "/run/nx809j-sleep/hold"
 IPA_WAKEUP = "/sys/devices/platform/soc@0/3f40000.ipa/power/wakeup"
 ALARM_WAKEUP = "/sys/bus/platform/devices/alarmtimer.*/power/wakeup"
 ANDROID_LINKS_HELD = "/run/nx809j-droidloom-links/held"
+# Android's address on its Wi-Fi and mobile data links, by host link prefix
+ANDROID_ADDRESSES = {"dlh": "10.177.0.2", "dlm": "10.177.0.6"}
 RTC = "/sys/class/rtc/rtc0/wakealarm"
 
 
@@ -478,10 +480,12 @@ def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
             return "early wakeup"
     elif now - awake_since < awake_for:
         return "just woke"
-    # Pushes held during sleep arrive some seconds after the link to Google
-    # is up again; it is made anew whenever the route changes.
+    # Pushes held during sleep arrive once the link to Google is up again;
+    # it is made anew whenever the route changes. Like Android, stay up until
+    # it is, NET_SETTLE at most (also without a push service).
     elif now - awake_since < AWAKE_MAX and (
-            uplink_since is None or now - uplink_since < NET_SETTLE):
+            uplink_since is None or now - uplink_since < NET_SETTLE) \
+            and not android_push_up():
         return "network coming back"
     if os.path.exists(HOLD):
         return "held by " + HOLD
@@ -965,6 +969,36 @@ def android_netns_ss():
     if not pid or not glob.glob("/sys/class/net/dlh*"):
         return None
     return ["nsenter", "-t", pid[0], "-n", "ss"]
+
+
+def android_push_up():
+    """Whether Android's push service (Google's, ports 5228-5230) is
+    connected over one of its links that is plugged in: connections over a
+    link that lost its uplink are dead."""
+    ss = android_netns_ss()
+    if not ss:
+        return False
+    live = set()
+    for link in glob.glob("/sys/class/net/dl[hm]*"):
+        try:
+            with open(os.path.join(link, "carrier")) as f:
+                if f.read().strip() != "1":
+                    continue
+        except OSError:
+            continue
+        address = ANDROID_ADDRESSES.get(os.path.basename(link)[:3])
+        if address:
+            live.add(address)
+    out = run([*ss, "-tnH", "state", "established",
+               "( dport = :5228 or dport = :5229 or dport = :5230 )"])
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) < 4:
+            continue
+        local = f[-2].rsplit(":", 1)[0].strip("[]").removeprefix("::ffff:")
+        if local in live:
+            return True
+    return False
 
 
 def android_reset(ss, *states, port=()):
