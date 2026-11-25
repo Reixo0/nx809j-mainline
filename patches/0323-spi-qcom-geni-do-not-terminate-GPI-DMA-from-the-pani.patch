@@ -1,0 +1,49 @@
+From 6792f50e1694ab6bf8595543a636e2cfdfe92569 Mon Sep 17 00:00:00 2001
+From: Reixo <125610085+Reixo0@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 19:52:11 +0100
+Subject: [PATCH 323/323] spi: qcom-geni: do not terminate GPI DMA from the panic
+ notifier
+
+The panic notifier calls dmaengine_terminate_async() on the GPI channels.
+gpi_terminate_all() sends GPI commands and waits for their completion,
+which sleeps. On a watchdog bark the panic runs from the idle thread: the
+wait printed "bad: scheduling from the idle thread" in a loop, overwrote
+the whole ramoops console and the panic never reached its reboot, so the
+phone hung instead of restarting.
+
+Leave GPI transfers alone in the notifier; the FIFO/SE DMA paths, which
+only poll registers, are kept.
+
+Fixes: b7b192e58f35 ("spi: qcom-geni: Add panic notifier to cancel and reset DMA during panic")
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/spi/spi-geni-qcom.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/spi/spi-geni-qcom.c b/drivers/spi/spi-geni-qcom.c
+index 91e75e213f92..4dfd52babb6e 100644
+--- a/drivers/spi/spi-geni-qcom.c
++++ b/drivers/spi/spi-geni-qcom.c
+@@ -1093,11 +1093,15 @@ static int spi_geni_panic_notifier(struct notifier_block *nb,
+ 	if (!pm_runtime_active(mas->dev))
+ 		return NOTIFY_OK;
+ 
+-	if (mas->cur_xfer_mode == GENI_GPI_DMA) {
+-		dmaengine_terminate_async(mas->tx);
+-		dmaengine_terminate_async(mas->rx);
++	/*
++	 * Leave GPI DMA alone: gpi_terminate_all() sends GPI commands and
++	 * waits for their completion, which sleeps. A panic notifier must
++	 * not sleep; from the idle thread (a watchdog bark) it printed
++	 * "scheduling from the idle thread" over and over, overwrote the
++	 * crash log and never let the panic reach its reboot.
++	 */
++	if (mas->cur_xfer_mode == GENI_GPI_DMA)
+ 		return NOTIFY_OK;
+-	}
+ 
+ 	if (!(readl_relaxed(se->base + SE_GENI_STATUS) & M_GENI_CMD_ACTIVE))
+ 		return NOTIFY_OK;
+-- 
+2.56.1
+
