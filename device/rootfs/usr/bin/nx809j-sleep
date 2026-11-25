@@ -145,6 +145,24 @@ WAKELOCK_OFFLINE = 30
 # wakeups within MOBILE_WAKES_WINDOW seconds it may not, until they age out
 MOBILE_WAKES_MAX = 3
 MOBILE_WAKES_WINDOW = 3600
+# Net-detect while Wi-Fi is on but not connected: the firmware scans for
+# the saved networks every WATCH_FAST s for WATCH_FAST_SCANS scans, then
+# every WATCH_SLOW s, and wakes the phone when one is in range (Android's
+# PNO scans)
+WATCH_FAST = 30
+WATCH_FAST_SCANS = 10
+WATCH_SLOW = 180
+WATCH_SSIDS_MAX = 16
+# ath12k takes at most this many channels for net-detect and drops the whole
+# request beyond it (the phone has about 100); 6 GHz networks are looked for
+# on the preferred scanning channels only, as phones do
+WATCH_CHANNELS_MAX = 60
+PSC_6GHZ = range(5975, 7116, 80)
+# Stay awake this long for a saved network the firmware found to connect
+WIFI_JOIN_MAX = 20
+# Stay awake while NetworkManager connects Wi-Fi (sleeping in the middle of it
+# crashed the firmware once), for at most this long per attempt
+WIFI_CONNECTING_MAX = 45
 HOLD = "/run/nx809j-sleep/hold"
 IPA_WAKEUP = "/sys/devices/platform/soc@0/3f40000.ipa/power/wakeup"
 ALARM_WAKEUP = "/sys/bus/platform/devices/alarmtimer.*/power/wakeup"
@@ -460,6 +478,8 @@ def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
         return "held by " + HOLD
     if on_charger():
         return "on the charger"
+    if wifi_connecting():
+        return "Wi-Fi connecting"
     if not offline and net_rate > NET_BYTES:
         return f"network busy ({net_rate // 1000} kB/s)"
     if sleep_blocked():
@@ -478,12 +498,34 @@ def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
     return None
 
 
+_connecting_since = None
+
+
+def wifi_connecting():
+    """NetworkManager is connecting Wi-Fi (associating, DHCP): stay up until
+    it is done, WIFI_CONNECTING_MAX at most per attempt."""
+    global _connecting_since
+    state = ""
+    for line in run(["nmcli", "-t", "-f", "DEVICE,STATE", "device"]).splitlines():
+        if line.startswith("wlan0:"):
+            state = line.split(":", 1)[1]
+    if not state.startswith("connecting"):
+        _connecting_since = None
+        return False
+    now = time.monotonic()
+    if _connecting_since is None:
+        _connecting_since = now
+    return now - _connecting_since < WIFI_CONNECTING_MAX
+
+
 def linux_busy():
     """What Linux needs the phone up for (it takes no wakelocks), or None."""
     if os.path.exists(HOLD):
         return "held by " + HOLD
     if on_charger():
         return "on the charger"
+    if wifi_connecting():
+        return "Wi-Fi connecting"
     if sleep_blocked():
         return "sleep inhibitor"
     if in_call():
@@ -620,33 +662,145 @@ def wifi_addresses():
     return sorted(addrs, key=lambda a: (a.version, a.is_link_local))
 
 
-def wifi_keep_armed():
-    """Arm wake-on-WLAN so Wi-Fi stays associated through the sleep.
-
-    NetworkManager keeps a device up across suspend only when it has
-    wake-on-WLAN set; nx809j-wowlan (systemd-sleep hook) disarms it after
-    the wakeup, before NetworkManager hears of it, or NetworkManager would
-    take the link down and reconnect. The chip and its PCIe root port need
-    their wakeup enabled: the PCIe controller only holds the link through
-    sleep for an endpoint armed to wake the phone. True when armed."""
-    if not run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
-        return False
+def wifi_wakeup_phy():
+    """Let the Wi-Fi chip and its PCIe root port wake the phone, and return
+    the phy name (None if that fails). The PCIe controller only holds the
+    link through sleep for an endpoint armed to wake the phone."""
     try:
         phy = os.path.basename(os.path.realpath("/sys/class/net/wlan0/phy80211"))
-        mac = open("/sys/class/net/wlan0/address").read().strip()
         dev = os.path.realpath("/sys/class/net/wlan0/device")
         for d in (dev, os.path.dirname(dev)):
             with open(os.path.join(d, "power/wakeup"), "w") as f:
                 f.write("enabled")
     except OSError as err:
         log(f"cannot arm wake-on-WLAN: {err}")
-        return False
-    armed = subprocess.run(["iw", "phy", phy, "wowlan", "enable", "disconnect",
-                            "magic-packet", "patterns", *wake_patterns(mac, wifi_addresses())],
+        return None
+    return phy
+
+
+def wifi_arm(phy, *triggers):
+    """Set the wake-on-WLAN triggers. NetworkManager keeps a device up across
+    suspend only when it has wake-on-WLAN set; nx809j-wowlan (systemd-sleep
+    hook) disarms it after the wakeup, before NetworkManager hears of it, or
+    NetworkManager would take the link down and reconnect. True when armed."""
+    armed = subprocess.run(["iw", "phy", phy, "wowlan", "enable", *triggers],
                            capture_output=True, text=True)
     if armed.returncode != 0:
         log(f"cannot arm wake-on-WLAN: {armed.stderr.strip()}")
     return armed.returncode == 0
+
+
+def wifi_keep_armed():
+    """Arm wake-on-WLAN so Wi-Fi stays associated through the sleep. True
+    when armed."""
+    if not run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
+        return False
+    phy = wifi_wakeup_phy()
+    if phy is None:
+        return False
+    try:
+        mac = open("/sys/class/net/wlan0/address").read().strip()
+    except OSError as err:
+        log(f"cannot arm wake-on-WLAN: {err}")
+        return False
+    return wifi_arm(phy, "disconnect", "magic-packet", "patterns",
+                    *wake_patterns(mac, wifi_addresses()))
+
+
+def saved_ssids():
+    """SSIDs of the saved Wi-Fi networks NetworkManager joins by itself,
+    most recently used first."""
+    rows = run(["nmcli", "-t", "-f", "TYPE,AUTOCONNECT,TIMESTAMP,UUID",
+                "connection", "show"]).splitlines()
+    nets = []
+    for row in rows:
+        kind, auto, stamp, uuid = (row.split(":") + ["", "", "", ""])[:4]
+        if kind != "802-11-wireless" or auto != "yes":
+            continue
+        ssid = run(["nmcli", "-g", "802-11-wireless.ssid,802-11-wireless.mode",
+                    "connection", "show", uuid]).splitlines()
+        if len(ssid) >= 2 and ssid[0] and ssid[1] in ("", "infrastructure"):
+            nets.append((int(stamp) if stamp.isdigit() else 0, ssid[0]))
+    ssids = []
+    for _, ssid in sorted(nets, reverse=True):
+        if ssid not in ssids:
+            ssids.append(ssid)
+    return ssids[:WATCH_SSIDS_MAX]
+
+
+def wifi_watch_armed():
+    """Wi-Fi is on but not connected: let the firmware look for the saved
+    networks through the sleep (net-detect), as Android's PNO scans do. The
+    chip stays up, so the screen comes on without a firmware boot, and the
+    phone joins a saved network as soon as it is in range. True when armed."""
+    if run(["nmcli", "-t", "radio", "wifi"]).strip() != "enabled":
+        return False
+    try:
+        with open("/sys/class/net/wlan0/flags") as f:
+            if not int(f.read(), 16) & 1:
+                return False
+    except (OSError, ValueError):
+        return False
+    ssids = saved_ssids()
+    if not ssids:
+        return False
+    phy = wifi_wakeup_phy()
+    if phy is None:
+        return False
+    wifi_scan_abort()
+    matches = []
+    for ssid in ssids:
+        matches += ["ssid", ssid]
+    # "disconnect" does nothing while not connected, but NetworkManager only
+    # keeps a device up across suspend for the triggers it knows, and
+    # net-detect is not one of them
+    freqs = watch_channels(phy)
+    return wifi_arm(phy, "disconnect", "net-detect", "scan_plans",
+                    f"{WATCH_FAST}:{WATCH_FAST_SCANS}", str(WATCH_SLOW),
+                    *(["freqs", *freqs] if freqs else []),
+                    "matches", *matches)
+
+
+def watch_channels(phy):
+    """The channels net-detect scans: every usable 2.4 and 5 GHz one, and the
+    6 GHz preferred scanning channels, WATCH_CHANNELS_MAX at most."""
+    freqs = []
+    for line in run(["iw", "phy", phy, "channels"]).splitlines():
+        m = re.match(r"\s*\*\s+(\d+)\s+MHz", line)
+        if not m or "disabled" in line:
+            continue
+        f = int(m.group(1))
+        if f < 5950 or f in PSC_6GHZ:
+            freqs.append(str(f))
+    return freqs[:WATCH_CHANNELS_MAX]
+
+
+def wifi_scan_abort():
+    """Stop a Wi-Fi scan NetworkManager may have running. One still running
+    when the phone suspends is never reported finished (ath12k queues its
+    completion as work that the suspend overtakes): mac80211 then refuses
+    every later scan, the firmware's net-detect never starts, and Wi-Fi does
+    not find any network again until the scan is aborted. Give the abort
+    a moment to complete before the suspend."""
+    if subprocess.run(["iw", "dev", "wlan0", "scan", "abort"],
+                      capture_output=True).returncode == 0:
+        time.sleep(0.3)
+
+
+def wifi_join():
+    """A saved network came in range while asleep: have NetworkManager scan
+    now, and stay awake until it joined (or WIFI_JOIN_MAX s, or the screen
+    comes on). Returns the seconds it took, and whether it joined."""
+    start = time.monotonic()
+    wifi_scan_abort()
+    run(["nmcli", "device", "wifi", "rescan", "ifname", "wlan0"])
+    while time.monotonic() - start < WIFI_JOIN_MAX:
+        if run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
+            return time.monotonic() - start, True
+        if screen_on():
+            break
+        time.sleep(0.5)
+    return time.monotonic() - start, False
 
 
 def wifi_revive():
@@ -742,12 +896,14 @@ def android_push_off(ipa=True):
 def online_in_sleep():
     """How Android stays online through the next sleep: "Wi-Fi" (wake-on-WLAN
     armed), "mobile data" (Wi-Fi not connected, the route to the internet
-    over the modem), or None: it goes offline."""
+    over the modem), or None: it goes offline. Also whether the Wi-Fi
+    firmware looks for the saved networks meanwhile (net-detect)."""
     if wifi_keep_armed():
-        return "Wi-Fi"
+        return "Wi-Fi", False
+    watching = wifi_watch_armed()
     if uplink().startswith("rmnet"):
-        return "mobile data"
-    return None
+        return "mobile data", watching
+    return None, watching
 
 
 def still_online(kept):
@@ -757,7 +913,7 @@ def still_online(kept):
     return kept == "mobile data" and uplink().startswith("rmnet")
 
 
-def suspend(now_wall, wake, kept, ipa=True):
+def suspend(now_wall, wake, kept, ipa=True, watching=False):
     """Sleep until `wake` (seconds since the epoch) at the latest, with Android
     online on `kept` ("Wi-Fi", "mobile data" or None); mobile data wakes the
     phone if `ipa` (always while Android is online on it).
@@ -793,13 +949,15 @@ def suspend(now_wall, wake, kept, ipa=True):
             ipa = True
         log(f"sleeping on {kept}, wakeup in {int(wake - now_wall)} s"
             + (f" for Android alarm {tag}" if for_android else "")
-            + ("" if ipa else ", mobile data wakeups off"))
+            + ("" if ipa else ", mobile data wakeups off")
+            + (", Wi-Fi looking for saved networks" if watching else ""))
         android_net(False, cable=False, ipa=ipa)
         android_drop_closing()
         unplugged = True
     else:
         log(f"sleeping, wakeup in {int(wake - now_wall)} s"
-            + ("" if ipa else ", mobile data wakeups off"))
+            + ("" if ipa else ", mobile data wakeups off")
+            + (", Wi-Fi looking for saved networks" if watching else ""))
         unplugged = android_push_off(ipa)
     # Root may suspend through block inhibitors: why_awake checked them
     if subprocess.run(["systemctl", "suspend"]).returncode != 0:
@@ -847,7 +1005,7 @@ def main():
         settled = False
         now = time.monotonic()
         if asleep is not None and suspend_count() != asleep[0]:
-            slept_kept = asleep[2]
+            slept_kept, slept_watching = asleep[2], asleep[3]
             slept = boottime() - asleep[1]
             irq = wakeup_irq()
             fired = new_events(events) if events else []
@@ -857,6 +1015,8 @@ def main():
             # kernel's alarm timer cancel the sleep: no wakeup irq then
             cause = ("Android alarm" if "rtc" in irq
                      or (irq == "none recorded" and "alarmtimer.1.auto" in fired)
+                     else "USB plugged in" if "qcom-battmgr-usb" in fired
+                     and on_charger()
                      else "mobile data" if "(ipa)" in irq
                      else "Wi-Fi" if WIFI_WAKEUP in fired else None)
             # Woken for the Android alarm it slept until: Android stays online
@@ -873,6 +1033,11 @@ def main():
                     + (" (the one it slept until)" if for_android else ""))
                 if cause == "mobile data":
                     mobile_wakes.append(boottime())
+                if cause == "Wi-Fi" and slept_watching:
+                    took, joined = wifi_join()
+                    log(f"saved Wi-Fi network in range: "
+                        + (f"joined in {took:.1f} s" if joined
+                           else f"not joined after {took:.1f} s"))
                 held, took, by = settle(SETTLE_MIN.get(cause, SETTLE_UNKNOWN), due_for)
                 log(f"awake {took:.1f} s" + (f" (held by {by})" if by else "")
                     + (f", still awake: {held}" if held else ""))
@@ -897,6 +1062,11 @@ def main():
                 log(f"woke after {int(slept)} s, wakeup irq {irq}"
                     + (f", wakeup sources: {' '.join(fired)}" if fired else "")
                     + (f", {cause}: Android stays offline" if early else ""))
+                if cause == "Wi-Fi" and slept_watching and not screen_on():
+                    took, joined = wifi_join()
+                    log(f"saved Wi-Fi network in range: "
+                        + (f"joined in {took:.1f} s" if joined
+                           else f"not joined after {took:.1f} s"))
                 wifi_check = now + WIFI_CHECK_DELAY
                 if early and cause == "mobile data":
                     mobile_wakes.append(boottime())
@@ -946,18 +1116,19 @@ def main():
         if why is None:
             events = wakeup_events()
             wall = time.time()
-            kept = online_in_sleep()
+            kept, watching = online_in_sleep()
             due = wall + (WAKE_EVERY_WIFI if kept else WAKE_EVERY)
             if maintenance is None or maintenance <= wall + 5 or due < maintenance:
                 maintenance = due
             if not dozing and not on_charger():
                 dozing = android_doze(True)
-            asleep = (suspend_count(), boottime(), kept)
+            asleep = (suspend_count(), boottime(), kept, watching)
             unplugged_android = True
             mobile_wakes = [t for t in mobile_wakes
                             if boottime() - t < MOBILE_WAKES_WINDOW]
             why, android_due = suspend(wall, maintenance, kept,
-                                       len(mobile_wakes) < MOBILE_WAKES_MAX)
+                                       len(mobile_wakes) < MOBILE_WAKES_MAX,
+                                       watching)
             if why is None:
                 # Notice the wakeup at once: the monotonic clock stops in sleep
                 deadline = time.monotonic() + 5
