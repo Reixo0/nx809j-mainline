@@ -508,15 +508,20 @@ def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
 _connecting_since = None
 
 
+def nm_wifi_state():
+    """NetworkManager's state for wlan0, such as "connected" or
+    "connecting (getting IP configuration)"."""
+    for line in run(["nmcli", "-t", "-f", "DEVICE,STATE", "device"]).splitlines():
+        if line.startswith("wlan0:"):
+            return line.split(":", 1)[1]
+    return ""
+
+
 def wifi_connecting():
     """NetworkManager is connecting Wi-Fi (associating, DHCP): stay up until
     it is done, WIFI_CONNECTING_MAX at most per attempt."""
     global _connecting_since
-    state = ""
-    for line in run(["nmcli", "-t", "-f", "DEVICE,STATE", "device"]).splitlines():
-        if line.startswith("wlan0:"):
-            state = line.split(":", 1)[1]
-    if not state.startswith("connecting"):
+    if not nm_wifi_state().startswith("connecting"):
         _connecting_since = None
         return False
     now = time.monotonic()
@@ -886,10 +891,14 @@ def wifi_join():
         found = wifi_scan_found(freqs, ssids)
         if found:
             how = name
-            # Detached: nmcli waits for the whole activation
-            subprocess.Popen(["nmcli", "connection", "up", "uuid", uuids[found[0]],
-                              "ifname", "wlan0"], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+            # NetworkManager may have started joining by itself on the scan
+            # results: a second activation would restart it
+            if not nm_wifi_state().startswith(("connecting", "connected")):
+                # Detached: nmcli waits for the whole activation
+                subprocess.Popen(["nmcli", "connection", "up", "uuid",
+                                  uuids[found[0]], "ifname", "wlan0"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
             break
     if how is None:
         how = "full scan"
