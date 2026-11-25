@@ -77,7 +77,10 @@ def uplinks(roles):
     """The host's default route for each role, as (dev, gateway), or None."""
     defaults = sorted(
         (r for r in ip_json("route", "show", "table", "main", "default")
-         if r.get("dev") and r.get("type", "unicast") == "unicast"),
+         if r.get("dev") and r.get("type", "unicast") == "unicast"
+         # A link without carrier (Wi-Fi that lost its access point) is gone,
+         # even while NetworkManager still waits for it to come back
+         and "linkdown" not in r.get("flags", [])),
         key=lambda r: r.get("metric", 0))
     split = "mobile" in roles
     chosen = {}
