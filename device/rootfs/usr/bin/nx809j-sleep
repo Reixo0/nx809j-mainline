@@ -24,6 +24,10 @@ phone awake:
   - a call in dmail,
   - network traffic, which keeps downloads going,
   - an Android alarm clock about to ring,
+  - a Wi-Fi fault (a failed wake-on-WLAN resume, a firmware that stopped
+    answering): sleeping with it hung the phone (watchdog, 2026-11-25), so
+    it stays up until Wi-Fi works again, reloading the driver if the
+    driver's own recovery does not bring it back,
   - a charger: battery does not matter then, and Android does not doze on
     the charger, so its alarms (push reconnects among them) would wake the
     phone again within seconds of each sleep.
@@ -469,6 +473,8 @@ def wakeup_irq():
 
 def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
               uplink_since, android_alarm_until, maintenance_since=None):
+    # Read the kernel's messages on every pass, so no Wi-Fi fault is missed
+    fault = wifi_fault()
     if screen_on():
         return "screen on"
     if now - screen_off_since < SLEEP_AFTER:
@@ -489,6 +495,8 @@ def why_awake(now, screen_off_since, awake_since, awake_for, net_rate,
         return "network coming back"
     if os.path.exists(HOLD):
         return "held by " + HOLD
+    if fault:
+        return fault
     if on_charger():
         return "on the charger"
     if wifi_connecting():
@@ -536,10 +544,114 @@ def wifi_connecting():
     return now - _connecting_since < WIFI_CONNECTING_MAX
 
 
+# Kernel messages of a broken Wi-Fi: a wake-on-WLAN resume that failed (the
+# PCIe link did not come back), a firmware that does not answer
+WIFI_FAULT = re.compile(
+    r"ath12k.*(failed to wakeup from wow|firmware does not answer"
+    r"|wmi command \d+ timeout)|qcom-pcie.*failed to resume"
+    r"|Hardware became unavailable upon resume")
+# After a Wi-Fi fault: Wi-Fi counts as working again once no fault message
+# came for WIFI_FAULT_QUIET and it is connected or can scan (checked every
+# WIFI_HEALTH_EVERY); the driver is reloaded when the driver's own recovery
+# has not done it after WIFI_RELOAD_AFTER, and again every WIFI_RELOAD_EVERY
+WIFI_FAULT_QUIET = 10
+WIFI_HEALTH_EVERY = 5
+WIFI_RELOAD_AFTER = 60
+WIFI_RELOAD_EVERY = 300
+WIFI_MODULES = ["ath12k_wifi7", "ath12k"]
+
+_kmsg = None
+_wifi_fault = None      # monotonic time of the first fault message
+_wifi_fault_last = None
+_wifi_health_at = 0
+_wifi_reload_at = None
+
+
+def kernel_messages():
+    """Kernel messages logged since the last call (none on the first)."""
+    global _kmsg
+    if _kmsg is None:
+        try:
+            _kmsg = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK)
+            os.lseek(_kmsg, 0, os.SEEK_END)
+        except OSError as err:
+            log(f"cannot read kernel messages: {err}")
+            _kmsg = -1
+        return []
+    if _kmsg < 0:
+        return []
+    out = []
+    while True:
+        try:
+            record = os.read(_kmsg, 8192)
+        except BlockingIOError:
+            break
+        except BrokenPipeError:
+            continue    # overwritten records: carry on with the next one
+        except OSError:
+            break
+        if not record:
+            break
+        out.append(record.decode(errors="replace").split(";", 1)[-1].split("\n", 1)[0])
+    return out
+
+
+def wifi_healthy():
+    """Wi-Fi works: connected, switched off, or able to start a scan."""
+    if run(["nmcli", "-t", "radio", "wifi"]).strip() != "enabled":
+        return True
+    if run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
+        return True
+    return subprocess.run(["iw", "dev", "wlan0", "scan", "trigger"],
+                          capture_output=True).returncode == 0
+
+
+def wifi_reload():
+    """Reload the Wi-Fi driver, which powers the chip off and on."""
+    log("Wi-Fi still broken: reloading the driver")
+    for args in (["modprobe", "-r", *WIFI_MODULES], ["modprobe", WIFI_MODULES[0]]):
+        try:
+            r = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            log(f"{' '.join(args)} did not finish")
+            return
+        if r.returncode:
+            log(f"{' '.join(args)} failed: {r.stderr.strip()}")
+            return
+
+
+def wifi_fault():
+    """Why Wi-Fi keeps the phone up after a fault, or None."""
+    global _wifi_fault, _wifi_fault_last, _wifi_health_at, _wifi_reload_at
+    now = time.monotonic()
+    for msg in kernel_messages():
+        if WIFI_FAULT.search(msg):
+            if _wifi_fault is None:
+                log(f"Wi-Fi fault, staying awake until it works: {msg.strip()}")
+                _wifi_fault = now
+                _wifi_reload_at = now + WIFI_RELOAD_AFTER
+            _wifi_fault_last = now
+    if _wifi_fault is None:
+        return None
+    if now - _wifi_fault_last >= WIFI_FAULT_QUIET and now >= _wifi_health_at:
+        _wifi_health_at = now + WIFI_HEALTH_EVERY
+        if wifi_healthy():
+            log(f"Wi-Fi works again after {now - _wifi_fault:.0f} s")
+            _wifi_fault = None
+            return None
+    if now >= _wifi_reload_at:
+        _wifi_reload_at = now + WIFI_RELOAD_EVERY
+        wifi_reload()
+    return "Wi-Fi fault"
+
+
 def linux_busy():
     """What Linux needs the phone up for (it takes no wakelocks), or None."""
     if os.path.exists(HOLD):
         return "held by " + HOLD
+    fault = wifi_fault()
+    if fault:
+        return fault
     if on_charger():
         return "on the charger"
     if wifi_connecting():
