@@ -1,0 +1,5 @@
+# Let the audio DSP wake the phone over SMP2P: with the sleep state handshake
+# (qcom,smp2p-sleepstate) it asks the host to wake before it sends what it
+# held back in sleep, a charger plug among it. The kernel keeps SMP2P wakeups
+# off by default and leaves the choice to userspace.
+ACTION=="add", SUBSYSTEM=="platform", KERNEL=="smp2p-adsp", ATTR{power/wakeup}="enabled"

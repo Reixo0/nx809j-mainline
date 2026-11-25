@@ -91,6 +91,7 @@ Settings, as environment variables (seconds):
 
 import glob
 import ipaddress
+import json
 import os
 import re
 import subprocess
@@ -121,7 +122,8 @@ ANDROID_ALARM_WINDOW = 4
 # SETTLE_MAX the usual checks take over. Checked every SETTLE_POLL.
 QUIET = 1.0
 NET_GRACE = 3
-SETTLE_MIN = {"Wi-Fi": 0.5, "mobile data": 0.5, "Android alarm": 1.0}
+SETTLE_MIN = {"Wi-Fi": 0.5, "mobile data": 0.5, "Android alarm": 1.0,
+              "battery report": 0.5, "sensors": 0.5}
 SETTLE_UNKNOWN = 3.0
 SETTLE_MAX = 30
 SETTLE_POLL = 0.2
@@ -160,6 +162,11 @@ WATCH_CHANNELS_MAX = 60
 PSC_6GHZ = range(5975, 7116, 80)
 # Stay awake this long for a saved network the firmware found to connect
 WIFI_JOIN_MAX = 20
+# Channels each saved network was last joined on, so that after a net-detect
+# wakeup the phone scans only those (the full scan takes about 9 s), at most
+# CHANNELS_PER_SSID per network
+CHANNELS_FILE = "/var/lib/nx809j-sleep/wifi-channels.json"
+CHANNELS_PER_SSID = 4
 # Stay awake while NetworkManager connects Wi-Fi (sleeping in the middle of it
 # crashed the firmware once), for at most this long per attempt
 WIFI_CONNECTING_MAX = 45
@@ -382,12 +389,12 @@ def wakeup_sources():
     return counts
 
 
-WAKE_IRQS = {"131072": "modem", "196608": "adsp"}
+WAKE_IRQS = {"131072": "modem", "196608": "adsp", "851968": "soccp"}
 
 
 def wake_irq_counts():
     """Wake interrupts from the Wi-Fi chip, and message interrupts from the
-    modem and ADSP (GLINK), by sender."""
+    modem, ADSP and SOCCP (the charger) (GLINK), by sender."""
     counts = {}
     try:
         for line in open("/proc/interrupts"):
@@ -710,6 +717,12 @@ def wifi_keep_armed():
 def saved_ssids():
     """SSIDs of the saved Wi-Fi networks NetworkManager joins by itself,
     most recently used first."""
+    return [ssid for ssid, _ in saved_networks()][:WATCH_SSIDS_MAX]
+
+
+def saved_networks():
+    """(SSID, connection UUID) of the saved Wi-Fi networks NetworkManager
+    joins by itself, most recently used first, one per SSID."""
     rows = run(["nmcli", "-t", "-f", "TYPE,AUTOCONNECT,TIMESTAMP,UUID",
                 "connection", "show"]).splitlines()
     nets = []
@@ -720,12 +733,13 @@ def saved_ssids():
         ssid = run(["nmcli", "-g", "802-11-wireless.ssid,802-11-wireless.mode",
                     "connection", "show", uuid]).splitlines()
         if len(ssid) >= 2 and ssid[0] and ssid[1] in ("", "infrastructure"):
-            nets.append((int(stamp) if stamp.isdigit() else 0, ssid[0]))
-    ssids = []
-    for _, ssid in sorted(nets, reverse=True):
-        if ssid not in ssids:
-            ssids.append(ssid)
-    return ssids[:WATCH_SSIDS_MAX]
+            nets.append((int(stamp) if stamp.isdigit() else 0, ssid[0], uuid))
+    out, seen = [], set()
+    for _, ssid, uuid in sorted(nets, reverse=True):
+        if ssid not in seen:
+            seen.add(ssid)
+            out.append((ssid, uuid))
+    return out
 
 
 def wifi_watch_armed():
@@ -787,20 +801,107 @@ def wifi_scan_abort():
         time.sleep(0.3)
 
 
+def wifi_channels():
+    try:
+        with open(CHANNELS_FILE) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remember_channel():
+    """Note the channel of the network Wi-Fi is connected to now."""
+    ssid = freq = None
+    for line in run(["iw", "dev", "wlan0", "link"]).splitlines():
+        line = line.strip()
+        if line.startswith("SSID: "):
+            ssid = line[6:]
+        elif line.startswith("freq: "):
+            freq = int(float(line[6:]))
+    if not ssid or not freq:
+        return
+    data = wifi_channels()
+    freqs = ([freq] + [f for f in data.get(ssid, []) if f != freq])[:CHANNELS_PER_SSID]
+    if data.get(ssid) == freqs:
+        return
+    data[ssid] = freqs
+    try:
+        os.makedirs(os.path.dirname(CHANNELS_FILE), exist_ok=True)
+        tmp = CHANNELS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, CHANNELS_FILE)
+    except OSError as err:
+        log(f"cannot save the Wi-Fi channels: {err}")
+
+
+def wifi_scan_found(freqs, ssids):
+    """Scan these channels for these networks; the saved networks heard,
+    strongest first."""
+    args = ["iw", "dev", "wlan0", "scan", "flush", "freq", *map(str, freqs)]
+    args += [a for ssid in ssids for a in ("ssid", ssid)]
+    out = run(args, timeout=15)
+    best, ssid, signal = {}, None, None
+    for line in out.splitlines() + ["BSS end"]:
+        line = line.strip()
+        if line.startswith("BSS "):
+            if ssid in ssids and signal is not None:
+                best[ssid] = max(best.get(ssid, -999), signal)
+            ssid = signal = None
+        elif line.startswith("SSID: "):
+            ssid = line[6:]
+        elif line.startswith("signal: "):
+            try:
+                signal = float(line.split()[1])
+            except (IndexError, ValueError):
+                pass
+    return sorted(best, key=best.get, reverse=True)
+
+
 def wifi_join():
-    """A saved network came in range while asleep: have NetworkManager scan
-    now, and stay awake until it joined (or WIFI_JOIN_MAX s, or the screen
-    comes on). Returns the seconds it took, and whether it joined."""
+    """A saved network came in range while asleep: find it and connect, and
+    stay awake until joined (or WIFI_JOIN_MAX s, or the screen comes on).
+    Scans the channels the saved networks were last joined on first, then
+    2.4 and 5 GHz, and only then lets NetworkManager scan everything.
+    Returns the seconds it took, whether it joined, and how it found it."""
     start = time.monotonic()
     wifi_scan_abort()
-    run(["nmcli", "device", "wifi", "rescan", "ifname", "wlan0"])
+    nets = saved_networks()
+    uuids = dict(nets)
+    ssids = [ssid for ssid, _ in nets]
+    known = wifi_channels()
+    remembered = []
+    for ssid in ssids:
+        for f in known.get(ssid, []):
+            if f not in remembered:
+                remembered.append(f)
+    phy = wifi_wakeup_phy()
+    wide = [int(f) for f in watch_channels(phy) if int(f) < 5950] if phy else []
+    how = None
+    for name, freqs in (("remembered channels", remembered),
+                        ("2.4/5 GHz scan", [f for f in wide if f not in remembered])):
+        if not freqs or screen_on():
+            continue
+        found = wifi_scan_found(freqs, ssids)
+        if found:
+            how = name
+            # Detached: nmcli waits for the whole activation
+            subprocess.Popen(["nmcli", "connection", "up", "uuid", uuids[found[0]],
+                              "ifname", "wlan0"], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            break
+    if how is None:
+        how = "full scan"
+        run(["nmcli", "device", "wifi", "rescan", "ifname", "wlan0"])
     while time.monotonic() - start < WIFI_JOIN_MAX:
         if run(["iw", "dev", "wlan0", "link"]).startswith("Connected"):
-            return time.monotonic() - start, True
+            remember_channel()
+            return time.monotonic() - start, True, how
         if screen_on():
             break
-        time.sleep(0.5)
-    return time.monotonic() - start, False
+        time.sleep(0.2)
+    return time.monotonic() - start, False, how
 
 
 def wifi_revive():
@@ -1015,10 +1116,17 @@ def main():
             # kernel's alarm timer cancel the sleep: no wakeup irq then
             cause = ("Android alarm" if "rtc" in irq
                      or (irq == "none recorded" and "alarmtimer.1.auto" in fired)
-                     else "USB plugged in" if "qcom-battmgr-usb" in fired
-                     and on_charger()
+                     else "USB plugged in" if on_charger() and (
+                         "qcom-battmgr-usb" in fired
+                         or any(f.startswith("ucsi-") for f in fired))
                      else "mobile data" if "(ipa)" in irq
-                     else "Wi-Fi" if WIFI_WAKEUP in fired else None)
+                     else "Wi-Fi" if WIFI_WAKEUP in fired
+                     # The charger's reports and the sensors' requests: Android
+                     # sleeps again at once after these
+                     else "battery report" if irq == "none recorded"
+                     and ("qcom-battmgr-bat" in fired
+                          or any(f.startswith("ucsi-") for f in fired))
+                     else "sensors" if "(smp2p-adsp)" in irq else None)
             # Woken for the Android alarm it slept until: Android stays online
             for_android = (cause == "Android alarm" and android_due is not None
                            and time.time() >= android_due - 5)
@@ -1034,10 +1142,11 @@ def main():
                 if cause == "mobile data":
                     mobile_wakes.append(boottime())
                 if cause == "Wi-Fi" and slept_watching:
-                    took, joined = wifi_join()
+                    took, joined, how = wifi_join()
                     log(f"saved Wi-Fi network in range: "
                         + (f"joined in {took:.1f} s" if joined
-                           else f"not joined after {took:.1f} s"))
+                           else f"not joined after {took:.1f} s")
+                        + f" ({how})")
                 held, took, by = settle(SETTLE_MIN.get(cause, SETTLE_UNKNOWN), due_for)
                 log(f"awake {took:.1f} s" + (f" (held by {by})" if by else "")
                     + (f", still awake: {held}" if held else ""))
@@ -1063,10 +1172,11 @@ def main():
                     + (f", wakeup sources: {' '.join(fired)}" if fired else "")
                     + (f", {cause}: Android stays offline" if early else ""))
                 if cause == "Wi-Fi" and slept_watching and not screen_on():
-                    took, joined = wifi_join()
+                    took, joined, how = wifi_join()
                     log(f"saved Wi-Fi network in range: "
                         + (f"joined in {took:.1f} s" if joined
-                           else f"not joined after {took:.1f} s"))
+                           else f"not joined after {took:.1f} s")
+                        + f" ({how})")
                 wifi_check = now + WIFI_CHECK_DELAY
                 if early and cause == "mobile data":
                     mobile_wakes.append(boottime())
@@ -1117,6 +1227,8 @@ def main():
             events = wakeup_events()
             wall = time.time()
             kept, watching = online_in_sleep()
+            if kept == "Wi-Fi":
+                remember_channel()
             due = wall + (WAKE_EVERY_WIFI if kept else WAKE_EVERY)
             if maintenance is None or maintenance <= wall + 5 or due < maintenance:
                 maintenance = due
