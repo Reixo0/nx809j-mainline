@@ -1,53 +1,237 @@
-#!/bin/sh
-# Replug Droidloom's virtual cable when the host's active default route changes,
-# so Android drops stale sockets (such as netd Private DNS probes) opened on an
-# earlier route or before Wi-Fi came up.
+#!/usr/bin/python3
+"""Give Droidloom's Android a network per radio, as on a phone.
 
-state=/run/nx809j-droidloom-uplink
-runlock=/run/nx809j-droidloom-uplink.lock
-reqlock=/run/nx809j-droidloom-uplink.req.lock
-dirty=/run/nx809j-droidloom-uplink.dirty
+Droidloom gives Android two links: dlh<uid> (eth0 in Android, typed Wi-Fi,
+unmetered) and dlm<uid> (eth1, typed mobile data, metered). This steers each
+link's traffic out its own host uplink and plugs a link out while that uplink
+is gone. Android then switches networks the way it does on a phone: Wi-Fi
+wins while it is up, mobile data stays connected underneath, and when one
+goes the other keeps its connections. A link is replugged only when its own
+uplink changes (another Wi-Fi network, a new mobile data address), since
+every connection on it is dead then.
 
-# The route the phone's own traffic takes now: interface, gateway and address.
-uplink() { ip -4 route get 1.1.1.1 2>/dev/null | sed -n '1s/ uid .*//p'; }
+The Wi-Fi link stands for any uplink that is not mobile data: Wi-Fi, or the
+USB network to a computer. Without a mobile data link (an older Droidloom),
+the one link follows the host's default route, whatever it is.
 
-# Coalesce bursts under a short mutex so an event arriving during sleep/replug
-# is never dropped when another caller already holds the runner lock.
-exec 8>>"$reqlock"
-flock 8
-: >"$dirty"
-exec 9>>"$runlock"
-if ! flock -n 9; then
-	exit 0
-fi
-exec 8>&-
+nx809j-sleep plugs the links out for some sleeps and back in after: while
+the hold file exists this only plugs links out.
 
-while :; do
-	exec 8>>"$reqlock"
-	flock 8
-	rm -f "$dirty"
-	exec 8>&-
+With --watch it follows the kernel's route, address and link changes; without,
+it syncs once.
+"""
 
-	# Let the routes settle; events in this window share one replug.
-	sleep 3
+import fcntl
+import json
+import os
+import select
+import subprocess
+import sys
+import time
 
-	now=$(uplink)
-	prev=$(cat "$state" 2>/dev/null)
-	if [ "$now" != "$prev" ]; then
-		printf '%s' "$now" > "$state"
-		for link in /sys/class/net/dlh*; do
-			[ -e "$link" ] || continue
-			name=${link##*/}
-			ip link set "$name" down && sleep 1 && ip link set "$name" up
-			logger -t nx809j-droidloom-uplink "uplink changed to '${now:-none}'; replugged $name"
-		done
-	fi
+STATE_DIR = "/run/nx809j-droidloom-links"
+HOLD = os.path.join(STATE_DIR, "held")
+LOCK = os.path.join(STATE_DIR, ".lock")
+# Routing table and rule priority per role
+TABLES = {"wifi": 17701, "mobile": 17702}
+# Events closer together than this share one sync; a sync never waits longer
+QUIET = 1.0
+SETTLE_MAX = 3.0
+# What each table was last filled with: refilling sends route events, which
+# would wake the watcher again
+_tables = {}
 
-	exec 8>>"$reqlock"
-	flock 8
-	if [ ! -e "$dirty" ]; then
-		exec 9>&-
-		exit 0
-	fi
-	exec 8>&-
-done
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def ip_json(*args):
+    out = subprocess.run(["ip", "-j", *args], capture_output=True, text=True).stdout
+    try:
+        return json.loads(out or "[]")
+    except ValueError:
+        return []
+
+
+def ip(*args):
+    return subprocess.run(["ip", *args], capture_output=True, text=True)
+
+
+def links():
+    """The Android links on the host, by role."""
+    found = {}
+    for name in sorted(os.listdir("/sys/class/net")):
+        if name.startswith("dlh"):
+            found["wifi"] = name
+        elif name.startswith("dlm"):
+            found["mobile"] = name
+    return found
+
+
+def is_mobile(dev):
+    return dev.startswith("rmnet")
+
+
+def uplinks(roles):
+    """The host's default route for each role, as (dev, gateway), or None."""
+    defaults = sorted(
+        (r for r in ip_json("route", "show", "table", "main", "default")
+         if r.get("dev") and r.get("type", "unicast") == "unicast"),
+        key=lambda r: r.get("metric", 0))
+    split = "mobile" in roles
+    chosen = {}
+    for role in roles:
+        for r in defaults:
+            if r["dev"].startswith("dl"):
+                continue
+            if split and is_mobile(r["dev"]) != (role == "mobile"):
+                continue
+            chosen[role] = (r["dev"], r.get("gateway", ""))
+            break
+    return chosen
+
+
+def address(dev):
+    for link in ip_json("-4", "addr", "show", "dev", dev):
+        for a in link.get("addr_info", []):
+            return a.get("local", "")
+    return ""
+
+
+def fill_table(table, dev):
+    """The table holds the uplink's main-table routes and nothing falls
+    through to another uplink."""
+    lines = [f"route flush table {table}"]
+    for r in ip_json("route", "show", "table", "main", "dev", dev):
+        words = ["route", "add", r["dst"]]
+        if r.get("gateway"):
+            words += ["via", r["gateway"]]
+        words += ["dev", dev]
+        if r.get("prefsrc"):
+            words += ["src", r["prefsrc"]]
+        if r.get("scope") in ("link", "host"):
+            words += ["scope", r["scope"]]
+        words += ["table", str(table)]
+        lines.append(" ".join(words))
+    lines.append(f"route add unreachable default metric 4294967295 table {table}")
+    if _tables.get(table) == lines:
+        return
+    _tables[table] = lines
+    subprocess.run(["ip", "-batch", "-"], input="\n".join(lines) + "\n",
+                   capture_output=True, text=True)
+
+
+def empty_table(table):
+    if _tables.get(table) == []:
+        return
+    _tables[table] = []
+    ip("route", "flush", "table", str(table))
+    ip("route", "add", "unreachable", "default", "metric", "4294967295",
+       "table", str(table))
+
+
+def ensure_rule(link, table):
+    for rule in ip_json("rule", "show", "priority", str(table)):
+        if rule.get("iif") == link and str(rule.get("table")) == str(table):
+            return
+    ip("rule", "del", "priority", str(table))
+    ip("rule", "add", "iif", link, "lookup", str(table), "priority", str(table))
+
+
+def ifindex(link):
+    try:
+        with open(f"/sys/class/net/{link}/ifindex") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def state(link):
+    """The uplink the link was last plugged into ("" for none), or None for
+    a link not seen before: a restarted Droidloom makes new ones."""
+    try:
+        with open(os.path.join(STATE_DIR, link)) as f:
+            index, _, identity = f.read().partition("|")
+    except OSError:
+        return None
+    return identity if index == ifindex(link) else None
+
+
+def set_state(link, value):
+    with open(os.path.join(STATE_DIR, link), "w") as f:
+        f.write(f"{ifindex(link)}|{value}")
+
+
+def link_set(link, up):
+    ip("link", "set", link, "up" if up else "down")
+
+
+def sync():
+    held = os.path.exists(HOLD)
+    roles = links()
+    chosen = uplinks(roles)
+    for role, link in roles.items():
+        table = TABLES[role]
+        ensure_rule(link, table)
+        up = chosen.get(role)
+        if up:
+            fill_table(table, up[0])
+            identity = f"{up[0]} {up[1]} {address(up[0])}".strip()
+        else:
+            empty_table(table)
+            identity = ""
+        before = state(link)
+        if identity == before:
+            continue
+        set_state(link, identity)
+        if not identity:
+            link_set(link, False)
+            log(f"{link} ({role}) unplugged: no uplink")
+        elif held:
+            log(f"{link} ({role}) uplink now {identity}; plugged in after sleep")
+        elif before:
+            # Another network: Android's connections on this link are dead
+            link_set(link, False)
+            time.sleep(1)
+            link_set(link, True)
+            log(f"{link} ({role}) replugged: uplink now {identity}")
+        else:
+            link_set(link, True)
+            log(f"{link} ({role}) plugged in: uplink {identity}")
+
+
+def locked_sync():
+    with open(LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        sync()
+
+
+def watch():
+    locked_sync()
+    monitor = subprocess.Popen(["ip", "-o", "monitor", "route", "address", "link"],
+                               stdout=subprocess.PIPE, text=True)
+    poll = select.poll()
+    poll.register(monitor.stdout, select.POLLIN)
+    while True:
+        if not poll.poll():
+            continue
+        if not monitor.stdout.readline():
+            sys.exit("ip monitor stopped")
+        first = time.monotonic()
+        while time.monotonic() - first < SETTLE_MAX and poll.poll(int(QUIET * 1000)):
+            if not monitor.stdout.readline():
+                sys.exit("ip monitor stopped")
+        locked_sync()
+
+
+def main():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    if sys.argv[1:] == ["--watch"]:
+        watch()
+    else:
+        locked_sync()
+
+
+if __name__ == "__main__":
+    main()

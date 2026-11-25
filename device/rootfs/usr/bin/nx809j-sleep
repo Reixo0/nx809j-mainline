@@ -173,6 +173,7 @@ WIFI_CONNECTING_MAX = 45
 HOLD = "/run/nx809j-sleep/hold"
 IPA_WAKEUP = "/sys/devices/platform/soc@0/3f40000.ipa/power/wakeup"
 ALARM_WAKEUP = "/sys/bus/platform/devices/alarmtimer.*/power/wakeup"
+ANDROID_LINKS_HELD = "/run/nx809j-droidloom-links/held"
 RTC = "/sys/class/rtc/rtc0/wakealarm"
 
 
@@ -266,7 +267,8 @@ def link_packets():
         name = os.path.basename(dev)
         stats = (("tx_packets",) if name == "wlan0"
                  or name.startswith("rmnet_data") else
-                 ("rx_packets", "tx_packets") if name.startswith("dlh") else ())
+                 ("rx_packets", "tx_packets") if name.startswith(("dlh", "dlm"))
+                 else ())
         for stat in stats:
             try:
                 with open(os.path.join(dev, "statistics", stat)) as f:
@@ -607,6 +609,16 @@ def settle(minimum, android_due):
         time.sleep(SETTLE_POLL)
 
 
+def android_link_has_uplink(name):
+    """Whether nx809j-droidloom-uplink last saw an uplink for this Android
+    link (yes when it has not looked at it)."""
+    try:
+        with open(os.path.join(os.path.dirname(ANDROID_LINKS_HELD), name)) as f:
+            return bool(f.read().partition("|")[2])
+    except OSError:
+        return True
+
+
 def android_net(up, cable=True, ipa=False):
     """Plug Droidloom's virtual cable in or out.
 
@@ -625,8 +637,22 @@ def android_net(up, cable=True, ipa=False):
     its push service retried every 5 s, an alarm Doze does not hold back;
     they fire at the next wakeup. Alarm clocks still ring: suspend() sets
     the RTC for them itself."""
-    for link in glob.glob("/sys/class/net/dlh*") if cable else ():
-        run(["ip", "link", "set", os.path.basename(link), "up" if up else "down"])
+    if cable:
+        # nx809j-droidloom-uplink plugs out a link whose uplink is gone and
+        # leaves the links to this while held
+        try:
+            if up:
+                os.unlink(ANDROID_LINKS_HELD)
+            else:
+                os.makedirs(os.path.dirname(ANDROID_LINKS_HELD), exist_ok=True)
+                open(ANDROID_LINKS_HELD, "w").close()
+        except OSError:
+            pass
+    for link in glob.glob("/sys/class/net/dl[hm]*") if cable else ():
+        name = os.path.basename(link)
+        if up and not android_link_has_uplink(name):
+            continue
+        run(["ip", "link", "set", name, "up" if up else "down"])
     for path in (IPA_WAKEUP, *glob.glob(ALARM_WAKEUP)):
         on = up or (ipa and path == IPA_WAKEUP)
         try:

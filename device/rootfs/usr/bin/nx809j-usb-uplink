@@ -10,10 +10,6 @@ update() {
 	else
 		ip route del default via 172.16.42.2 dev usb0 metric 1000 2>/dev/null
 	fi
-	if [ "$carrier" != "$last_carrier" ]; then
-		last_carrier=$carrier
-		/usr/bin/nx809j-droidloom-uplink >/dev/null 2>&1 &
-	fi
 }
 
 { echo; exec ip monitor link dev usb0; } | while read -r _; do update; done

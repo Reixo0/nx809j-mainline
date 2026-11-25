@@ -10,3 +10,4 @@ enable systemd-pstore.service
 enable nx809j-gnss.service
 enable nx809j-privacy-system.service
 enable nx809j-sleep.service
+enable nx809j-droidloom-uplink.service

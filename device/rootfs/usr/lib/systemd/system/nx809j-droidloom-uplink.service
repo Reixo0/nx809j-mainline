@@ -1,0 +1,13 @@
+# Android in Droidloom gets a network per radio: its Wi-Fi link leaves
+# through the host's Wi-Fi (or USB) uplink, its mobile data link through the
+# modem, and each is plugged out while its uplink is gone.
+[Unit]
+Description=Steer Droidloom's Android links to the host's uplinks
+
+[Service]
+ExecStart=/usr/bin/nx809j-droidloom-uplink --watch
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
